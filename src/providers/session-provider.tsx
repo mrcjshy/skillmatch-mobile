@@ -64,6 +64,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       // Identity/session update only. No database lookups, no navigation.
       setSession(nextSession);
+      // A valid session supersedes any stale restoration error.
+      if (nextSession) setSessionError(null);
     });
 
     return () => {

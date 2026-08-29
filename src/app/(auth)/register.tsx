@@ -14,6 +14,8 @@ import { supabase } from '@/lib/supabase';
  * Registration intent only. This is untrusted user input sent as Auth user
  * metadata (`registration_role_intent`). It is NOT SkillMatch authorization,
  * not a trusted role, and must never be used to route or authorize access.
+ * The same applies to `registration_full_name` and `registration_phone`:
+ * they are untrusted bootstrap input carried alongside the intent.
  * The authoritative account row is created in a later piece.
  * There is deliberately no Admin option: admin accounts are provisioned only
  * through trusted backend/database paths.
@@ -26,6 +28,8 @@ const ROLE_OPTIONS: { value: RegistrationRoleIntent; label: string }[] = [
 ];
 
 export default function RegisterScreen() {
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -42,7 +46,17 @@ export default function RegisterScreen() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    const trimmedFullName = fullName.trim();
+    const trimmedPhone = phone.trim();
     const trimmedEmail = email.trim();
+    if (!trimmedFullName) {
+      setErrorMessage('Please enter your full name.');
+      return;
+    }
+    if (!trimmedPhone) {
+      setErrorMessage('Please enter your phone number.');
+      return;
+    }
     if (!trimmedEmail) {
       setErrorMessage('Please enter your email.');
       return;
@@ -71,6 +85,8 @@ export default function RegisterScreen() {
         password,
         options: {
           data: {
+            registration_full_name: trimmedFullName,
+            registration_phone: trimmedPhone,
             registration_role_intent: selectedRole,
           },
         },
@@ -106,6 +122,30 @@ export default function RegisterScreen() {
       <Text style={styles.heading}>Create Account</Text>
 
       <View style={styles.form}>
+        <Text style={styles.label}>Full Name</Text>
+        <TextInput
+          style={styles.input}
+          value={fullName}
+          onChangeText={setFullName}
+          placeholder="Full Name"
+          autoCapitalize="words"
+          autoCorrect={false}
+          editable={!isSubmitting}
+          accessibilityLabel="Full Name"
+        />
+
+        <Text style={styles.label}>Phone</Text>
+        <TextInput
+          style={styles.input}
+          value={phone}
+          onChangeText={setPhone}
+          placeholder="Phone"
+          keyboardType="phone-pad"
+          autoCorrect={false}
+          editable={!isSubmitting}
+          accessibilityLabel="Phone"
+        />
+
         <Text style={styles.label}>Email</Text>
         <TextInput
           style={styles.input}

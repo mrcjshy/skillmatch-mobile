@@ -1,7 +1,17 @@
-import { Link } from 'expo-router';
+import { Link, Redirect } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { useSession } from '@/providers/session-provider';
+
 export default function NotFoundScreen() {
+  const { session } = useSession();
+
+  // Authenticated unknown/unauthorized route → canonical index dispatcher,
+  // which forwards to this account's own route. No role logic here.
+  if (session) {
+    return <Redirect href="/" />;
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Page Not Found</Text>
