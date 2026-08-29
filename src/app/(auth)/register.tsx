@@ -1,3 +1,4 @@
+import { Link } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -228,6 +229,12 @@ export default function RegisterScreen() {
             <Text style={styles.buttonText}>Create Account</Text>
           )}
         </Pressable>
+
+        {/* dismissTo (POP_TO): pops back to the existing Login when it is in
+            history; otherwise replaces this screen. Never duplicates Login. */}
+        <Link dismissTo href="/login" style={styles.link}>
+          Already have an account? Sign in
+        </Link>
       </View>
     </View>
   );
@@ -306,5 +313,12 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  link: {
+    marginTop: 16,
+    fontSize: 15,
+    color: '#1d4ed8',
+    textAlign: 'center',
+    padding: 4,
   },
 });

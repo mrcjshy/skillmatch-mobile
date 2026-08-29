@@ -1,3 +1,4 @@
+import { Link } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -129,6 +130,11 @@ export default function LoginScreen() {
             <Text style={styles.buttonText}>Sign In</Text>
           )}
         </Pressable>
+
+        {/* Ordinary push: Back from Register returns here. */}
+        <Link href="/register" style={styles.link}>
+          Don't have an account? Create one
+        </Link>
       </View>
     </View>
   );
@@ -189,5 +195,12 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  link: {
+    marginTop: 16,
+    fontSize: 15,
+    color: '#1d4ed8',
+    textAlign: 'center',
+    padding: 4,
   },
 });
