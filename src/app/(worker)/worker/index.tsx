@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -112,6 +113,7 @@ async function loadWorkerData(userId: string): Promise<LoadedState> {
 
 export default function WorkerHome() {
   const { account } = useAccount();
+  const router = useRouter();
   const userId = account?.id;
 
   const [isLoading, setIsLoading] = useState(true);
@@ -298,6 +300,20 @@ export default function WorkerHome() {
         <Text style={styles.label}>Email</Text>
         <Text style={styles.value}>{account?.email ?? '—'}</Text>
       </View>
+
+      {/*
+        Entry point to the read-only N8-UI opportunity list. The route lives
+        inside the already-protected (worker) group, so it needs no guard of
+        its own.
+      */}
+      <Pressable
+        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+        onPress={() => router.push('/worker/opportunities')}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>Job Opportunities</Text>
+      </Pressable>
 
       {isLoading ? (
         <View style={styles.center}>
