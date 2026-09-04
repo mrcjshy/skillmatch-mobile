@@ -42,9 +42,15 @@ import { useAccount } from '@/providers/account-provider';
  * makes no supplementary lookup to fill those in. Client contact details are
  * released only after a confirmed booking.
  *
- * There is deliberately NO Accept / Claim / Book / Contact control: N9
- * acceptance and the atomic booking claim do not exist yet, and this screen
- * performs no writes of any kind.
+ * N9-UI adds the ONE write this screen performs: `Accept`, which calls
+ * `public.accept_job_opportunity(p_job_id)`. That RPC is the entire acceptance
+ * contract — it locks the Job row, re-checks D-002 Stage 1 eligibility through
+ * the same authoritative scorer, and creates the confirmed Booking atomically.
+ * Nothing about first-wins, eligibility, or booking state is decided here.
+ *
+ * The Worker id is never sent: the RPC derives it from auth.uid(), exactly as
+ * the read RPC does. There is still no Booking screen, no Client contact
+ * surface, and no notification — those are separate modules.
  */
 
 /** Exactly the 11 fields `public.list_my_job_opportunities()` returns. */
@@ -127,6 +133,114 @@ async function loadOpportunities(): Promise<WorkerOpportunity[]> {
     .filter((o): o is WorkerOpportunity => o !== null);
 }
 
+/* ------------------------------------------------------------------ *
+ * Acceptance (N9-UI)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Observed live against the hosted project: supabase-js does NOT throw for a
+ * PostgREST/database error — it resolves with `{ data: null, error }`, and the
+ * SQLSTATE arrives verbatim in `error.code`:
+ *
+ *   { code: '42501', message: 'not authorized to accept opportunities',  details: null, hint: null }
+ *   { code: 'SM409', message: 'this opportunity is no longer available', details: null, hint: null }
+ *   { code: 'SM403', message: 'you are no longer eligible for this opportunity', details: null, hint: null }
+ *
+ * So classification reads `error.code` exactly and never parses `message`.
+ * Anything else — including a transport failure, which supabase-js also
+ * surfaces as an error rather than a rejection — falls through to the generic
+ * branch. The raw message is never shown to the Worker.
+ */
+const ACCEPT_ERROR = {
+  /** Job is matched, cancelled, completed, or nonexistent — deliberately indistinguishable. */
+  UNAVAILABLE: 'SM409',
+  /** Caller is a real Worker but no longer passes Stage 1 for this Job. */
+  INELIGIBLE: 'SM403',
+} as const;
+
+const COPY = {
+  taken: 'This job was already accepted by another worker.',
+  ineligible: "You're no longer eligible for this job.",
+  generic: "We couldn't accept this job. Please refresh and try again.",
+  accepted: 'Job accepted. It is now booked to you.',
+  /**
+   * The acceptance may already be committed, so this must never read as a
+   * failure to accept. Only the list read failed.
+   */
+  refreshFailed:
+    "Your acceptance was submitted, but we couldn't refresh your opportunities. " +
+    'Refresh the list to see the latest status.',
+} as const;
+
+/** Stage 1 reasons the Worker's own authoritative state can actually explain. */
+const REASON = {
+  unverified: 'Your worker profile is not currently verified.',
+  unavailable: 'Your availability is no longer set to Available.',
+  noSkillOverlap: "Your current skills no longer match this job's requirements.",
+  /**
+   * Nothing locally observable explains the server's rejection. Deliberately
+   * vague: rating and location are NOT Stage 1 gates under D-002/N9 and must
+   * never be offered as the reason.
+   */
+  unexplained: "Your profile no longer meets this job's eligibility requirements.",
+} as const;
+
+/**
+ * SM403 reason resolution — from a FRESH read of the Worker's own state, never
+ * from whatever this screen cached when it loaded. The Worker may have been
+ * unverified or made unavailable while the list sat open, in which case a
+ * cached value would explain the rejection wrongly.
+ *
+ * Reuses the same tables the Worker profile screen already owns
+ * (`worker_profiles`, `worker_skills`) plus the job's requirements from
+ * `job_skills`; no new endpoint is introduced. Stage 1 is not reimplemented as
+ * a decision — the server already decided. This only picks the explanation,
+ * and any read failure or unexpected combination yields the vague fallback
+ * rather than a guess.
+ */
+async function resolveIneligibilityReason(userId: string, jobId: string): Promise<string> {
+  const profileRes = await supabase
+    .from('worker_profiles')
+    .select('id, is_verified, availability_status')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (profileRes.error || !profileRes.data) return REASON.unexplained;
+
+  if (profileRes.data.is_verified !== true) return REASON.unverified;
+  if (profileRes.data.availability_status !== 'available') return REASON.unavailable;
+
+  // Both account-level gates pass, so the remaining explainable Stage 1
+  // condition is required-skill overlap.
+  const requiredRes = await supabase.from('job_skills').select('skill_id').eq('job_id', jobId);
+  if (requiredRes.error) return REASON.unexplained;
+  const required = (requiredRes.data ?? [])
+    .map((r) => r.skill_id)
+    .filter((id): id is string => typeof id === 'string');
+  if (required.length === 0) return REASON.unexplained;
+
+  const mineRes = await supabase
+    .from('worker_skills')
+    .select('skill_id')
+    .eq('worker_id', profileRes.data.id);
+  if (mineRes.error) return REASON.unexplained;
+  const mine = new Set(
+    (mineRes.data ?? []).map((r) => r.skill_id).filter((id): id is string => typeof id === 'string')
+  );
+
+  return required.some((id) => mine.has(id)) ? REASON.unexplained : REASON.noSkillOverlap;
+}
+
+type NoticeTone = 'success' | 'info' | 'warning';
+
+type AcceptNotice = {
+  tone: NoticeTone;
+  headline: string;
+  /** Second line, currently only the SM403 reason. */
+  detail: string | null;
+  /** Only the refresh-after-success case offers its own list-refresh action. */
+  offerRefresh: boolean;
+};
+
 /** Grouped peso amount. Locale-independent so it renders identically on any device. */
 function formatBudget(value: number | null): string | null {
   if (value === null) return null;
@@ -163,6 +277,17 @@ export default function WorkerOpportunities() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [opportunities, setOpportunities] = useState<WorkerOpportunity[]>([]);
+
+  /** The one Job whose acceptance is in flight; null when idle. */
+  const [acceptingJobId, setAcceptingJobId] = useState<string | null>(null);
+  /**
+   * Jobs whose acceptance RPC already returned success in this screen session.
+   * Only reachable when the follow-up server re-read failed and left the card
+   * on screen: that acceptance may be committed, so its Accept control must
+   * not be offered again.
+   */
+  const [submittedJobIds, setSubmittedJobIds] = useState<string[]>([]);
+  const [notice, setNotice] = useState<AcceptNotice | null>(null);
 
   /**
    * Single place that applies a successful result: rows in, stale error out.
@@ -227,11 +352,13 @@ export default function WorkerOpportunities() {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   async function handleRetry() {
-    if (isLoading || isRefreshing) return;
+    if (isLoading || isRefreshing || acceptingJobId !== null) return;
     setIsLoading(true);
     setLoadError(null);
     try {
       await load();
+      // A successful authoritative read resolves any outcome message.
+      setNotice(null);
     } catch (e: unknown) {
       applyError(e);
     } finally {
@@ -239,11 +366,100 @@ export default function WorkerOpportunities() {
     }
   }
 
+  /**
+   * Acceptance. The server is the only authority here: this handler decides
+   * nothing about eligibility or who won, and never edits the list to reflect
+   * an outcome. Every terminal branch — success, SM409, SM403 — ends by
+   * re-reading `list_my_job_opportunities()` and rendering whatever the server
+   * returns.
+   */
+  async function handleAccept(jobId: string) {
+    // One acceptance at a time, and never a second submit for the same Job.
+    if (acceptingJobId !== null || isLoading || isRefreshing) return;
+    if (submittedJobIds.includes(jobId)) return;
+
+    setAcceptingJobId(jobId);
+    setNotice(null);
+    try {
+      // The Worker is auth.uid() inside the RPC; only the Job id is sent.
+      const res = await supabase.rpc('accept_job_opportunity', { p_job_id: jobId });
+
+      if (res.error) {
+        const code = res.error.code;
+        // Developer-only. The Worker never sees a raw database message.
+        console.warn('[N9-UI] accept_job_opportunity failed:', code, res.error.message);
+
+        if (code === ACCEPT_ERROR.UNAVAILABLE) {
+          // The ordinary losing-race outcome, not a fault.
+          setNotice({ tone: 'info', headline: COPY.taken, detail: null, offerRefresh: false });
+          await refreshAfterOutcome();
+          return;
+        }
+        if (code === ACCEPT_ERROR.INELIGIBLE) {
+          const detail = workerId
+            ? await resolveIneligibilityReason(workerId, jobId)
+            : REASON.unexplained;
+          setNotice({ tone: 'warning', headline: COPY.ineligible, detail, offerRefresh: false });
+          await refreshAfterOutcome();
+          return;
+        }
+        // 42501 and anything unexpected (including transport failure). No
+        // reason is invented, and no role/session state is changed here —
+        // account routing stays with the bootstrap gates.
+        setNotice({ tone: 'warning', headline: COPY.generic, detail: null, offerRefresh: false });
+        return;
+      }
+
+      // Success. The Booking is NOT reconstructed locally and the card is NOT
+      // spliced out — the Job disappears only because the server says so.
+      setSubmittedJobIds((ids) => (ids.includes(jobId) ? ids : [...ids, jobId]));
+      try {
+        await load();
+        setNotice({ tone: 'success', headline: COPY.accepted, detail: null, offerRefresh: false });
+      } catch (e: unknown) {
+        // Acceptance succeeded; only the re-read failed. Saying "acceptance
+        // failed" here would be wrong, and re-sending the RPC could not make
+        // it more true — so it is never retried automatically.
+        if (e instanceof Error && e.message) {
+          console.warn('[N9-UI] post-acceptance refresh failed:', e.message);
+        }
+        setNotice({
+          tone: 'warning',
+          headline: COPY.refreshFailed,
+          detail: null,
+          offerRefresh: true,
+        });
+      }
+    } catch (e: unknown) {
+      // supabase-js returns rather than rejects, so this is defensive only.
+      if (e instanceof Error && e.message) {
+        console.warn('[N9-UI] accept_job_opportunity threw:', e.message);
+      }
+      setNotice({ tone: 'warning', headline: COPY.generic, detail: null, offerRefresh: false });
+    } finally {
+      setAcceptingJobId(null);
+    }
+  }
+
+  /**
+   * Authoritative re-read after a handled acceptance outcome. A failure here
+   * must not overwrite the outcome message, so it goes to the list's own error
+   * state (which carries its own Retry).
+   */
+  async function refreshAfterOutcome() {
+    try {
+      await load();
+    } catch (e: unknown) {
+      applyError(e);
+    }
+  }
+
   async function handleRefresh() {
-    if (isLoading || isRefreshing) return;
+    if (isLoading || isRefreshing || acceptingJobId !== null) return;
     setIsRefreshing(true);
     try {
       await load();
+      setNotice(null);
     } catch (e: unknown) {
       applyError(e);
     } finally {
@@ -264,6 +480,36 @@ export default function WorkerOpportunities() {
         <Text style={styles.note}>
           Jobs you have been matched with, ranked by your match score.
         </Text>
+
+        {/*
+          Rendered above the load/error/empty/list switch so an outcome message
+          survives whatever the follow-up server read does to the list below.
+        */}
+        {notice ? (
+          <View
+            style={[
+              styles.notice,
+              notice.tone === 'success'
+                ? styles.noticeSuccess
+                : notice.tone === 'info'
+                  ? styles.noticeInfo
+                  : styles.noticeWarning,
+            ]}
+          >
+            <Text style={styles.noticeHeadline}>{notice.headline}</Text>
+            {notice.detail ? <Text style={styles.noticeDetail}>{notice.detail}</Text> : null}
+            {notice.offerRefresh ? (
+              <Pressable
+                style={styles.secondaryButton}
+                onPress={handleRefresh}
+                disabled={isLoading || isRefreshing || acceptingJobId !== null}
+                accessibilityRole="button"
+              >
+                <Text style={styles.secondaryButtonText}>Refresh</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
 
         {isLoading ? (
           // Rendered instead of, never before, the empty state.
@@ -293,6 +539,13 @@ export default function WorkerOpportunities() {
             const location = formatLocation(job.barangay, job.city);
             const budget = formatBudget(job.budget);
             const schedule = formatSchedule(job.scheduled_at);
+            const isAcceptingThis = acceptingJobId === job.job_id;
+            const isSubmitted = submittedJobIds.includes(job.job_id);
+            // Every card locks while ANY acceptance is in flight, so a rapid
+            // second tap cannot start an acceptance on a different Job. This
+            // is only a UI guard — first-wins correctness is the RPC's.
+            const isAcceptDisabled =
+              acceptingJobId !== null || isSubmitted || isLoading || isRefreshing;
             return (
               <View key={job.job_id} style={styles.card}>
                 <Text style={styles.cardTitle}>{job.title}</Text>
@@ -323,6 +576,30 @@ export default function WorkerOpportunities() {
                 <Text style={styles.scoreLine}>
                   Rating score: {formatPoints(job.rating_points)}/20
                 </Text>
+
+                <Pressable
+                  style={[
+                    styles.acceptButton,
+                    isAcceptDisabled && styles.acceptButtonDisabled,
+                  ]}
+                  onPress={() => handleAccept(job.job_id)}
+                  disabled={isAcceptDisabled}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: isAcceptDisabled, busy: isAcceptingThis }}
+                  accessibilityLabel={`Accept ${job.title}`}
+                >
+                  {isAcceptingThis ? (
+                    <View style={styles.acceptBusy}>
+                      <ActivityIndicator color="#ffffff" />
+                      <Text style={styles.acceptButtonText}>Accepting…</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.acceptButtonText}>
+                      {/* Reached only when the post-success re-read failed. */}
+                      {isSubmitted ? 'Acceptance submitted' : 'Accept'}
+                    </Text>
+                  )}
+                </Pressable>
               </View>
             );
           })
@@ -380,6 +657,53 @@ const styles = StyleSheet.create({
   error: {
     color: '#b91c1c',
     fontSize: 14,
+  },
+  acceptButton: {
+    marginTop: 10,
+    backgroundColor: '#1d4ed8',
+    borderRadius: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  acceptButtonDisabled: {
+    opacity: 0.5,
+  },
+  acceptButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  acceptBusy: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notice: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    gap: 4,
+  },
+  noticeSuccess: {
+    borderColor: '#15803d',
+    backgroundColor: '#f0fdf4',
+  },
+  noticeInfo: {
+    borderColor: '#1d4ed8',
+    backgroundColor: '#eff6ff',
+  },
+  noticeWarning: {
+    borderColor: '#b45309',
+    backgroundColor: '#fffbeb',
+  },
+  noticeHeadline: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  noticeDetail: {
+    fontSize: 14,
+    opacity: 0.8,
   },
   secondaryButton: {
     marginTop: 16,
