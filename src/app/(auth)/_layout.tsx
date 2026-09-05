@@ -1,5 +1,9 @@
 import { Stack } from 'expo-router';
 
+// Both auth screens would otherwise render their raw route name ("login",
+// "register") as the header title. Neither sets a title and neither depends on
+// the header for navigation: login links to register, and register uses a
+// `dismissTo` link back to login.
 export default function AuthLayout() {
-  return <Stack />;
+  return <Stack screenOptions={{ headerShown: false }} />;
 }

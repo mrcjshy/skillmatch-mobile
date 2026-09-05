@@ -108,7 +108,12 @@ function RootNavigator() {
   }
 
   return (
-    <Stack>
+    // The root navigator's screens are route groups and terminal states, none of
+    // which sets a title, so its header would only ever render a raw internal
+    // name such as "(worker)". Root transitions are guard-driven (Stack.Protected
+    // plus the index <Redirect>), never user back-navigation, so no affordance is
+    // lost by hiding it. Group layouts keep their own headers.
+    <Stack screenOptions={{ headerShown: false }}>
       {/* `index` is declared first so it is the fallback route whenever a
           guard flips and purges the current screen from history. */}
       <Stack.Screen name="index" />
