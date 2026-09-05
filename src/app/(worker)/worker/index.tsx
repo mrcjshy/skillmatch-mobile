@@ -315,6 +315,22 @@ export default function WorkerHome() {
         <Text style={styles.secondaryButtonText}>Job Opportunities</Text>
       </Pressable>
 
+      {/*
+        Entry point to the read-only N11-UI Booking list — a sibling of Job
+        Opportunities, not a replacement for it. Same protected (worker) group,
+        so it needs no guard of its own. Placed above the profile-load switch
+        so it stays reachable even when the profile read fails: the two screens
+        have separate data sources and one must not hide the other.
+      */}
+      <Pressable
+        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+        onPress={() => router.push('/worker/bookings')}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>My Bookings</Text>
+      </Pressable>
+
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator />

@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -134,6 +135,7 @@ async function loadMyJobs(clientId: string): Promise<PostedJob[]> {
 
 export default function ClientHome() {
   const { account } = useAccount();
+  const router = useRouter();
   const clientId = account?.id;
 
   const [isLoading, setIsLoading] = useState(true);
@@ -305,6 +307,23 @@ export default function ClientHome() {
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.heading}>Post a Job</Text>
+
+      {/*
+        Entry point to the read-only N11-UI Booking list. Added alongside the
+        existing "Post a Job" form and "My Posted Jobs" section, replacing
+        neither. Same protected (client) group, so it needs no guard of its
+        own. Placed above the load switch so it stays reachable even when the
+        skills/jobs read fails: Bookings come from a different RPC and must not
+        be hidden by an unrelated failure.
+      */}
+      <Pressable
+        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+        onPress={() => router.push('/client/bookings')}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>My Bookings</Text>
+      </Pressable>
 
       {isLoading ? (
         <View style={styles.center}>
