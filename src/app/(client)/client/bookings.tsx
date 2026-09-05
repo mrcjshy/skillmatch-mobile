@@ -27,8 +27,11 @@ import {
   toNumber,
   toStringArrayOrNull,
 } from '@/lib/bookings';
+import { COPY as RATING_COPY, fetchMyRatedBookingIds, isRateableStatus } from '@/lib/ratings';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
+
+import RateWorker from '@/components/rate-worker';
 
 /**
  * Client "My Bookings" = READ-ONLY history of the Bookings this Client owns
@@ -42,11 +45,15 @@ import { useAccount } from '@/providers/account-provider';
  * THE LIST ITSELF STAYS READ-ONLY
  * -------------------------------
  * `public.bookings` has NO INSERT and NO UPDATE policy, so nothing on this
- * screen changes Booking state: there is no cancel, complete, no-show, pay or
- * rate control. BL-01A added the two lifecycle RPCs server-side, but no UI
- * calls them yet; that remains a separate piece. Ratings in particular are
- * DISPLAY-ONLY: no submission action exists, and `public.ratings` INSERT is
- * currently unguarded, which is a separate security piece.
+ * screen changes Booking state: there is no cancel, complete, no-show or pay
+ * control. BL-01A added the two lifecycle RPCs server-side, but no UI calls
+ * them yet; that remains a separate piece.
+ *
+ * BL-01B adds the one write this screen does perform, and it does not touch
+ * `bookings`: on a COMPLETED Booking the Client may submit a single immutable
+ * rating of the assigned Worker through `rate_my_completed_worker()`. The
+ * displayed Worker rating aggregates remain read-only N11 projections and are
+ * unrelated to that control.
  *
  * The ONE action added by BL-01C-UI is navigation: "Open Chat" routes to
  * /client/chat, which reads and writes `public.messages` — never `bookings`.
@@ -179,11 +186,31 @@ export default function ClientBookings() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [bookings, setBookings] = useState<ClientBooking[]>([]);
+  /** Booking ids this Client has already rated, read authoritatively from the
+   *  server on every load — never inferred from a successful submission. */
+  const [ratedBookingIds, setRatedBookingIds] = useState<Set<string>>(new Set());
 
   /** Single place that applies a successful result: rows in, stale error out. */
+  /**
+   * One authoritative pass: the Booking list, then which of those Bookings
+   * this Client has already rated.
+   *
+   * The rated set is read from `public.ratings` directly rather than added to
+   * the N11 RPC's return shape, which would have changed a contract three
+   * other things depend on. RLS restricts that read to the caller's own rows,
+   * so it discloses nothing about anyone else's ratings.
+   *
+   * Both are applied together, so the screen never renders a Booking list
+   * against a stale rated set and briefly offers to rate something already
+   * rated.
+   */
   const load = useCallback(async () => {
     const rows = await loadClientBookings();
+    const rated = await fetchMyRatedBookingIds(
+      rows.filter((b) => isRateableStatus(b.booking_status)).map((b) => b.booking_id)
+    );
     setBookings(rows);
+    setRatedBookingIds(rated);
     setLoadError(null);
   }, []);
 
@@ -350,9 +377,11 @@ export default function ClientBookings() {
                       {formatVerification(booking.worker_is_verified)}
                     </Text>
                     {/*
-                      Display-only. A count of 0 renders "No ratings yet" —
-                      never 0 stars, and never N8's neutral 3.0 matching
-                      constant. There is no rating submission control here.
+                      Display-only aggregates from the N11 RPC. A count of 0
+                      renders "No ratings yet" — never 0 stars, and never N8's
+                      neutral 3.0 matching constant. Submitting a rating is a
+                      separate control below, offered only for a completed
+                      Booking.
                     */}
                     <Text style={styles.cardLine}>
                       Rating:{' '}
@@ -362,6 +391,23 @@ export default function ClientBookings() {
                 ) : (
                   <Text style={styles.suppressed}>{COPY.suppressedWorker}</Text>
                 )}
+
+                {/*
+                  Rating (BL-01B-UI). Client → assigned Worker only, and only
+                  on a completed Booking this Client owns. The control is
+                  offered solely when the server-derived rated set says this
+                  Booking is unrated; once rated the card states that instead.
+                  Both branches are decided from authoritative server state,
+                  never from a local "I just submitted" flag. The RPC re-checks
+                  ownership and status regardless of what is rendered here.
+                */}
+                {isRateableStatus(booking.booking_status) ? (
+                  ratedBookingIds.has(booking.booking_id) ? (
+                    <Text style={styles.suppressed}>{RATING_COPY.rated}</Text>
+                  ) : (
+                    <RateWorker bookingId={booking.booking_id} onRated={load} />
+                  )
+                ) : null}
 
                 {/*
                   Offered in EVERY status. Withdrawing it for a terminal
