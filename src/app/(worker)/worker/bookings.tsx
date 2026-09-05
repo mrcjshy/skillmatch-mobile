@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -34,12 +34,19 @@ import { useAccount } from '@/providers/account-provider';
  * inside that SECURITY DEFINER function, so there is no worker id to pass and
  * none that could be substituted to view someone else's Bookings.
  *
- * READ-ONLY IS A HARD CONSTRAINT, NOT A STYLE CHOICE
- * --------------------------------------------------
+ * THE LIST ITSELF STAYS READ-ONLY
+ * -------------------------------
  * `public.bookings` has NO INSERT and NO UPDATE policy (N9 removed both), so
- * there is no cancel, complete, no-show, pay, rate or message path from the
- * app at all. Offering any such control here would imply an action the client
- * cannot perform. Booking lifecycle RPCs are a separate, unauthorized piece.
+ * nothing on this screen changes Booking state: there is no cancel, complete,
+ * no-show, pay or rate control, and offering one would imply an action this
+ * screen cannot perform. BL-01A added the two lifecycle RPCs server-side, but
+ * no UI calls them yet; that remains a separate piece.
+ *
+ * The ONE action added by BL-01C-UI is navigation: "Open Chat" routes to
+ * /worker/chat, which reads and writes `public.messages` — never `bookings`.
+ * It is offered in EVERY status, because message history stays readable after
+ * a Booking ends; the chat screen itself decides whether a composer is shown,
+ * from a server re-read rather than from anything passed here.
  *
  * TWO INDEPENDENT AXES
  * --------------------
@@ -149,6 +156,7 @@ const COPY = {
 
 export default function WorkerBookings() {
   const { account } = useAccount();
+  const router = useRouter();
   const workerId = account?.id;
 
   const [isLoading, setIsLoading] = useState(true);
@@ -326,6 +334,26 @@ export default function WorkerBookings() {
                 ) : (
                   <Text style={styles.suppressed}>{COPY.suppressedContact}</Text>
                 )}
+
+                {/*
+                  Offered in EVERY status. Withdrawing it for a terminal
+                  Booking would hide history the SELECT policy deliberately
+                  keeps readable. Only the Booking id travels: the chat screen
+                  re-reads the status from the server rather than trusting a
+                  navigation parameter.
+                */}
+                <Pressable
+                  style={styles.chatButton}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/worker/chat',
+                      params: { bookingId: booking.booking_id },
+                    })
+                  }
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.chatButtonText}>Open Chat</Text>
+                </Pressable>
               </View>
             );
           })
@@ -389,6 +417,20 @@ const styles = StyleSheet.create({
   error: {
     color: '#b91c1c',
     fontSize: 14,
+  },
+  chatButton: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#1d4ed8',
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignSelf: 'flex-start',
+  },
+  chatButtonText: {
+    color: '#1d4ed8',
+    fontSize: 15,
+    fontWeight: '600',
   },
   secondaryButton: {
     marginTop: 16,
