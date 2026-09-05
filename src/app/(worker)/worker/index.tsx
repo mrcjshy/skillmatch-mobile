@@ -331,6 +331,22 @@ export default function WorkerHome() {
         <Text style={styles.secondaryButtonText}>My Bookings</Text>
       </Pressable>
 
+      {/*
+        Entry point to the N12-UI Notifications inbox — added alongside Job
+        Opportunities and My Bookings, replacing neither. Same protected
+        (worker) group, and placed above the profile-load switch so it stays
+        reachable even when the profile read fails; notifications come from a
+        different source and must not be hidden by an unrelated failure.
+      */}
+      <Pressable
+        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+        onPress={() => router.push('/worker/notifications')}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>Notifications</Text>
+      </Pressable>
+
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator />

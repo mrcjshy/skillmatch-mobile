@@ -325,6 +325,21 @@ export default function ClientHome() {
         <Text style={styles.secondaryButtonText}>My Bookings</Text>
       </Pressable>
 
+      {/*
+        Entry point to the N12-UI Notifications inbox — added alongside the
+        existing Post a Job form, My Posted Jobs and My Bookings, replacing
+        none of them. Same protected (client) group, and placed above the load
+        switch so it stays reachable even when the skills/jobs read fails.
+      */}
+      <Pressable
+        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+        onPress={() => router.push('/client/notifications')}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>Notifications</Text>
+      </Pressable>
+
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator />
