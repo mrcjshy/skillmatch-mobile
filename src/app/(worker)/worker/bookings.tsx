@@ -22,8 +22,15 @@ import {
   toNullableText,
   toNumber,
 } from '@/lib/bookings';
+import {
+  BookingPayment as BookingPaymentState,
+  fetchBookingPayments,
+  isPayableStatus,
+} from '@/lib/payments';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
+
+import BookingPayment from '@/components/booking-payment';
 
 /**
  * Worker "My Bookings" = READ-ONLY history of the Bookings this Worker holds
@@ -37,10 +44,16 @@ import { useAccount } from '@/providers/account-provider';
  * THE LIST ITSELF STAYS READ-ONLY
  * -------------------------------
  * `public.bookings` has NO INSERT and NO UPDATE policy (N9 removed both), so
- * nothing on this screen changes Booking state: there is no cancel, complete,
- * no-show, pay or rate control, and offering one would imply an action this
- * screen cannot perform. BL-01A added the two lifecycle RPCs server-side, but
- * no UI calls them yet; that remains a separate piece.
+ * nothing on this screen changes Booking LIFECYCLE state: there is no cancel,
+ * complete, no-show or rate control, and offering one would imply an action
+ * this screen cannot perform. BL-01A added the two lifecycle RPCs server-side,
+ * but no UI calls them yet; that remains a separate piece.
+ *
+ * BL-01D adds the one write this screen does perform, and it changes no
+ * lifecycle column: on a COMPLETED Booking the Client chose Cash on Delivery,
+ * the assigned Worker confirms the cash was actually received through
+ * `confirm_my_cod_payment_received()`, and only `payment_status` moves. The
+ * Worker never chooses the payment method — that control belongs to the Client.
  *
  * The ONE action added by BL-01C-UI is navigation: "Open Chat" routes to
  * /worker/chat, which reads and writes `public.messages` — never `bookings`.
@@ -59,11 +72,13 @@ import { useAccount } from '@/providers/account-provider';
  * projected in any status and is never displayed.
  *
  * Nothing here reconstructs Booking state. This screen does not query
- * `bookings`, `job_postings` or `users` directly, performs no cross-user
- * lookup to fill in a suppressed field, does not infer a Booking from job
- * status or from a previous acceptance in `worker/opportunities`, and never
- * re-sorts the rows — the server's newest-first ordering is rendered as
- * received.
+ * `job_postings` or `users` directly, performs no cross-user lookup to fill in
+ * a suppressed field, does not infer a Booking from job status or from a
+ * previous acceptance in `worker/opportunities`, and never re-sorts the rows —
+ * the server's newest-first ordering is rendered as received. It reads one
+ * thing from `bookings` directly, restricted by RLS to Bookings this Worker is
+ * assigned to and narrowed to three columns: the payment tuple, because the
+ * N11 RPC projects `payment_status` but not `payment_method` (BL-01D).
  *
  * Zero rows is a SUCCESS state, not an error and not a blocked account.
  */
@@ -74,10 +89,10 @@ type WorkerBooking = {
   job_id: string;
   booking_status: string;
   /**
-   * Consumed for contract completeness but deliberately NOT rendered: payment
-   * lifecycle is untouched by this piece and `payment_status` defaults to
-   * 'pending' for every row, so displaying it would imply a payment surface
-   * that does not exist.
+   * Consumed for contract completeness but NOT rendered from here. The payment
+   * section reads the authoritative tuple (method AND status) directly instead,
+   * because this projection carries no `payment_method` and so cannot tell
+   * "nothing chosen yet" apart from "COD awaiting cash".
    */
   payment_status: string | null;
   booked_at: string | null;
@@ -163,11 +178,24 @@ export default function WorkerBookings() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [bookings, setBookings] = useState<WorkerBooking[]>([]);
+  /** Payment tuple per completed Booking id, read authoritatively from the
+   *  server on every load — never inferred from a successful confirmation. */
+  const [bookingPayments, setBookingPayments] = useState<Map<string, BookingPaymentState>>(
+    new Map()
+  );
 
   /** Single place that applies a successful result: rows in, stale error out. */
   const load = useCallback(async () => {
     const rows = await loadWorkerBookings();
+    // Payment tuples come straight from `bookings` because the N11 RPC projects
+    // payment_status but not payment_method, so it cannot tell "no method
+    // chosen" apart from "COD awaiting cash". RLS scopes the read to Bookings
+    // this Worker is assigned to.
+    const payments = await fetchBookingPayments(
+      rows.filter((b) => isPayableStatus(b.booking_status)).map((b) => b.booking_id)
+    );
     setBookings(rows);
+    setBookingPayments(payments);
     setLoadError(null);
   }, []);
 
@@ -334,6 +362,21 @@ export default function WorkerBookings() {
                 ) : (
                   <Text style={styles.suppressed}>{COPY.suppressedContact}</Text>
                 )}
+
+                {/*
+                  COD payment (BL-01D-UI). The assigned Worker is the only
+                  party who can attest that cash changed hands, so the confirm
+                  control lives here and nowhere else. The Worker never chooses
+                  the method — that is the Client's decision on their screen.
+                */}
+                {isPayableStatus(booking.booking_status) ? (
+                  <BookingPayment
+                    role="worker"
+                    bookingId={booking.booking_id}
+                    payment={bookingPayments.get(booking.booking_id)}
+                    onChanged={load}
+                  />
+                ) : null}
 
                 {/*
                   Offered in EVERY status. Withdrawing it for a terminal

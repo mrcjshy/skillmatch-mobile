@@ -27,10 +27,16 @@ import {
   toNumber,
   toStringArrayOrNull,
 } from '@/lib/bookings';
+import {
+  BookingPayment as BookingPaymentState,
+  fetchBookingPayments,
+  isPayableStatus,
+} from '@/lib/payments';
 import { COPY as RATING_COPY, fetchMyRatedBookingIds, isRateableStatus } from '@/lib/ratings';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 
+import BookingPayment from '@/components/booking-payment';
 import RateWorker from '@/components/rate-worker';
 
 /**
@@ -72,10 +78,19 @@ import RateWorker from '@/components/rate-worker';
  * Worker's EMAIL and `verified_by` are never projected and are never
  * displayed.
  *
- * This screen does not query `bookings`, `job_postings`, `users`,
- * `worker_profiles` or `ratings` directly, performs no cross-user lookup to
- * fill in a suppressed field, does not join the Worker's details locally, and
- * never re-sorts the rows.
+ * BL-01D adds the COD payment section, which happens only AFTER completion: the
+ * Client may choose Cash on Delivery through `select_my_booking_cod()`, and the
+ * assigned Worker alone can later confirm the cash was received. This screen
+ * therefore offers no control that marks anything paid, in any state.
+ *
+ * This screen does not query `job_postings`, `users` or `worker_profiles`
+ * directly, performs no cross-user lookup to fill in a suppressed field, does
+ * not join the Worker's details locally, and never re-sorts the rows. It reads
+ * two things directly, both restricted by RLS to the caller's own rows and
+ * both narrowed to the minimum columns: the caller's own `ratings` rows
+ * (BL-01B, to know what is already rated) and the payment tuple of the
+ * caller's own `bookings` (BL-01D, because the N11 RPC projects
+ * `payment_status` but not `payment_method`).
  */
 
 /** Exactly the 21 fields `public.list_my_client_bookings()` returns. */
@@ -84,10 +99,10 @@ type ClientBooking = {
   job_id: string;
   booking_status: string;
   /**
-   * Consumed for contract completeness but deliberately NOT rendered: payment
-   * lifecycle is untouched by this piece and `payment_status` defaults to
-   * 'pending' for every row, so displaying it would imply a payment surface
-   * that does not exist.
+   * Consumed for contract completeness but NOT rendered from here. The payment
+   * section reads the authoritative tuple (method AND status) directly instead,
+   * because this projection carries no `payment_method` and so cannot tell
+   * "nothing chosen yet" apart from "COD awaiting cash".
    */
   payment_status: string | null;
   booked_at: string | null;
@@ -189,6 +204,11 @@ export default function ClientBookings() {
   /** Booking ids this Client has already rated, read authoritatively from the
    *  server on every load — never inferred from a successful submission. */
   const [ratedBookingIds, setRatedBookingIds] = useState<Set<string>>(new Set());
+  /** Payment tuple per completed Booking id, read authoritatively from the
+   *  server on every load — never inferred from a successful action. */
+  const [bookingPayments, setBookingPayments] = useState<Map<string, BookingPaymentState>>(
+    new Map()
+  );
 
   /** Single place that applies a successful result: rows in, stale error out. */
   /**
@@ -206,11 +226,18 @@ export default function ClientBookings() {
    */
   const load = useCallback(async () => {
     const rows = await loadClientBookings();
-    const rated = await fetchMyRatedBookingIds(
-      rows.filter((b) => isRateableStatus(b.booking_status)).map((b) => b.booking_id)
-    );
+    const completedIds = rows
+      .filter((b) => isRateableStatus(b.booking_status))
+      .map((b) => b.booking_id);
+    const rated = await fetchMyRatedBookingIds(completedIds);
+    // Payment tuples come straight from `bookings` because the N11 RPC projects
+    // payment_status but not payment_method, and widening its RETURNS TABLE
+    // would mean dropping and recreating a contract three screens depend on.
+    // RLS scopes the read to this Client's own Bookings.
+    const payments = await fetchBookingPayments(completedIds);
     setBookings(rows);
     setRatedBookingIds(rated);
+    setBookingPayments(payments);
     setLoadError(null);
   }, []);
 
@@ -391,6 +418,21 @@ export default function ClientBookings() {
                 ) : (
                   <Text style={styles.suppressed}>{COPY.suppressedWorker}</Text>
                 )}
+
+                {/*
+                  COD payment (BL-01D-UI). Offered only after completion, per
+                  the locked payment sequencing. The Client can choose COD and
+                  can never mark it paid — that transition belongs to the
+                  assigned Worker's own control on their screen.
+                */}
+                {isPayableStatus(booking.booking_status) ? (
+                  <BookingPayment
+                    role="client"
+                    bookingId={booking.booking_id}
+                    payment={bookingPayments.get(booking.booking_id)}
+                    onChanged={load}
+                  />
+                ) : null}
 
                 {/*
                   Rating (BL-01B-UI). Client → assigned Worker only, and only
