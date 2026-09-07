@@ -84,9 +84,18 @@ export function isPaid(p: BookingPayment | undefined): boolean {
  * Human label for a chosen method. An online method is labelled rather than
  * hidden so a future PayMongo Booking reads correctly here instead of looking
  * like an error, but this piece offers no control for one.
+ *
+ * DISPLAY WORDING DIFFERS FROM THE STORED VALUE ON PURPOSE
+ * --------------------------------------------------------
+ * Users read "Cash Payment"; the database, the two RPCs and every predicate in
+ * this module still speak `cod`. That is not drift to be tidied up: the stored
+ * value is a locked contract (`bookings_payment_method_check`,
+ * `select_my_booking_cod`, `confirm_my_cod_payment_received`) and renaming it
+ * to match a label would be a migration, not a copy change. This table is the
+ * one place the two vocabularies meet.
  */
 const METHOD_LABEL: Record<PaymentMethod, string> = {
-  cod: 'Cash on Delivery',
+  cod: 'Cash Payment',
   gcash: 'GCash',
   maya: 'Maya',
 };
@@ -132,7 +141,7 @@ const ALREADY = 'SM403';
 
 export const COPY = {
   heading: 'Payment',
-  selectCod: 'Select COD',
+  selectCod: 'Select Cash Payment',
   selecting: 'Selecting…',
   confirmCash: 'Confirm Cash Received',
   confirming: 'Confirming…',
@@ -143,7 +152,7 @@ export const COPY = {
   methodLine: (label: string) => `Payment method: ${label}`,
   notSelected: 'No payment method selected yet.',
   /** Covers every collapsed SM409 cause without asserting which applies. */
-  selectConflict: 'This booking cannot use COD right now.',
+  selectConflict: 'This booking cannot use Cash Payment right now.',
   confirmConflict: 'This cash payment cannot be confirmed.',
   /** SM403 — safe to be specific: the caller is the proven assigned Worker. */
   alreadyConfirmed: 'Payment has already been confirmed.',
