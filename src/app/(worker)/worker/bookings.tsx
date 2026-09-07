@@ -22,6 +22,7 @@ import {
   toNullableText,
   toNumber,
 } from '@/lib/bookings';
+import { isLifecycleActionableStatus } from '@/lib/booking-lifecycle';
 import {
   BookingPayment as BookingPaymentState,
   fetchBookingPayments,
@@ -30,24 +31,33 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 
+import BookingLifecycle from '@/components/booking-lifecycle';
 import BookingPayment from '@/components/booking-payment';
 
 /**
- * Worker "My Bookings" = READ-ONLY history of the Bookings this Worker holds
- * (N11-UI).
+ * Worker "My Bookings" = the Bookings this Worker holds, listed in full history
+ * (N11-UI), with the one lifecycle control BL-01A-UI adds.
  *
  * The ONLY data source is the hosted RPC `public.list_my_worker_bookings()`,
  * called with ZERO arguments. The Worker identity comes from `auth.uid()`
  * inside that SECURITY DEFINER function, so there is no worker id to pass and
  * none that could be substituted to view someone else's Bookings.
  *
- * THE LIST ITSELF STAYS READ-ONLY
- * -------------------------------
- * `public.bookings` has NO INSERT and NO UPDATE policy (N9 removed both), so
- * nothing on this screen changes Booking LIFECYCLE state: there is no cancel,
- * complete, no-show or rate control, and offering one would imply an action
- * this screen cannot perform. BL-01A added the two lifecycle RPCs server-side,
- * but no UI calls them yet; that remains a separate piece.
+ * THE LIST STAYS SERVER-AUTHORITATIVE
+ * -----------------------------------
+ * `public.bookings` has NO INSERT and NO UPDATE policy (N9 removed both), so no
+ * direct Booking write exists on this screen and none could be added. BL-01A-UI
+ * offers exactly ONE lifecycle transition to the Worker, through its narrow
+ * SECURITY DEFINER RPC: on a CONFIRMED Booking the assigned Worker may cancel
+ * (`cancel_my_booking()`), which either participant may do.
+ *
+ * THE WORKER CANNOT COMPLETE
+ * --------------------------
+ * `complete_my_client_booking()` requires an active Client who OWNS the
+ * Booking and refuses the assigned Worker outright, so no completion control is
+ * rendered here in any status. That is not cosmetic: it is what stops a Worker
+ * declaring their own job finished and unlocking payment. No no-show, strike,
+ * rematching or reopen control exists here either.
  *
  * BL-01D adds the one write this screen does perform, and it changes no
  * lifecycle column: on a COMPLETED Booking the Client chose Cash on Delivery,
@@ -166,7 +176,7 @@ async function loadWorkerBookings(): Promise<WorkerBooking[]> {
 const COPY = {
   suppressedContact: 'Client contact is not available for this booking status.',
   loading: 'Loading your bookings…',
-  intro: 'Jobs booked to you. This list is read-only.',
+  intro: 'Jobs booked to you.',
 } as const;
 
 export default function WorkerBookings() {
@@ -362,6 +372,20 @@ export default function WorkerBookings() {
                 ) : (
                   <Text style={styles.suppressed}>{COPY.suppressedContact}</Text>
                 )}
+
+                {/*
+                  Lifecycle actions (BL-01A-UI). Offered only while the Booking
+                  is CONFIRMED, and for the Worker that means Cancel alone —
+                  the component renders no completion control for this role at
+                  any status. Every terminal status renders nothing here.
+                */}
+                {isLifecycleActionableStatus(booking.booking_status) ? (
+                  <BookingLifecycle
+                    role="worker"
+                    bookingId={booking.booking_id}
+                    onChanged={load}
+                  />
+                ) : null}
 
                 {/*
                   COD payment (BL-01D-UI). The assigned Worker is the only

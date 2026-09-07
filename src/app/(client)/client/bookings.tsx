@@ -27,6 +27,7 @@ import {
   toNumber,
   toStringArrayOrNull,
 } from '@/lib/bookings';
+import { isLifecycleActionableStatus } from '@/lib/booking-lifecycle';
 import {
   BookingPayment as BookingPaymentState,
   fetchBookingPayments,
@@ -36,24 +37,32 @@ import { COPY as RATING_COPY, fetchMyRatedBookingIds, isRateableStatus } from '@
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 
+import BookingLifecycle from '@/components/booking-lifecycle';
 import BookingPayment from '@/components/booking-payment';
 import RateWorker from '@/components/rate-worker';
 
 /**
- * Client "My Bookings" = READ-ONLY history of the Bookings this Client owns
- * (N11-UI).
+ * Client "My Bookings" = the Bookings this Client owns, listed in full history
+ * (N11-UI), with the lifecycle controls BL-01A-UI adds.
  *
  * The ONLY data source is the hosted RPC `public.list_my_client_bookings()`,
  * called with ZERO arguments. The Client identity comes from `auth.uid()`
  * inside that SECURITY DEFINER function, so there is no client id to pass and
  * none that could be substituted to view someone else's Bookings.
  *
- * THE LIST ITSELF STAYS READ-ONLY
- * -------------------------------
- * `public.bookings` has NO INSERT and NO UPDATE policy, so nothing on this
- * screen changes Booking state: there is no cancel, complete, no-show or pay
- * control. BL-01A added the two lifecycle RPCs server-side, but no UI calls
- * them yet; that remains a separate piece.
+ * THE LIST STAYS SERVER-AUTHORITATIVE
+ * -----------------------------------
+ * `public.bookings` has NO INSERT and NO UPDATE policy, so no direct Booking
+ * write exists anywhere on this screen and none could be added. BL-01A-UI
+ * offers the two lifecycle transitions through their narrow SECURITY DEFINER
+ * RPCs instead: on a CONFIRMED Booking the Client may mark it completed
+ * (`complete_my_client_booking()`, Client-only — the assigned Worker cannot)
+ * or cancel it (`cancel_my_booking()`, available to either participant).
+ * Each takes the Booking id and nothing else, and after either call the list
+ * is re-read rather than patched locally, so the rendered state is always the
+ * server's. No no-show, strike, rematching or reopen control exists here.
+ *
+ * Completion means THE SERVICE IS FINISHED, not that payment was received.
  *
  * BL-01B adds the one write this screen does perform, and it does not touch
  * `bookings`: on a COMPLETED Booking the Client may submit a single immutable
@@ -189,7 +198,7 @@ async function loadClientBookings(): Promise<ClientBooking[]> {
 const COPY = {
   suppressedWorker: 'Worker details are not available for this booking status.',
   loading: 'Loading your bookings…',
-  intro: 'Workers booked to your jobs. This list is read-only.',
+  intro: 'Workers booked to your jobs.',
 } as const;
 
 export default function ClientBookings() {
@@ -418,6 +427,22 @@ export default function ClientBookings() {
                 ) : (
                   <Text style={styles.suppressed}>{COPY.suppressedWorker}</Text>
                 )}
+
+                {/*
+                  Lifecycle actions (BL-01A-UI). Offered only while the Booking
+                  is CONFIRMED — every terminal status renders nothing here, so
+                  a completed or cancelled Booking carries no control that could
+                  re-open it. Completion is the Client's alone; cancellation is
+                  available to either participant. Both go through the narrow
+                  RPCs and are followed by an authoritative reload.
+                */}
+                {isLifecycleActionableStatus(booking.booking_status) ? (
+                  <BookingLifecycle
+                    role="client"
+                    bookingId={booking.booking_id}
+                    onChanged={load}
+                  />
+                ) : null}
 
                 {/*
                   COD payment (BL-01D-UI). Offered only after completion, per
