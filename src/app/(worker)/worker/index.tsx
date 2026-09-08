@@ -10,6 +10,8 @@ import {
   View,
 } from 'react-native';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 
@@ -37,6 +39,22 @@ const AVAILABILITY_OPTIONS: { value: AvailabilityStatus; label: string }[] = [
   { value: 'offline', label: 'Offline' },
 ];
 
+/**
+ * Read-only chip styling for the availability mirror in the header. Keyed by
+ * the same three enum values the editor writes -- there is no fourth state and
+ * no boolean shorthand.
+ */
+const AVAILABILITY_CHIP: Record<AvailabilityStatus, object> = {
+  available: { backgroundColor: '#f0fdf4' },
+  busy: { backgroundColor: '#fffbeb' },
+  offline: { backgroundColor: '#f1f5f9' },
+};
+const AVAILABILITY_CHIP_TEXT: Record<AvailabilityStatus, object> = {
+  available: { color: '#166534' },
+  busy: { color: '#b45309' },
+  offline: { color: '#475569' },
+};
+
 const PROFICIENCY_OPTIONS: { value: Proficiency; label: string }[] = [
   { value: 'beginner', label: 'Beginner' },
   { value: 'intermediate', label: 'Intermediate' },
@@ -62,12 +80,34 @@ type LoadedState = {
   selection: SkillSelection;
 };
 
+/**
+ * Every message this screen can put in front of a Worker.
+ *
+ * The raw PostgREST/Postgres text is developer diagnostic only: it names
+ * tables, policies and constraints, and an RLS refusal reads as gibberish to
+ * the person holding the phone. Each failure logs its real cause through
+ * `console.warn` and throws one of these instead, so the catch blocks below
+ * can keep re-throwing without ever carrying database text into state.
+ */
+const COPY = {
+  loadSkills: "Couldn't load the skill list. Please try again.",
+  loadProfile: "Couldn't load your profile. Please try again.",
+  loadWorkerSkills: "Couldn't load your skills. Please try again.",
+  loadGeneric: "Couldn't load your profile. Please try again.",
+  saveProfile: "Couldn't save your profile. Please try again.",
+  saveSkills: "Couldn't save your skills. Please try again.",
+  saveGeneric: "Couldn't save your changes. Please try again.",
+} as const;
+
 async function loadWorkerData(userId: string): Promise<LoadedState> {
   const skillsRes = await supabase
     .from('skills')
     .select('id, skill_name')
     .order('skill_name', { ascending: true });
-  if (skillsRes.error) throw new Error(`Could not load skills: ${skillsRes.error.message}`);
+  if (skillsRes.error) {
+    console.warn('[N6-UI] skills read failed:', skillsRes.error.code, skillsRes.error.message);
+    throw new Error(COPY.loadSkills);
+  }
   const skills: MasterSkill[] = (skillsRes.data ?? []).filter(
     (s): s is MasterSkill => typeof s.id === 'string' && typeof s.skill_name === 'string'
   );
@@ -78,7 +118,8 @@ async function loadWorkerData(userId: string): Promise<LoadedState> {
     .eq('user_id', userId)
     .maybeSingle();
   if (profileRes.error) {
-    throw new Error(`Could not load your profile: ${profileRes.error.message}`);
+    console.warn('[N6-UI] profile read failed:', profileRes.error.code, profileRes.error.message);
+    throw new Error(COPY.loadProfile);
   }
 
   if (!profileRes.data) {
@@ -91,7 +132,12 @@ async function loadWorkerData(userId: string): Promise<LoadedState> {
     .select('skill_id, proficiency_level')
     .eq('worker_id', profileId);
   if (skillRowsRes.error) {
-    throw new Error(`Could not load your skills: ${skillRowsRes.error.message}`);
+    console.warn(
+      '[N6-UI] worker_skills read failed:',
+      skillRowsRes.error.code,
+      skillRowsRes.error.message
+    );
+    throw new Error(COPY.loadWorkerSkills);
   }
   const selection: SkillSelection = {};
   for (const row of skillRowsRes.data ?? []) {
@@ -115,6 +161,9 @@ export default function WorkerHome() {
   const { account } = useAccount();
   const router = useRouter();
   const userId = account?.id;
+  // This route hides the navigation header, so nothing else reserves the
+  // status-bar area. Without this the identity line renders under the clock.
+  const insets = useSafeAreaInsets();
 
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -153,7 +202,7 @@ export default function WorkerHome() {
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        setLoadError(e instanceof Error ? e.message : 'Could not load your profile.');
+        setLoadError(e instanceof Error ? e.message : COPY.loadGeneric);
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -207,7 +256,12 @@ export default function WorkerHome() {
           .select('id')
           .single();
         if (ins.error || !ins.data?.id) {
-          throw new Error(`Profile could not be created: ${ins.error?.message ?? 'no id'}`);
+          console.warn(
+            '[N6-UI] profile insert failed:',
+            ins.error?.code,
+            ins.error?.message ?? 'no id returned'
+          );
+          throw new Error(COPY.saveProfile);
         }
         currentProfileId = String(ins.data.id);
         setProfileId(currentProfileId);
@@ -217,7 +271,10 @@ export default function WorkerHome() {
           .update({ bio: bioValue, availability_status: availability })
           .eq('id', currentProfileId)
           .eq('user_id', userId);
-        if (upd.error) throw new Error(`Profile could not be updated: ${upd.error.message}`);
+        if (upd.error) {
+          console.warn('[N6-UI] profile update failed:', upd.error.code, upd.error.message);
+          throw new Error(COPY.saveProfile);
+        }
       }
 
       // 2. Skills: diff desired vs persisted; touch only necessary own rows.
@@ -233,7 +290,10 @@ export default function WorkerHome() {
           .delete()
           .eq('worker_id', currentProfileId)
           .in('skill_id', removed);
-        if (del.error) throw new Error(`Skill removal failed: ${del.error.message}`);
+        if (del.error) {
+          console.warn('[N6-UI] skill delete failed:', del.error.code, del.error.message);
+          throw new Error(COPY.saveSkills);
+        }
       }
       for (const skillId of changed) {
         const upd = await supabase
@@ -241,7 +301,10 @@ export default function WorkerHome() {
           .update({ proficiency_level: selection[skillId] })
           .eq('worker_id', currentProfileId)
           .eq('skill_id', skillId);
-        if (upd.error) throw new Error(`Skill update failed: ${upd.error.message}`);
+        if (upd.error) {
+          console.warn('[N6-UI] skill update failed:', upd.error.code, upd.error.message);
+          throw new Error(COPY.saveSkills);
+        }
       }
       if (added.length > 0) {
         const ins = await supabase.from('worker_skills').insert(
@@ -251,7 +314,10 @@ export default function WorkerHome() {
             proficiency_level: selection[skillId],
           }))
         );
-        if (ins.error) throw new Error(`Skill save failed: ${ins.error.message}`);
+        if (ins.error) {
+          console.warn('[N6-UI] skill insert failed:', ins.error.code, ins.error.message);
+          throw new Error(COPY.saveSkills);
+        }
       }
 
       // 3. Re-read persisted state; only then report success.
@@ -260,7 +326,7 @@ export default function WorkerHome() {
       setSaveSuccess('Profile saved.');
     } catch (e: unknown) {
       setSaveError(
-        (e instanceof Error ? e.message : 'Save failed.') +
+        (e instanceof Error ? e.message : COPY.saveGeneric) +
           ' Some changes may not have been saved — please review and try again.'
       );
     } finally {
@@ -285,116 +351,120 @@ export default function WorkerHome() {
   const busy = isSaving || isSigningOut;
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <Text style={styles.heading}>My Profile</Text>
+    <ScrollView
+      contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
+      keyboardShouldPersistTaps="handled"
+    >
+      {/*
+        This route sets `headerShown: false`, so the identity block below is
+        the screen's title. It leads with the Worker's own name rather than a
+        page label -- the profile editor further down keeps the "My Profile"
+        section title, so nothing is lost by removing the duplicate heading.
 
-      <View style={styles.card}>
-        <Text style={styles.label}>Name</Text>
-        <Text style={styles.value}>{account?.full_name ?? '—'}</Text>
-        <Text style={styles.label}>Location</Text>
-        <Text style={styles.value}>
+        Identity header. Location is the fixed deployment constant and is shown
+        as a muted line, never as an input. Availability is MIRRORED here from
+        the same state the editor below writes -- this is a read-only chip, so
+        the save path keeps exactly one control and one source of truth.
+        Verification is deliberately absent: this screen does not read
+        `is_verified`, and inventing a badge for it would be a claim the data
+        does not support.
+      */}
+      <View style={styles.identity}>
+        <Text style={styles.identityLocation}>
           {account ? `${account.barangay}, ${account.city}` : '—'}
         </Text>
+        <Text style={styles.identityName}>{account?.full_name ?? '—'}</Text>
+        {!isLoading && !loadError ? (
+          <View style={[styles.statusChip, AVAILABILITY_CHIP[availability]]}>
+            <Text style={[styles.statusChipText, AVAILABILITY_CHIP_TEXT[availability]]}>
+              {AVAILABILITY_OPTIONS.find((o) => o.value === availability)?.label ?? '—'}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+
+      {/*
+        Job Opportunities is the Worker's reason to open the app, so it is the
+        one filled primary on this screen. The route lives inside the already
+        protected (worker) group and needs no guard of its own.
+      */}
+      <Pressable
+        style={[styles.primaryCard, busy && styles.buttonDisabled]}
+        onPress={() => router.push('/worker/opportunities')}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.primaryCardTitle}>Job Opportunities</Text>
+        <Text style={styles.primaryCardHint}>Jobs that match your skills — you choose</Text>
+      </Pressable>
+
+      {/*
+        My Bookings is the second destination by weight: outlined and full
+        width, above the profile-load switch so it stays reachable even when
+        the profile read fails. The two screens have separate data sources and
+        one must not hide the other. Same reasoning applies to every tile
+        below.
+      */}
+      <Pressable
+        style={[styles.wideTile, busy && styles.buttonDisabled]}
+        onPress={() => router.push('/worker/bookings')}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.tileTitle}>My Bookings</Text>
+        <Text style={styles.tileHint}>Jobs you accepted</Text>
+      </Pressable>
+
+      {/*
+        The remaining four destinations, at equal and quieter weight. Every
+        route is unchanged -- this is presentation only.
+      */}
+      <View style={styles.tileGrid}>
+        <Pressable
+          style={[styles.tile, busy && styles.buttonDisabled]}
+          onPress={() => router.push('/worker/notifications')}
+          disabled={busy}
+          accessibilityRole="button"
+        >
+          <Text style={styles.tileTitle}>Notifications</Text>
+          <Text style={styles.tileHint}>Updates for you</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.tile, busy && styles.buttonDisabled]}
+          onPress={() => router.push('/worker/skill-gap')}
+          disabled={busy}
+          accessibilityRole="button"
+        >
+          <Text style={styles.tileTitle}>Skill Gap</Text>
+          <Text style={styles.tileHint}>What a job still needs</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.tile, busy && styles.buttonDisabled]}
+          onPress={() => router.push('/worker/resume')}
+          disabled={busy}
+          accessibilityRole="button"
+        >
+          <Text style={styles.tileTitle}>Resume Builder</Text>
+          <Text style={styles.tileHint}>Make a PDF resume</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.tile, busy && styles.buttonDisabled]}
+          onPress={() => router.push('/worker/help')}
+          disabled={busy}
+          accessibilityRole="button"
+        >
+          <Text style={styles.tileTitle}>Help &amp; FAQ</Text>
+          <Text style={styles.tileHint}>Common questions</Text>
+        </Pressable>
+      </View>
+
+      <Text style={styles.sectionTitle}>My Profile</Text>
+      <View style={styles.card}>
         <Text style={styles.label}>Phone</Text>
         <Text style={styles.value}>{account?.phone ?? '—'}</Text>
         <Text style={styles.label}>Email</Text>
         <Text style={styles.value}>{account?.email ?? '—'}</Text>
       </View>
-
-      {/*
-        Entry point to the read-only N8-UI opportunity list. The route lives
-        inside the already-protected (worker) group, so it needs no guard of
-        its own.
-      */}
-      <Pressable
-        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
-        onPress={() => router.push('/worker/opportunities')}
-        disabled={busy}
-        accessibilityRole="button"
-      >
-        <Text style={styles.secondaryButtonText}>Job Opportunities</Text>
-      </Pressable>
-
-      {/*
-        Entry point to the read-only N11-UI Booking list — a sibling of Job
-        Opportunities, not a replacement for it. Same protected (worker) group,
-        so it needs no guard of its own. Placed above the profile-load switch
-        so it stays reachable even when the profile read fails: the two screens
-        have separate data sources and one must not hide the other.
-      */}
-      <Pressable
-        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
-        onPress={() => router.push('/worker/bookings')}
-        disabled={busy}
-        accessibilityRole="button"
-      >
-        <Text style={styles.secondaryButtonText}>My Bookings</Text>
-      </Pressable>
-
-      {/*
-        Entry point to the N12-UI Notifications inbox — added alongside Job
-        Opportunities and My Bookings, replacing neither. Same protected
-        (worker) group, and placed above the profile-load switch so it stays
-        reachable even when the profile read fails; notifications come from a
-        different source and must not be hidden by an unrelated failure.
-      */}
-      <Pressable
-        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
-        onPress={() => router.push('/worker/notifications')}
-        disabled={busy}
-        accessibilityRole="button"
-      >
-        <Text style={styles.secondaryButtonText}>Notifications</Text>
-      </Pressable>
-
-      {/*
-        Entry point to the AI-01 Help & FAQ screen — added alongside the
-        existing entries, replacing none of them. Same protected (worker)
-        group, so it needs no guard of its own. Placed above the load switch
-        because the FAQ reads no account or server data at all and must stay
-        reachable regardless of any load failure.
-      */}
-      <Pressable
-        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
-        onPress={() => router.push('/worker/help')}
-        disabled={busy}
-        accessibilityRole="button"
-      >
-        <Text style={styles.secondaryButtonText}>Help &amp; FAQ</Text>
-      </Pressable>
-
-      {/*
-        Entry point to the AI-02 Auto Resume Builder. Worker-only: it reads the
-        Worker's own profile, skills and portfolio and has no Client or Admin
-        counterpart. Same protected (worker) group, so it needs no guard of
-        its own, and placed above the load switch like its siblings so it is
-        reachable regardless of this screen's own profile-load outcome.
-      */}
-      <Pressable
-        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
-        onPress={() => router.push('/worker/resume')}
-        disabled={busy}
-        accessibilityRole="button"
-      >
-        <Text style={styles.secondaryButtonText}>Resume Builder</Text>
-      </Pressable>
-
-      {/*
-        Entry point to the AI-03 Skill Gap screen. Worker-only: it compares
-        the Worker's own saved skills against their own current Job
-        Opportunities (the zero-argument opportunity RPC) and has no Client or
-        Admin counterpart. Informational only -- not a matching factor. Same
-        protected (worker) group and same placement rationale as its siblings.
-      */}
-      <Pressable
-        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
-        onPress={() => router.push('/worker/skill-gap')}
-        disabled={busy}
-        accessibilityRole="button"
-      >
-        <Text style={styles.secondaryButtonText}>Skill Gap</Text>
-      </Pressable>
-
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator />
@@ -531,10 +601,76 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 16,
   },
-  heading: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
+  identity: {
+    gap: 4,
+    paddingBottom: 4,
+  },
+  identityLocation: {
+    fontSize: 13,
+    opacity: 0.6,
+  },
+  identityName: {
+    fontSize: 26,
+    fontWeight: '700',
+  },
+  statusChip: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 2,
+  },
+  statusChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  primaryCard: {
+    backgroundColor: '#1d4ed8',
+    borderRadius: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    gap: 4,
+  },
+  primaryCardTitle: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  primaryCardHint: {
+    color: '#dbeafe',
+    fontSize: 13,
+  },
+  tileGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  tile: {
+    flexGrow: 1,
+    flexBasis: '46%',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    gap: 2,
+  },
+  wideTile: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    gap: 2,
+  },
+  tileTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1d4ed8',
+  },
+  tileHint: {
+    fontSize: 12,
+    opacity: 0.6,
   },
   card: {
     borderWidth: 1,

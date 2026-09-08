@@ -42,6 +42,19 @@ import BookingPayment from '@/components/booking-payment';
 import RateWorker from '@/components/rate-worker';
 
 /**
+ * Status band tint, keyed by the Booking statuses the schema actually has.
+ * Semantic only -- it never doubles as the app accent, and there is no entry
+ * for a state that does not exist.
+ */
+const STATUS_BAND: Record<string, { backgroundColor: string }> = {
+  confirmed: { backgroundColor: '#eff6ff' },
+  completed: { backgroundColor: '#f0fdf4' },
+  cancelled: { backgroundColor: '#f1f5f9' },
+  no_show: { backgroundColor: '#f1f5f9' },
+  pending: { backgroundColor: '#f1f5f9' },
+};
+
+/**
  * Client "My Bookings" = the Bookings this Client owns, listed in full history
  * (N11-UI), with the lifecycle controls BL-01A-UI adds.
  *
@@ -371,10 +384,28 @@ export default function ClientBookings() {
 
             return (
               <View key={booking.booking_id} style={styles.card}>
+                {/*
+                  Status band. The Booking's state is the first thing the card
+                  says, because it decides everything below it: which contact
+                  data is released, which lifecycle action exists, whether
+                  payment or rating is offered. The supporting line is chosen
+                  from values already loaded -- nothing new is fetched.
+                */}
+                <View style={[styles.statusBand, STATUS_BAND[booking.booking_status]]}>
+                  <Text style={styles.statusEyebrow}>STATUS</Text>
+                  <Text style={styles.statusWord}>
+                    {formatBookingStatus(booking.booking_status)}
+                  </Text>
+                  {booking.booking_status === 'confirmed' && schedule ? (
+                    <Text style={styles.statusSupport}>{schedule}</Text>
+                  ) : booking.booking_status === 'completed' && completedAt ? (
+                    <Text style={styles.statusSupport}>Completed {completedAt}</Text>
+                  ) : booking.booking_status === 'cancelled' ? (
+                    <Text style={styles.statusSupport}>This booking was cancelled.</Text>
+                  ) : null}
+                </View>
+
                 <Text style={styles.cardTitle}>{booking.job_title}</Text>
-                <Text style={styles.status}>
-                  Status: {formatBookingStatus(booking.booking_status)}
-                </Text>
 
                 {booking.job_description ? (
                   <Text style={styles.cardLine}>{booking.job_description}</Text>
@@ -539,11 +570,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.8,
   },
-  status: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1d4ed8',
-    marginBottom: 2,
+  statusBand: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+    gap: 1,
+  },
+  statusEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    opacity: 0.65,
+  },
+  statusWord: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  statusSupport: {
+    fontSize: 13,
+    opacity: 0.8,
   },
   sectionTitle: {
     fontSize: 15,

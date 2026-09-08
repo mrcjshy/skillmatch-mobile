@@ -239,18 +239,30 @@ export default function BookingPayment({
               <Text style={styles.line}>{COPY.awaitingClient}</Text>
             ) : isAwaitingQrph(payment) ? (
               <>
+                {/*
+                  TEST MODE is stated for the WHOLE pending QR Ph state, not
+                  only when a QR image happens to be loaded. It sits above the
+                  code so it is read before anyone lifts a phone to scan, and
+                  it cannot be scrolled past on the way to the QR. The copy
+                  itself is unchanged.
+                */}
+                <View style={styles.testBanner}>
+                  <Text style={styles.testTitle}>{COPY.testModeTitle}</Text>
+                  <Text style={styles.testBody}>{COPY.testModeBody}</Text>
+                </View>
+
                 <Text style={styles.line}>{COPY.awaitingQrphClient}</Text>
 
                 {qr !== null && qr.qr_image !== null ? (
                   <>
-                    <Image
-                      style={styles.qr}
-                      source={{ uri: qr.qr_image }}
-                      resizeMode="contain"
-                      accessibilityLabel="QR Ph payment code"
-                    />
-                    <Text style={styles.testTitle}>{COPY.testModeTitle}</Text>
-                    <Text style={styles.testBody}>{COPY.testModeBody}</Text>
+                    <View style={styles.qrPlate}>
+                      <Image
+                        style={styles.qr}
+                        source={{ uri: qr.qr_image }}
+                        resizeMode="contain"
+                        accessibilityLabel="QR Ph payment code"
+                      />
+                    </View>
                     {qr.test_url !== null ? (
                       <Pressable
                         style={[styles.button, isBusy ? styles.buttonDisabled : null]}
@@ -386,16 +398,33 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  qr: {
+  qrPlate: {
     marginTop: 8,
-    width: 220,
-    height: 220,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 12,
+    padding: 12,
     alignSelf: 'flex-start',
   },
-  testTitle: {
+  qr: {
+    width: 248,
+    height: 248,
+  },
+  testBanner: {
     marginTop: 8,
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#f59e0b',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 2,
+  },
+  testTitle: {
     fontSize: 13,
     fontWeight: '700',
+    letterSpacing: 0.6,
     color: '#b45309',
   },
   testBody: {

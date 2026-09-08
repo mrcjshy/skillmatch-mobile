@@ -2,6 +2,8 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -78,12 +80,34 @@ function formatSchedule(iso: string | null): string {
   )}:${pad(dt.getMinutes())}`;
 }
 
+/**
+ * Every message this screen can put in front of a Client.
+ *
+ * Raw PostgREST/Postgres text names tables, policies and constraints and is
+ * developer diagnostic only; each failure logs its real cause through
+ * `console.warn` and throws one of these instead. The post-failure catch
+ * still appends its own partial-save sentence, which is deliberate and must
+ * survive: a job row can exist without its required skills.
+ */
+const COPY = {
+  loadSkills: "Couldn't load the skill list. Please try again.",
+  loadJobs: "Couldn't load your jobs. Please try again.",
+  loadJobSkills: "Couldn't load your jobs. Please try again.",
+  loadGeneric: "Couldn't load your dashboard. Please try again.",
+  postJob: "Couldn't post your job. Please try again.",
+  postSkills: "Couldn't save the job's required skills. Please try again.",
+  postGeneric: "Couldn't post your job. Please try again.",
+} as const;
+
 async function loadSkills(): Promise<MasterSkill[]> {
   const res = await supabase
     .from('skills')
     .select('id, skill_name')
     .order('skill_name', { ascending: true });
-  if (res.error) throw new Error(`Could not load skills: ${res.error.message}`);
+  if (res.error) {
+    console.warn('[N7-UI] skills read failed:', res.error.code, res.error.message);
+    throw new Error(COPY.loadSkills);
+  }
   return (res.data ?? []).filter(
     (s): s is MasterSkill => typeof s.id === 'string' && typeof s.skill_name === 'string'
   );
@@ -95,7 +119,10 @@ async function loadMyJobs(clientId: string): Promise<PostedJob[]> {
     .select('id, title, status, scheduled_at, budget')
     .eq('client_id', clientId)
     .order('created_at', { ascending: false });
-  if (jobsRes.error) throw new Error(`Could not load your jobs: ${jobsRes.error.message}`);
+  if (jobsRes.error) {
+    console.warn('[N7-UI] job_postings read failed:', jobsRes.error.code, jobsRes.error.message);
+    throw new Error(COPY.loadJobs);
+  }
 
   const jobs = jobsRes.data ?? [];
   if (jobs.length === 0) return [];
@@ -108,7 +135,8 @@ async function loadMyJobs(clientId: string): Promise<PostedJob[]> {
       jobs.map((j) => String(j.id))
     );
   if (skillsRes.error) {
-    throw new Error(`Could not load job skills: ${skillsRes.error.message}`);
+    console.warn('[N7-UI] job_skills read failed:', skillsRes.error.code, skillsRes.error.message);
+    throw new Error(COPY.loadJobSkills);
   }
 
   const byJob = new Map<string, string[]>();
@@ -172,7 +200,7 @@ export default function ClientHome() {
     refresh(clientId)
       .catch((e: unknown) => {
         if (cancelled) return;
-        setLoadError(e instanceof Error ? e.message : 'Could not load your dashboard.');
+        setLoadError(e instanceof Error ? e.message : COPY.loadGeneric);
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -247,7 +275,12 @@ export default function ClientHome() {
         .select('id')
         .single();
       if (ins.error || !ins.data?.id) {
-        throw new Error(`Job could not be posted: ${ins.error?.message ?? 'no id returned'}`);
+        console.warn(
+          '[N7-UI] job_postings insert failed:',
+          ins.error?.code,
+          ins.error?.message ?? 'no id returned'
+        );
+        throw new Error(COPY.postJob);
       }
       createdJobId = String(ins.data.id);
 
@@ -256,7 +289,12 @@ export default function ClientHome() {
         .from('job_skills')
         .insert(chosen.map((skill_id) => ({ job_id: createdJobId, skill_id })));
       if (skillIns.error) {
-        throw new Error(`Required skills could not be saved: ${skillIns.error.message}`);
+        console.warn(
+          '[N7-UI] job_skills insert failed:',
+          skillIns.error.code,
+          skillIns.error.message
+        );
+        throw new Error(COPY.postSkills);
       }
 
       // 3. Re-read persisted state; only then report success.
@@ -270,7 +308,7 @@ export default function ClientHome() {
       setBudgetText('');
       setSelectedSkills([]);
     } catch (e: unknown) {
-      const base = e instanceof Error ? e.message : 'Job posting failed.';
+      const base = e instanceof Error ? e.message : COPY.postGeneric;
       setPostError(
         createdJobId
           ? `${base} The job was created but the post did not finish, so it may be saved without its required skills. Please review "My Posted Jobs" before trying again.`
@@ -305,7 +343,20 @@ export default function ClientHome() {
   const busy = isPosting || isSigningOut;
 
   return (
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      {/*
+        The fixed service area, stated once at the top of the screen. Putting
+        it here rather than beside Address is what stops the two from being
+        confused: this is context for everything below, and the Address field
+        is the only place the Client types a location.
+      */}
+      <Text style={styles.serviceArea}>
+        {DEPLOYMENT_BARANGAY}, {DEPLOYMENT_CITY} · SkillMatch service area
+      </Text>
       <Text style={styles.heading}>Post a Job</Text>
 
       {/*
@@ -397,11 +448,21 @@ export default function ClientHome() {
             editable={!busy}
             accessibilityLabel="Address"
           />
+          <Text style={styles.help}>Where in the service area the work happens.</Text>
 
+          {/*
+            Location is the fixed deployment constant, not an input. It is
+            given a locked row rather than a field so it cannot read as
+            something the Client forgot to fill in. Address above is the only
+            location the Client types.
+          */}
           <Text style={styles.label}>Location</Text>
-          <Text style={styles.value}>
-            {DEPLOYMENT_BARANGAY}, {DEPLOYMENT_CITY}
-          </Text>
+          <View style={styles.lockedRow} accessibilityLabel="Location, fixed service area">
+            <Text style={styles.lockedValue}>
+              {DEPLOYMENT_BARANGAY}, {DEPLOYMENT_CITY}
+            </Text>
+            <Text style={styles.lockedTag}>Fixed</Text>
+          </View>
 
           <Text style={styles.label}>Scheduled Date (YYYY-MM-DD)</Text>
           <TextInput
@@ -425,16 +486,24 @@ export default function ClientHome() {
             accessibilityLabel="Scheduled Time"
           />
 
+          {/*
+            The peso glyph is decoration outside the input, so `budgetText`
+            and its validation are untouched -- the Client still types digits
+            only and the submitted value is unchanged.
+          */}
           <Text style={styles.label}>Budget</Text>
-          <TextInput
-            style={styles.input}
-            value={budgetText}
-            onChangeText={setBudgetText}
-            placeholder="e.g. 800"
-            keyboardType="numeric"
-            editable={!busy}
-            accessibilityLabel="Budget"
-          />
+          <View style={styles.inputWithPrefix}>
+            <Text style={styles.inputPrefix}>₱</Text>
+            <TextInput
+              style={styles.inputPrefixed}
+              value={budgetText}
+              onChangeText={setBudgetText}
+              placeholder="800"
+              keyboardType="numeric"
+              editable={!busy}
+              accessibilityLabel="Budget in pesos"
+            />
+          </View>
 
           <Text style={styles.label}>Required Skills</Text>
           {skills.length === 0 ? (
@@ -513,14 +582,67 @@ export default function ClientHome() {
       </Pressable>
       {signOutError ? <Text style={styles.error}>{signOutError}</Text> : null}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   container: {
     padding: 24,
     gap: 10,
     paddingBottom: 48,
+  },
+  serviceArea: {
+    fontSize: 13,
+    opacity: 0.6,
+  },
+  help: {
+    fontSize: 12,
+    opacity: 0.6,
+    marginTop: -4,
+  },
+  lockedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  lockedValue: {
+    fontSize: 16,
+    color: '#334155',
+    flexShrink: 1,
+  },
+  lockedTag: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  inputWithPrefix: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    paddingLeft: 12,
+  },
+  inputPrefix: {
+    fontSize: 16,
+    color: '#6b7280',
+  },
+  inputPrefixed: {
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    fontSize: 16,
   },
   center: {
     alignItems: 'center',

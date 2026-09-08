@@ -138,28 +138,39 @@ export default function BookingLifecycle({
     <View style={styles.section}>
       <Text style={styles.heading}>{COPY.heading}</Text>
 
-      {/* Client only. The Worker branch below never renders this control. */}
+      {/*
+        Client only. The Worker branch below never renders this control.
+
+        Completion is the Client's one mutation on a confirmed Booking, so it
+        is the filled primary here. The Worker sees no primary at all rather
+        than a manufactured one -- there is no Worker action in this state.
+      */}
       {role === 'client' ? (
         <Pressable
-          style={[styles.button, isBusy ? styles.buttonDisabled : null]}
+          style={[styles.primaryButton, isBusy ? styles.buttonDisabled : null]}
           onPress={promptComplete}
           disabled={isBusy}
           accessibilityRole="button"
         >
-          <Text style={styles.buttonText}>
+          <Text style={styles.primaryButtonText}>
             {busyAction === 'complete' ? COPY.completing : COPY.complete}
           </Text>
         </Pressable>
       ) : null}
 
-      {/* Offered to both participants. */}
+      {/*
+        Offered to both participants, and deliberately the quietest control on
+        the card: cancelling is terminal and never rematches, so it must not
+        sit at the same weight as the action the participant actually came to
+        perform. The confirmation dialog is unchanged.
+      */}
       <Pressable
-        style={[styles.button, styles.cancelButton, isBusy ? styles.buttonDisabled : null]}
+        style={[styles.cancelButton, isBusy ? styles.buttonDisabled : null]}
         onPress={promptCancel}
         disabled={isBusy}
         accessibilityRole="button"
       >
-        <Text style={[styles.buttonText, styles.cancelButtonText]}>
+        <Text style={styles.cancelButtonText}>
           {busyAction === 'cancel' ? COPY.cancelling : COPY.cancel}
         </Text>
       </Pressable>
@@ -180,28 +191,31 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  button: {
+  primaryButton: {
     marginTop: 8,
-    borderWidth: 1,
-    borderColor: '#1d4ed8',
-    borderRadius: 6,
-    paddingVertical: 8,
+    backgroundColor: '#1d4ed8',
+    borderRadius: 10,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    alignSelf: 'flex-start',
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
   },
   buttonDisabled: {
     opacity: 0.5,
   },
-  buttonText: {
-    color: '#1d4ed8',
-    fontSize: 15,
-    fontWeight: '600',
-  },
   cancelButton: {
-    borderColor: '#b91c1c',
+    marginTop: 10,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
   },
   cancelButtonText: {
     color: '#b91c1c',
+    fontSize: 14,
+    fontWeight: '600',
   },
   spinner: {
     alignSelf: 'flex-start',
