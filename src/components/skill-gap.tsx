@@ -12,6 +12,12 @@ import {
   SkillRef,
   WorkerSkillRef,
 } from '@/lib/skill-gap';
+import {
+  createGuidanceRunner,
+  guidanceOwnerKey,
+  GuidanceState,
+  SKILL_GAP_GUIDANCE_COPY,
+} from '@/lib/skill-gap-guidance';
 import { useAccount } from '@/providers/account-provider';
 
 /**
@@ -27,8 +33,8 @@ import { useAccount } from '@/providers/account-provider';
  * computed by `computeSkillGap` in src/lib/skill-gap.ts -- a set difference
  * on `skill_id`. Nothing here decides anything: the Jobs come from the trusted
  * zero-argument opportunity RPC, the Worker is the authenticated account, and
- * the gap is arithmetic. There is no AI section; that is a separate piece and
- * nothing on this screen pretends otherwise.
+ * the gap is arithmetic. Optional guidance is requested separately and can
+ * only explain the already-rendered result.
  *
  * WHAT IT DOES NOT DO
  * -------------------
@@ -268,7 +274,17 @@ export default function SkillGap() {
           </Pressable>
         </View>
       ) : (
-        <GapEquation required={current.required} mine={currentBase.mySkills} />
+        <GapEquation
+          required={current.required}
+          mine={currentBase.mySkills}
+          guidanceKey={guidanceOwnerKey({
+            accountId: currentBase.accountId,
+            jobId: selectedJob.jobId,
+            baseRetry: retryToken,
+            requirementsRetry: requirementsToken,
+          })}
+          jobId={selectedJob.jobId}
+        />
       )}
     </ScrollView>
   );
@@ -290,7 +306,17 @@ function describeOpportunity(o: GapOpportunity): string | null {
  * The equation. `computeSkillGap` normalizes both sides, so this component
  * renders exactly what the pure function returns and adds nothing.
  */
-function GapEquation({ required, mine }: { required: SkillRef[]; mine: WorkerSkillRef[] }) {
+function GapEquation({
+  required,
+  mine,
+  guidanceKey,
+  jobId,
+}: {
+  required: SkillRef[];
+  mine: WorkerSkillRef[];
+  guidanceKey: string;
+  jobId: string;
+}) {
   const gap = computeSkillGap(required, mine);
 
   if (gap.requiredSkills.length === 0) {
@@ -361,7 +387,79 @@ function GapEquation({ required, mine }: { required: SkillRef[]; mine: WorkerSki
           </>
         )}
       </View>
+
+      <GuidanceSection
+        key={guidanceKey}
+        jobId={jobId}
+        missingSkillNames={gap.missingSkills.map((skill) => skill.name)}
+      />
     </>
+  );
+}
+
+/**
+ * Optional, explicit guidance for exactly one keyed deterministic context.
+ * The `key` this is mounted under is owned by account + Job + both AI-03 Retry
+ * generations, so any change to those remounts this subtree and the guidance
+ * starts idle again. Within one owner, the runner enforces the rest: unmount
+ * disposes it, so a late result cannot emit into a replaced owner, and a press
+ * while a request is in flight is ignored.
+ *
+ * Nothing here can change the equation above; it is a subordinate explanation
+ * of an already-rendered deterministic result, and its failure is local.
+ */
+function GuidanceSection({
+  jobId,
+  missingSkillNames,
+}: {
+  jobId: string;
+  missingSkillNames: readonly string[];
+}) {
+  const [state, setState] = useState<GuidanceState>({ kind: 'idle' });
+  const [runner] = useState(() =>
+    createGuidanceRunner({
+      jobId,
+      missingSkillNames,
+      // The deterministic zero-gap sentence is reused, never restated.
+      zeroGapCopy: SKILL_GAP_COPY.zeroGap,
+    })
+  );
+
+  useEffect(() => () => runner.dispose(), [runner]);
+
+  const requestGuidance = useCallback(() => runner.request(setState), [runner]);
+
+  return (
+    <View style={[styles.card, styles.guidanceCard]}>
+      <Text style={styles.cardTitle}>{SKILL_GAP_GUIDANCE_COPY.title}</Text>
+
+      {state.kind === 'idle' ? (
+        <Pressable style={styles.button} onPress={requestGuidance} accessibilityRole="button">
+          <Text style={styles.buttonText}>{SKILL_GAP_GUIDANCE_COPY.get}</Text>
+        </Pressable>
+      ) : state.kind === 'loading' ? (
+        <View style={styles.guidanceLoading}>
+          <ActivityIndicator />
+          <Text style={styles.note}>{SKILL_GAP_GUIDANCE_COPY.loading}</Text>
+        </View>
+      ) : state.kind === 'error' ? (
+        <>
+          <Text style={styles.error}>{SKILL_GAP_GUIDANCE_COPY.unavailable}</Text>
+          <Pressable style={styles.button} onPress={requestGuidance} accessibilityRole="button">
+            <Text style={styles.buttonText}>{SKILL_GAP_GUIDANCE_COPY.retry}</Text>
+          </Pressable>
+        </>
+      ) : (
+        <>
+          <Text style={styles.guidanceText}>{state.guidance}</Text>
+          <Text style={styles.muted}>
+            {state.source === 'deterministic'
+              ? SKILL_GAP_GUIDANCE_COPY.deterministicSource
+              : SKILL_GAP_GUIDANCE_COPY.geminiSource}
+          </Text>
+        </>
+      )}
+    </View>
   );
 }
 
@@ -420,6 +518,19 @@ const styles = StyleSheet.create({
   cardMissing: {
     borderColor: '#f59e0b',
     backgroundColor: '#fffbeb',
+  },
+  guidanceCard: {
+    marginTop: 4,
+    backgroundColor: '#f8fafc',
+  },
+  guidanceLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  guidanceText: {
+    fontSize: 14,
+    lineHeight: 20,
   },
   cardTitle: {
     fontSize: 13,
