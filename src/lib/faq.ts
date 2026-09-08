@@ -79,7 +79,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'account',
     question: 'Paano mag-register sa SkillMatch?',
     answer:
-      'Buksan ang app at piliin ang Register. Piliin kung Worker ka o Client, tapos i-fill up ang buong pangalan, email, phone, barangay at city. Pagkatapos, mag-log in gamit ang email at password mo.',
+      'Buksan ang app at piliin ang Register. I-fill up ang Full Name, Phone, Email, Password, at Confirm Password, tapos piliin kung Worker ka o Client. Kapag successful ang registration, diretso ka na sa app at hindi na kailangang mag-log in ulit. Ang barangay at city ay naka-set na sa Santa Ana, Pateros, kaya hindi na ito hinihingi sa registration.',
     keywords: ['register', 'sign up', 'signup', 'gumawa', 'account', 'bago', 'paano magsimula', 'magparehistro'],
   },
   {
@@ -149,7 +149,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'job-posting',
     question: 'Paano mag-post ng trabaho?',
     answer:
-      'Sa Client dashboard, gamitin ang Post a Job form: ilagay ang title, description, location, date at time, budget, at piliin ang kailangang skills. Pagka-post, magiging open ito para sa mga qualified Worker.',
+      'Sa Client dashboard, gamitin ang Post a Job form: ilagay ang title, description, address, date at time, budget, at piliin ang kailangang skills. Pagka-post, magiging open ito para sa mga qualified Worker.',
     keywords: ['post', 'mag-post', 'trabaho', 'job', 'gumawa ng trabaho', 'client', 'budget', 'hire'],
   },
   {
