@@ -379,6 +379,22 @@ export default function WorkerHome() {
         <Text style={styles.secondaryButtonText}>Resume Builder</Text>
       </Pressable>
 
+      {/*
+        Entry point to the AI-03 Skill Gap screen. Worker-only: it compares
+        the Worker's own saved skills against their own current Job
+        Opportunities (the zero-argument opportunity RPC) and has no Client or
+        Admin counterpart. Informational only -- not a matching factor. Same
+        protected (worker) group and same placement rationale as its siblings.
+      */}
+      <Pressable
+        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+        onPress={() => router.push('/worker/skill-gap')}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>Skill Gap</Text>
+      </Pressable>
+
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator />
