@@ -38,10 +38,11 @@
 
 import { supabase } from '@/lib/supabase';
 
-/** The three values `bookings_payment_method_check` permits. Only `cod` is
- *  reachable pre-defense; the other two exist so the UI can recognise a future
- *  online Booking and stay out of its way. */
-export type PaymentMethod = 'cod' | 'gcash' | 'maya';
+/** The values `bookings_payment_method_check` permits. `cod` and `qrph` are
+ *  both reachable; `gcash` and `maya` exist only so the UI can recognise a
+ *  future online Booking and stay out of its way -- PM-01D ships no control
+ *  for either, and PM-01C settles `qrph` server-side. */
+export type PaymentMethod = 'cod' | 'gcash' | 'maya' | 'qrph';
 
 /** The three values `bookings_payment_status_check` permits. `refunded` is a
  *  schema value no code path currently produces. */
@@ -75,6 +76,27 @@ export function isAwaitingCash(p: BookingPayment | undefined): boolean {
   return p !== undefined && p.payment_method === 'cod' && p.payment_status === 'pending';
 }
 
+/**
+ * QR Ph chosen, provider has not settled yet. Deliberately separate from
+ * `isAwaitingCash`: the two methods award completely different controls, and
+ * one predicate covering both is exactly how cash wording would leak onto a
+ * QR Ph card. Neither role may confirm this state by hand -- only the
+ * provider webhook (PM-01C) moves it to paid.
+ */
+export function isAwaitingQrph(p: BookingPayment | undefined): boolean {
+  return p !== undefined && p.payment_method === 'qrph' && p.payment_status === 'pending';
+}
+
+/** Settled, and settled by cash. Gates the cash-specific paid wording. */
+export function isPaidCod(p: BookingPayment | undefined): boolean {
+  return p !== undefined && p.payment_method === 'cod' && p.payment_status === 'paid';
+}
+
+/** Settled, and settled through the provider. Never says "cash received". */
+export function isPaidQrph(p: BookingPayment | undefined): boolean {
+  return p !== undefined && p.payment_method === 'qrph' && p.payment_status === 'paid';
+}
+
 /** Settled. Terminal pre-defense: there is no reversal or refund path. */
 export function isPaid(p: BookingPayment | undefined): boolean {
   return p !== undefined && p.payment_status === 'paid';
@@ -98,6 +120,7 @@ const METHOD_LABEL: Record<PaymentMethod, string> = {
   cod: 'Cash Payment',
   gcash: 'GCash',
   maya: 'Maya',
+  qrph: 'QR Ph',
 };
 
 export function formatPaymentMethod(method: PaymentMethod | null): string | null {
@@ -160,6 +183,31 @@ export const COPY = {
   generic: 'Something went wrong. Please try again.',
   /** The transition IS committed; only the follow-up read failed. */
   refreshFailed: 'That worked, but the list could not be refreshed. Pull down to refresh.',
+
+  /* ---------------- PM-01D — QR Ph ---------------- */
+  /** Shown when a method is still open to the Client. The Worker keeps
+   *  `notSelected`, which explains an absent control rather than inviting
+   *  a choice the Worker is not allowed to make. */
+  chooseMethod: 'Choose a payment method.',
+  selectQrph: 'QR Ph',
+  starting: 'Starting…',
+  showQr: 'Show / Refresh QR',
+  refreshingQr: 'Refreshing…',
+  openTestPage: 'Open PayMongo Test Payment',
+  refreshStatus: 'Refresh Payment Status',
+  checking: 'Checking…',
+  /** Method-specific on purpose: never the cash wording. */
+  awaitingQrphClient: 'Status: Awaiting payment confirmation',
+  awaitingQrphWorker: 'Awaiting QR Ph payment confirmation.',
+  paidQrph: 'Status: Paid — QR Ph',
+  /** Neutral, not an error: reconciliation answered, it is simply not settled. */
+  stillPending: 'Payment is still pending.',
+  testModeTitle: 'TEST MODE',
+  testModeBody:
+    'Do not scan this QR with GCash, Maya, or a banking app. Use the PayMongo test payment page for the demo.',
+  /** Collapsed provider-side conflict; asserts nothing about the cause. */
+  qrphConflict: 'This booking cannot use QR Ph right now.',
+  providerUnavailable: 'Payment provider is temporarily unavailable.',
 } as const;
 
 /** Raw backend text never reaches the screen; only the code decides the copy. */
@@ -178,11 +226,30 @@ export function confirmErrorCopy(e: unknown): string {
   return COPY.generic;
 }
 
+/**
+ * Edge Function codes, not SQLSTATEs. `booking_unavailable` is the collapsed
+ * conflict both QR Ph functions return for "no such Booking", "not yours",
+ * "not completed" and "not eligible", so the copy must not claim which.
+ * Anything unrecognised falls through to the generic line rather than
+ * surfacing a provider or server string.
+ */
+export function qrphErrorCopy(e: unknown): string {
+  const code = e instanceof PaymentError ? e.code : null;
+  if (code === 'booking_unavailable') return COPY.qrphConflict;
+  if (code === 'provider_unavailable' || code === 'server_misconfigured') {
+    return COPY.providerUnavailable;
+  }
+  if (code === 'forbidden' || code === 'unauthenticated' || code === FORBIDDEN) {
+    return COPY.forbidden;
+  }
+  return COPY.generic;
+}
+
 /* ------------------------------------------------------------------ *
  * Row coercion — never trust a row's shape.
  * ------------------------------------------------------------------ */
 
-const METHODS: readonly string[] = ['cod', 'gcash', 'maya'];
+const METHODS: readonly string[] = ['cod', 'gcash', 'maya', 'qrph'];
 const STATUSES: readonly string[] = ['pending', 'paid', 'refunded'];
 
 function toMethod(v: unknown): PaymentMethod | null {
@@ -267,4 +334,140 @@ export async function confirmCashReceived(bookingId: string): Promise<void> {
   if (res.error) {
     throw new PaymentError(res.error.message || 'The request failed.', res.error.code ?? null);
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * PM-01D — QR Ph
+ *
+ * Two Edge Functions, ONE input each. `initiate-qrph-payment` and
+ * `reconcile-qrph-payment` both take a Booking id and nothing else, so this
+ * module -- like the COD pair above -- has no way to assert an amount, a
+ * currency, a provider status or a Payment Intent. The Client cannot claim
+ * `paid`; only the signed provider webhook can (PM-01C).
+ *
+ * The Payment Intent reference is deliberately absent from both response
+ * types. The app never receives it, never stores it and never displays it.
+ * ------------------------------------------------------------------ */
+
+/**
+ * `qr_image` and `test_url` are TRANSIENT. They belong in component state for
+ * as long as the code is on screen and nowhere else: never logged, never
+ * persisted to AsyncStorage or SecureStore, never written to disk, never
+ * rendered as text and never folded into an error message.
+ */
+export type QrphInitiation = {
+  booking_id: string;
+  amount_centavos: number;
+  currency: 'PHP';
+  payment_status: PaymentStatus;
+  provider_status: string;
+  qr_image: string | null;
+  test_url: string | null;
+};
+
+export type QrphReconciliation = {
+  booking_id: string;
+  payment_status: PaymentStatus;
+  settled: boolean;
+};
+
+/**
+ * The Edge Functions answer a non-2xx with `{ error: { code, message } }`.
+ * Only the code is kept -- the message is provider- or server-authored text
+ * that must never reach the screen.
+ */
+async function edgeErrorCode(error: unknown): Promise<string | null> {
+  const ctx = (error as { context?: unknown } | null)?.context as
+    | { json?: () => Promise<unknown> }
+    | undefined;
+  if (ctx === undefined || typeof ctx.json !== 'function') return null;
+  try {
+    const body = (await ctx.json()) as { error?: { code?: unknown } } | null;
+    const code = body?.error?.code;
+    return typeof code === 'string' ? code : null;
+  } catch {
+    return null;
+  }
+}
+
+async function invokeQrph(fn: string, bookingId: string): Promise<unknown> {
+  const res = await supabase.functions.invoke(fn, {
+    // The ONLY business input. No amount, currency, payment_method,
+    // payment_status, provider_status, client_id, paymongo_ref or Payment
+    // Intent id is sent: every one of those is the server's to derive.
+    body: { booking_id: bookingId },
+  });
+  if (res.error) {
+    throw new PaymentError('The request failed.', await edgeErrorCode(res.error));
+  }
+  return res.data;
+}
+
+/** Accepts a number or a numeric string; anything else is malformed. */
+function toCentavos(v: unknown): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : Number.NaN;
+  return Number.isInteger(n) && n > 0 ? n : Number.NaN;
+}
+
+/**
+ * A response that does not match the contract is rejected outright rather
+ * than partially rendered, so a malformed or unexpected provider value can
+ * never reach the UI.
+ */
+function toQrphInitiation(bookingId: string, data: unknown): QrphInitiation | null {
+  if (typeof data !== 'object' || data === null) return null;
+  const d = data as Record<string, unknown>;
+  const amount = toCentavos(d.amount_centavos);
+  const status = toStatus(d.payment_status);
+  if (d.booking_id !== bookingId) return null;
+  if (Number.isNaN(amount)) return null;
+  if (d.currency !== 'PHP') return null;
+  if (status === null) return null;
+  if (typeof d.provider_status !== 'string') return null;
+  return {
+    booking_id: bookingId,
+    amount_centavos: amount,
+    currency: 'PHP',
+    payment_status: status,
+    provider_status: d.provider_status,
+    qr_image: typeof d.qr_image === 'string' && d.qr_image !== '' ? d.qr_image : null,
+    test_url: typeof d.test_url === 'string' && d.test_url !== '' ? d.test_url : null,
+  };
+}
+
+function toQrphReconciliation(bookingId: string, data: unknown): QrphReconciliation | null {
+  if (typeof data !== 'object' || data === null) return null;
+  const d = data as Record<string, unknown>;
+  const status = toStatus(d.payment_status);
+  if (d.booking_id !== bookingId) return null;
+  if (status === null) return null;
+  if (typeof d.settled !== 'boolean') return null;
+  return { booking_id: bookingId, payment_status: status, settled: d.settled };
+}
+
+/**
+ * Client asks for a QR Ph code. Also the RESUME path: called again for a
+ * Booking already bound to a Payment Intent, the server returns a fresh code
+ * on the SAME Intent rather than creating a second one (proven hosted,
+ * PM-01B). The app neither knows nor needs the Intent id for that.
+ */
+export async function initiateQrph(bookingId: string): Promise<QrphInitiation> {
+  const parsed = toQrphInitiation(bookingId, await invokeQrph('initiate-qrph-payment', bookingId));
+  if (parsed === null) throw new PaymentError('Malformed payment response.', 'malformed_response');
+  return parsed;
+}
+
+/**
+ * Client refreshes payment state. This cannot settle anything the provider
+ * has not already settled: the function re-reads the Payment Intent from
+ * PayMongo itself and returns `settled: false` for an already-paid Booking
+ * (proven hosted, PM-01C). One tap, one call -- there is no polling here.
+ */
+export async function reconcileQrph(bookingId: string): Promise<QrphReconciliation> {
+  const parsed = toQrphReconciliation(
+    bookingId,
+    await invokeQrph('reconcile-qrph-payment', bookingId)
+  );
+  if (parsed === null) throw new PaymentError('Malformed payment response.', 'malformed_response');
+  return parsed;
 }
