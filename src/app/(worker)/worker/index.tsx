@@ -347,6 +347,22 @@ export default function WorkerHome() {
         <Text style={styles.secondaryButtonText}>Notifications</Text>
       </Pressable>
 
+      {/*
+        Entry point to the AI-01 Help & FAQ screen — added alongside the
+        existing entries, replacing none of them. Same protected (worker)
+        group, so it needs no guard of its own. Placed above the load switch
+        because the FAQ reads no account or server data at all and must stay
+        reachable regardless of any load failure.
+      */}
+      <Pressable
+        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+        onPress={() => router.push('/worker/help')}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>Help &amp; FAQ</Text>
+      </Pressable>
+
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator />
