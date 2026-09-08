@@ -363,6 +363,22 @@ export default function WorkerHome() {
         <Text style={styles.secondaryButtonText}>Help &amp; FAQ</Text>
       </Pressable>
 
+      {/*
+        Entry point to the AI-02 Auto Resume Builder. Worker-only: it reads the
+        Worker's own profile, skills and portfolio and has no Client or Admin
+        counterpart. Same protected (worker) group, so it needs no guard of
+        its own, and placed above the load switch like its siblings so it is
+        reachable regardless of this screen's own profile-load outcome.
+      */}
+      <Pressable
+        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+        onPress={() => router.push('/worker/resume')}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>Resume Builder</Text>
+      </Pressable>
+
       {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator />
