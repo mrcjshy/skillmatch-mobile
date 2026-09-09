@@ -41,6 +41,7 @@
  * in a bio become markup.
  */
 
+import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import type { AccountRecord } from '@/providers/account-provider';
 
@@ -344,11 +345,11 @@ export function buildResumeHtml(m: ResumeModel): string {
   @page { size: A4; margin: 18mm 16mm; }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #111; font-size: 11pt; line-height: 1.45; margin: 0; }
-  header { border-bottom: 2px solid #1d4ed8; padding-bottom: 8pt; margin-bottom: 14pt; }
+  header { border-bottom: 2px solid ${SkillMatchTheme.brand.primary}; padding-bottom: 8pt; margin-bottom: 14pt; }
   h1 { font-size: 22pt; margin: 0 0 4pt; letter-spacing: 0.2pt; }
   .contact { font-size: 10pt; color: #333; }
   .contact span + span::before { content: " \\00a0|\\00a0 "; color: #999; }
-  h2 { font-size: 12.5pt; text-transform: uppercase; letter-spacing: 0.8pt; color: #1d4ed8; margin: 14pt 0 6pt; border-bottom: 1px solid #ddd; padding-bottom: 3pt; }
+  h2 { font-size: 12.5pt; text-transform: uppercase; letter-spacing: 0.8pt; color: ${SkillMatchTheme.brand.primary}; margin: 14pt 0 6pt; border-bottom: 1px solid #ddd; padding-bottom: 3pt; }
   h3 { font-size: 11.5pt; margin: 8pt 0 2pt; }
   p { margin: 0 0 6pt; }
   ul { margin: 0; padding-left: 0; list-style: none; }

@@ -1,6 +1,7 @@
 import { Link, Redirect } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { SkillMatchTheme } from '@/constants/theme';
 import { useSession } from '@/providers/session-provider';
 
 export default function NotFoundScreen() {
@@ -37,7 +38,7 @@ const styles = StyleSheet.create({
   },
   link: {
     fontSize: 18,
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     padding: 4,
   },
 });

@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 
+import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 import {
@@ -196,7 +197,7 @@ export default function WorkerProfile() {
 const styles = StyleSheet.create({
   container: { padding: 24, gap: 12, paddingBottom: 48 },
   center: { alignItems: 'center', gap: 8, paddingVertical: 16 },
-  card: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, padding: 12, gap: 2 },
+  card: { borderWidth: 1, borderColor: SkillMatchTheme.border.default, borderRadius: SkillMatchTheme.radius.card, padding: SkillMatchTheme.spacing.cardPadding, gap: SkillMatchTheme.spacing.cardGap, backgroundColor: SkillMatchTheme.surface.default },
   label: { fontSize: 12, fontWeight: '600', opacity: 0.6, marginTop: 6 },
   value: { fontSize: 16 },
   sectionTitle: { fontSize: 16, fontWeight: '600', marginTop: 8 },
@@ -227,10 +228,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     alignItems: 'center',
   },
-  chipSelected: { borderColor: '#1d4ed8', backgroundColor: '#dbeafe' },
+  chipSelected: { borderColor: SkillMatchTheme.brand.primary, backgroundColor: SkillMatchTheme.brand.primaryMuted },
   chipText: { fontSize: 16 },
   chipTextSmall: { fontSize: 14 },
-  chipTextSelected: { color: '#1d4ed8', fontWeight: '600' },
+  chipTextSelected: { color: SkillMatchTheme.brand.primary, fontWeight: '600' },
   skillBlock: { gap: 8, marginBottom: 4 },
   skillToggle: {
     borderWidth: 1,
@@ -243,7 +244,7 @@ const styles = StyleSheet.create({
   success: { color: '#15803d', fontSize: 14 },
   button: {
     marginTop: 8,
-    backgroundColor: '#1d4ed8',
+    backgroundColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 12,
     alignItems: 'center',
@@ -251,12 +252,12 @@ const styles = StyleSheet.create({
   secondaryButton: {
     marginTop: 16,
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 10,
     alignItems: 'center',
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
-  secondaryButtonText: { color: '#1d4ed8', fontSize: 16, fontWeight: '600' },
+  secondaryButtonText: { color: SkillMatchTheme.brand.primary, fontSize: 16, fontWeight: '600' },
 });

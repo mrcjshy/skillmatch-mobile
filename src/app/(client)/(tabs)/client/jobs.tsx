@@ -1,15 +1,11 @@
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { formatCardDateTime } from '@/lib/date-time';
+import { SkillMatchTheme } from '@/constants/theme';
 import { useClientJobs } from '@/providers/client-jobs-provider';
 
 function formatSchedule(iso: string | null): string {
-  if (!iso) return 'No schedule';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return 'No schedule';
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
-    date.getHours()
-  )}:${pad(date.getMinutes())}`;
+  return formatCardDateTime(iso) ?? 'No schedule';
 }
 
 export default function ClientJobs() {
@@ -49,7 +45,7 @@ const styles = StyleSheet.create({
   container: { padding: 24, gap: 12, paddingBottom: 48 },
   center: { alignItems: 'center', gap: 8, paddingVertical: 16 },
   note: { fontSize: 14, opacity: 0.7 },
-  card: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, padding: 12, gap: 2 },
+  card: { borderWidth: 1, borderColor: SkillMatchTheme.border.default, borderRadius: SkillMatchTheme.radius.card, padding: SkillMatchTheme.spacing.cardPadding, gap: SkillMatchTheme.spacing.cardGap, backgroundColor: SkillMatchTheme.surface.default },
   cardTitle: { fontSize: 16, fontWeight: '600' },
   cardLine: { fontSize: 14, opacity: 0.8 },
   error: { color: '#b91c1c', fontSize: 14 },

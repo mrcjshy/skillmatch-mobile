@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { StarRatingInput } from '@/components/star-rating-input';
+import { SkillMatchTheme } from '@/constants/theme';
 import {
   COPY,
   RATING_COMMENT_MAX,
-  RATING_SCORES,
   RatingScore,
   remainingCommentCharacters,
   submitErrorCopy,
@@ -114,26 +115,7 @@ export default function RateWorker({ bookingId, onRated }: { bookingId: string; 
       <Text style={styles.heading}>{COPY.heading}</Text>
 
       <Text style={styles.label}>{COPY.scoreLabel}</Text>
-      <View style={styles.scoreRow}>
-        {RATING_SCORES.map((value) => {
-          const selected = score === value;
-          return (
-            <Pressable
-              key={value}
-              style={[styles.scoreChip, selected ? styles.scoreChipSelected : null]}
-              onPress={() => setScore(value)}
-              disabled={isSubmitting}
-              accessibilityRole="button"
-              accessibilityLabel={`Score ${value} of 5`}
-              accessibilityState={{ selected }}
-            >
-              <Text style={[styles.scoreText, selected ? styles.scoreTextSelected : null]}>
-                {value}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <StarRatingInput value={score} onChange={setScore} disabled={isSubmitting} />
 
       <Text style={styles.label}>{COPY.commentLabel}</Text>
       <TextInput
@@ -181,14 +163,14 @@ const styles = StyleSheet.create({
   openButton: {
     marginTop: 12,
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 8,
     paddingHorizontal: 16,
     alignSelf: 'flex-start',
   },
   openButtonText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 15,
     fontWeight: '600',
   },
@@ -209,28 +191,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     opacity: 0.8,
-  },
-  scoreRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  scoreChip: {
-    borderWidth: 1,
-    borderColor: '#1d4ed8',
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  scoreChipSelected: {
-    backgroundColor: '#1d4ed8',
-  },
-  scoreText: {
-    color: '#1d4ed8',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  scoreTextSelected: {
-    color: '#ffffff',
   },
   input: {
     borderWidth: 1,
@@ -268,12 +228,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   cancelButtonText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 15,
     fontWeight: '600',
   },
   submitButton: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 20,

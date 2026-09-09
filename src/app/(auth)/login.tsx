@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/providers/session-provider';
 
@@ -206,7 +207,7 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 8,
-    backgroundColor: '#1d4ed8',
+    backgroundColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 12,
     alignItems: 'center',
@@ -222,7 +223,7 @@ const styles = StyleSheet.create({
   link: {
     marginTop: 16,
     fontSize: 15,
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     textAlign: 'center',
     padding: 4,
   },

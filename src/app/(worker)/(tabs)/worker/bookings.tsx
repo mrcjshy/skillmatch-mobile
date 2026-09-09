@@ -1,5 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
+import { SkillMatchTheme } from '@/constants/theme';
 import {
   ActivityIndicator,
   Pressable,
@@ -480,10 +481,11 @@ const styles = StyleSheet.create({
   },
   card: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    gap: 2,
+    borderColor: SkillMatchTheme.border.default,
+    borderRadius: SkillMatchTheme.radius.card,
+    padding: SkillMatchTheme.spacing.cardPadding,
+    gap: SkillMatchTheme.spacing.cardGap,
+    backgroundColor: SkillMatchTheme.surface.default,
   },
   cardTitle: {
     fontSize: 16,
@@ -531,28 +533,28 @@ const styles = StyleSheet.create({
   chatButton: {
     marginTop: 12,
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 8,
     paddingHorizontal: 16,
     alignSelf: 'flex-start',
   },
   chatButtonText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 15,
     fontWeight: '600',
   },
   secondaryButton: {
     marginTop: 16,
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 24,
     alignItems: 'center',
   },
   secondaryButtonText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 16,
     fontWeight: '600',
   },

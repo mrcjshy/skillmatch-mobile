@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 
 /**
@@ -70,7 +71,7 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 8,
-    backgroundColor: '#1d4ed8',
+    backgroundColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 24,

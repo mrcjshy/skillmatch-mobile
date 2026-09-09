@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { SkillMatchTheme } from '@/constants/theme';
 import { useAccount } from '@/providers/account-provider';
 import {
   AVAILABILITY_OPTIONS,
@@ -119,7 +120,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   contextTitle: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 17,
     fontWeight: '700',
   },
@@ -151,7 +152,7 @@ const styles = StyleSheet.create({
   tileTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
   },
   tileHint: {
     fontSize: 12,

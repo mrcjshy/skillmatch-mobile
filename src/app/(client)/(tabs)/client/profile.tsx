@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 
@@ -57,18 +58,18 @@ export default function ClientProfile() {
 
 const styles = StyleSheet.create({
   container: { padding: 24, gap: 12, paddingBottom: 48 },
-  card: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, padding: 12, gap: 2 },
+  card: { borderWidth: 1, borderColor: SkillMatchTheme.border.default, borderRadius: SkillMatchTheme.radius.card, padding: SkillMatchTheme.spacing.cardPadding, gap: SkillMatchTheme.spacing.cardGap, backgroundColor: SkillMatchTheme.surface.default },
   label: { fontSize: 12, fontWeight: '600', opacity: 0.6, marginTop: 6 },
   value: { fontSize: 16 },
   secondaryButton: {
     marginTop: 16,
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 10,
     alignItems: 'center',
   },
   buttonDisabled: { opacity: 0.6 },
-  secondaryButtonText: { color: '#1d4ed8', fontSize: 16, fontWeight: '600' },
+  secondaryButtonText: { color: SkillMatchTheme.brand.primary, fontSize: 16, fontWeight: '600' },
   error: { color: '#b91c1c', fontSize: 14 },
 });

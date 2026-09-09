@@ -7,6 +7,56 @@ import '@/global.css';
 
 import { Platform } from 'react-native';
 
+/** Role-neutral SkillMatch semantic design tokens for operational UI. */
+export const SkillMatchTheme = {
+  brand: {
+    background: '#F5F3EF',
+    primary: '#163300',
+    primaryPressed: '#0F2400',
+    primaryMuted: '#E4ECDF',
+  },
+  surface: {
+    default: '#FFFFFF',
+    subtle: '#F0EDE8',
+  },
+  border: {
+    default: '#E8E5DF',
+  },
+  text: {
+    primary: '#111827',
+    secondary: '#6B7280',
+    inverse: '#FFFFFF',
+  },
+  feedback: {
+    success: '#15803D',
+    warning: '#B45309',
+    danger: '#B91C1C',
+    info: '#1D4ED8',
+  },
+  status: {
+    open: '#1D4ED8',
+    confirmed: '#1D4ED8',
+    completed: '#15803D',
+    cancelled: '#B91C1C',
+    pending: '#B45309',
+    paid: '#15803D',
+  },
+  spacing: {
+    screenGutter: 16,
+    cardPadding: 16,
+    cardGap: 12,
+    sectionGap: 20,
+  },
+  radius: {
+    card: 16,
+    input: 12,
+  },
+  size: {
+    iconTarget: 44,
+    primaryCtaHeight: 52,
+  },
+} as const;
+
 export const Colors = {
   light: {
     text: '#000000',

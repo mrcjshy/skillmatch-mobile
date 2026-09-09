@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { SkillMatchTheme } from '@/constants/theme';
 import {
   entriesForCategories,
   FAQ_COPY,
@@ -238,14 +239,14 @@ const styles = StyleSheet.create({
   },
   choice: {
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 6,
     paddingHorizontal: 10,
     alignSelf: 'flex-start',
   },
   choiceText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -266,13 +267,13 @@ const styles = StyleSheet.create({
   },
   topicChip: {
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 16,
     paddingVertical: 6,
     paddingHorizontal: 12,
   },
   topicChipText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -293,7 +294,7 @@ const styles = StyleSheet.create({
   },
   askButton: {
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 16,
@@ -302,7 +303,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   askButtonText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 15,
     fontWeight: '600',
   },

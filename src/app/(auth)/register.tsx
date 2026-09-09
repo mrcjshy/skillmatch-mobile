@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 
 /**
@@ -304,14 +305,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   roleOptionSelected: {
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     backgroundColor: '#dbeafe',
   },
   roleOptionText: {
     fontSize: 16,
   },
   roleOptionTextSelected: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontWeight: '600',
   },
   error: {
@@ -324,7 +325,7 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 8,
-    backgroundColor: '#1d4ed8',
+    backgroundColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 12,
     alignItems: 'center',
@@ -340,7 +341,7 @@ const styles = StyleSheet.create({
   link: {
     marginTop: 16,
     fontSize: 15,
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     textAlign: 'center',
     padding: 4,
   },

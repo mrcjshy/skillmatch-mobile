@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 
+import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import {
   COPY,
@@ -330,13 +331,14 @@ const styles = StyleSheet.create({
   },
   card: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: SkillMatchTheme.border.default,
+    borderRadius: SkillMatchTheme.radius.card,
+    padding: SkillMatchTheme.spacing.cardPadding,
     gap: 4,
+    backgroundColor: SkillMatchTheme.surface.default,
   },
   cardUnread: {
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.feedback.info,
     backgroundColor: '#eff6ff',
   },
   cardDisabled: {
@@ -351,12 +353,12 @@ const styles = StyleSheet.create({
   cardLabel: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     flexShrink: 1,
   },
   unreadPill: {
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.feedback.info,
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -364,7 +366,7 @@ const styles = StyleSheet.create({
   unreadPillText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#1d4ed8',
+    color: SkillMatchTheme.feedback.info,
   },
   message: {
     fontSize: 15,
@@ -380,7 +382,7 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontSize: 13,
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     marginTop: 2,
   },
   markingRow: {
@@ -406,14 +408,14 @@ const styles = StyleSheet.create({
   secondaryButton: {
     marginTop: 16,
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 24,
     alignItems: 'center',
   },
   secondaryButtonText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 16,
     fontWeight: '600',
   },

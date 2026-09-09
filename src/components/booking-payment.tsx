@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { SkillMatchTheme } from '@/constants/theme';
 import {
   BookingPayment as BookingPaymentState,
   canSelectCod,
@@ -384,7 +385,7 @@ const styles = StyleSheet.create({
   button: {
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 8,
     paddingHorizontal: 16,
@@ -394,7 +395,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   buttonText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 15,
     fontWeight: '600',
   },

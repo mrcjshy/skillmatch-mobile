@@ -3,9 +3,10 @@ import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { Text, type ColorValue } from 'react-native';
 
 import { NotificationBell } from '@/components/notification-bell';
+import { SkillMatchTheme } from '@/constants/theme';
 import { ClientJobsProvider } from '@/providers/client-jobs-provider';
 
-const ACTIVE_COLOR = '#1d4ed8';
+const ACTIVE_COLOR = SkillMatchTheme.brand.primary;
 const INACTIVE_COLOR = '#64748b';
 
 function TabIcon({
@@ -41,6 +42,7 @@ export default function ClientTabsLayout() {
           headerRight: () => <NotificationBell role="client" />,
           tabBarActiveTintColor: ACTIVE_COLOR,
           tabBarInactiveTintColor: INACTIVE_COLOR,
+          sceneStyle: { backgroundColor: SkillMatchTheme.brand.background },
         }}
       >
         <Tabs.Screen

@@ -18,6 +18,8 @@ import {
   GuidanceState,
   SKILL_GAP_GUIDANCE_COPY,
 } from '@/lib/skill-gap-guidance';
+import { formatCardDateTime } from '@/lib/date-time';
+import { SkillMatchTheme } from '@/constants/theme';
 import { useAccount } from '@/providers/account-provider';
 
 /**
@@ -295,8 +297,7 @@ function describeOpportunity(o: GapOpportunity): string | null {
   const place = [o.barangay, o.city].filter((p): p is string => p !== null).join(', ');
   let when: string | null = null;
   if (o.scheduledAt !== null) {
-    const parsed = new Date(o.scheduledAt);
-    when = Number.isNaN(parsed.getTime()) ? null : parsed.toLocaleString();
+    when = formatCardDateTime(o.scheduledAt);
   }
   const parts = [place === '' ? null : place, when].filter((p): p is string => p !== null);
   return parts.length === 0 ? null : parts.join(' · ');
@@ -498,7 +499,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   pickerRowSelected: {
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.feedback.info,
     backgroundColor: '#eff6ff',
   },
   pickerTitle: {
@@ -506,7 +507,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   pickerTitleSelected: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.feedback.info,
   },
   card: {
     borderWidth: 1,
@@ -596,13 +597,13 @@ const styles = StyleSheet.create({
   },
   button: {
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
   buttonText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 15,
     fontWeight: '600',
   },

@@ -9,6 +9,7 @@ import {
   RESUME_COPY,
   ResumeModel,
 } from '@/lib/resume';
+import { SkillMatchTheme } from '@/constants/theme';
 import { useAccount } from '@/providers/account-provider';
 
 /**
@@ -302,19 +303,19 @@ const styles = StyleSheet.create({
   },
   button: {
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
   buttonText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 15,
     fontWeight: '600',
   },
   primaryButton: {
     marginTop: 8,
-    backgroundColor: '#1d4ed8',
+    backgroundColor: SkillMatchTheme.brand.primary,
     borderRadius: 8,
     paddingVertical: 14,
     alignItems: 'center',

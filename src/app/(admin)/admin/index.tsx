@@ -9,6 +9,8 @@ import {
   View,
 } from 'react-native';
 
+import { formatCardDateTime } from '@/lib/date-time';
+import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 
@@ -174,10 +176,7 @@ function formatLocation(barangay: string | null, city: string | null): string | 
  * for the same instant, which is the intended behaviour, not drift.
  */
 function formatRegisteredAt(iso: string | null): string | null {
-  if (iso === null) return null;
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toLocaleString();
+  return formatCardDateTime(iso);
 }
 
 /** Skills are rendered as received; an empty list is a state, not a hidden row. */
@@ -503,7 +502,7 @@ export default function AdminHome() {
         accessibilityRole="button"
       >
         {isSigningOut ? (
-          <ActivityIndicator color="#1d4ed8" />
+          <ActivityIndicator color={SkillMatchTheme.brand.primary} />
         ) : (
           <Text style={styles.secondaryButtonText}>Sign Out</Text>
         )}
@@ -535,10 +534,11 @@ const styles = StyleSheet.create({
   },
   card: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    gap: 2,
+    borderColor: SkillMatchTheme.border.default,
+    borderRadius: SkillMatchTheme.radius.card,
+    padding: SkillMatchTheme.spacing.cardPadding,
+    gap: SkillMatchTheme.spacing.cardGap,
+    backgroundColor: SkillMatchTheme.surface.default,
   },
   cardTitle: {
     fontSize: 16,
@@ -555,7 +555,7 @@ const styles = StyleSheet.create({
   },
   verifyButton: {
     marginTop: 10,
-    backgroundColor: '#1d4ed8',
+    backgroundColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 12,
     paddingHorizontal: 16,
@@ -577,21 +577,21 @@ const styles = StyleSheet.create({
   secondaryButton: {
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 24,
     alignItems: 'center',
   },
   secondaryButtonText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 16,
     fontWeight: '600',
   },
   signOutButton: {
     marginTop: 24,
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.feedback.info,
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 24,
@@ -611,7 +611,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0fdf4',
   },
   noticeInfo: {
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     backgroundColor: '#eff6ff',
   },
   noticeWarning: {

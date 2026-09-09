@@ -42,6 +42,7 @@
  * N11 established is not reopened through this screen.
  */
 
+import { formatCompactDateTime } from '@/lib/date-time';
 import { supabase } from '@/lib/supabase';
 
 /**
@@ -230,10 +231,7 @@ export function validationCopy(reason: 'empty' | 'too_long'): string {
  * what makes a device timezone change re-derive correctly on reload.
  */
 export function formatTimestamp(iso: string | null): string | null {
-  if (iso === null) return null;
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toLocaleString();
+  return formatCompactDateTime(iso);
 }
 
 /* ------------------------------------------------------------------ *

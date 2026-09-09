@@ -1,3 +1,5 @@
+import { formatCardDateTime } from '@/lib/date-time';
+
 /**
  * N11-UI shared Booking presentation contract.
  *
@@ -136,10 +138,7 @@ export function formatBudget(value: number | null): string | null {
  * Asia/Manila device.
  */
 export function formatTimestamp(iso: string | null): string | null {
-  if (iso === null) return null;
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toLocaleString();
+  return formatCardDateTime(iso);
 }
 
 /** Never renders "null, null" — drops absent parts and returns null if all are absent. */

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 
 import { BookingLoadError, formatBookingStatus } from '@/lib/bookings';
+import { SkillMatchTheme } from '@/constants/theme';
 import {
   canSendInStatus,
   COPY,
@@ -438,7 +439,7 @@ const styles = StyleSheet.create({
   status: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     marginBottom: 4,
   },
   note: {
@@ -514,7 +515,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   primaryButton: {
-    backgroundColor: '#1d4ed8',
+    backgroundColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 24,
@@ -531,14 +532,14 @@ const styles = StyleSheet.create({
   secondaryButton: {
     marginTop: 16,
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 24,
     alignItems: 'center',
   },
   secondaryButtonText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 16,
     fontWeight: '600',
   },

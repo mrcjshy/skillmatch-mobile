@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 
+import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
@@ -499,22 +500,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   chipSelected: {
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     backgroundColor: '#dbeafe',
   },
   chipText: {
     fontSize: 16,
   },
   chipTextSelected: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontWeight: '600',
   },
   card: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
-    gap: 2,
+    borderColor: SkillMatchTheme.border.default,
+    borderRadius: SkillMatchTheme.radius.card,
+    padding: SkillMatchTheme.spacing.cardPadding,
+    gap: SkillMatchTheme.spacing.cardGap,
+    backgroundColor: SkillMatchTheme.surface.default,
   },
   cardTitle: {
     fontSize: 16,
@@ -534,7 +536,7 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 10,
-    backgroundColor: '#1d4ed8',
+    backgroundColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 12,
     alignItems: 'center',
@@ -542,7 +544,7 @@ const styles = StyleSheet.create({
   secondaryButton: {
     marginTop: 20,
     borderWidth: 1,
-    borderColor: '#1d4ed8',
+    borderColor: SkillMatchTheme.brand.primary,
     borderRadius: 6,
     paddingVertical: 10,
     alignItems: 'center',
@@ -556,7 +558,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   secondaryButtonText: {
-    color: '#1d4ed8',
+    color: SkillMatchTheme.brand.primary,
     fontSize: 16,
     fontWeight: '600',
   },

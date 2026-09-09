@@ -1,3 +1,5 @@
+import { formatCompactDateTime } from '@/lib/date-time';
+
 /**
  * N12-UI shared Notification contract.
  *
@@ -83,10 +85,7 @@ export function isUnread(isRead: boolean | null): boolean {
  * held in state. `created_at` makes this screen a date/time surface.
  */
 export function formatTimestamp(iso: string | null): string | null {
-  if (iso === null) return null;
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toLocaleString();
+  return formatCompactDateTime(iso);
 }
 
 /* ------------------------------------------------------------------ *
