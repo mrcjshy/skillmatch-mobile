@@ -161,6 +161,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
     gap: 12,
+    backgroundColor: '#F5F3EF',
   },
   heading: {
     fontSize: 22,

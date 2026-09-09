@@ -2,6 +2,7 @@ import { Link } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -83,6 +84,14 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.brand}>
+        <Image
+          source={require('@/assets/images/skillmatch-logo.png')}
+          style={styles.brandLogo}
+          accessibilityIgnoresInvertColors
+        />
+        <Text style={styles.brandName}>SkillMatch</Text>
+      </View>
       <Text style={styles.heading}>Sign In</Text>
       <Text style={styles.status}>{sessionStatus}</Text>
 
@@ -146,6 +155,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
     gap: 12,
+  },
+  brand: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  brandLogo: {
+    width: 56,
+    height: 56,
+  },
+  brandName: {
+    color: '#163300',
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   heading: {
     fontSize: 22,

@@ -2,6 +2,7 @@ import { Link } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -120,6 +121,14 @@ export default function RegisterScreen() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.brand}>
+        <Image
+          source={require('@/assets/images/skillmatch-logo.png')}
+          style={styles.brandLogo}
+          accessibilityIgnoresInvertColors
+        />
+        <Text style={styles.brandName}>SkillMatch</Text>
+      </View>
       <Text style={styles.heading}>Create Account</Text>
 
       <View style={styles.form}>
@@ -246,6 +255,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
     gap: 12,
+  },
+  brand: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  brandLogo: {
+    width: 48,
+    height: 48,
+  },
+  brandName: {
+    color: '#163300',
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   heading: {
     fontSize: 22,
