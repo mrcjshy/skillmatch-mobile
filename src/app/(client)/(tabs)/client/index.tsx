@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -14,6 +14,7 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
+import { useClientJobs } from '@/providers/client-jobs-provider';
 
 /**
  * Client dashboard = "Post a Job" (defense-minimum slice).
@@ -31,17 +32,6 @@ import { useAccount } from '@/providers/account-provider';
 
 const DEPLOYMENT_BARANGAY = 'Santa Ana';
 const DEPLOYMENT_CITY = 'Pateros';
-
-type MasterSkill = { id: string; skill_name: string };
-
-type PostedJob = {
-  id: string;
-  title: string;
-  status: string;
-  scheduled_at: string | null;
-  budget: number | null;
-  skills: string[];
-};
 
 /** Strict YYYY-MM-DD + HH:MM -> local Date; null when invalid or rolled over. */
 function parseSchedule(dateText: string, timeText: string): Date | null {
@@ -70,16 +60,6 @@ function parseSchedule(dateText: string, timeText: string): Date | null {
   return dt;
 }
 
-function formatSchedule(iso: string | null): string {
-  if (!iso) return 'No schedule';
-  const dt = new Date(iso);
-  if (Number.isNaN(dt.getTime())) return 'No schedule';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(
-    dt.getHours()
-  )}:${pad(dt.getMinutes())}`;
-}
-
 /**
  * Every message this screen can put in front of a Client.
  *
@@ -90,86 +70,16 @@ function formatSchedule(iso: string | null): string {
  * survive: a job row can exist without its required skills.
  */
 const COPY = {
-  loadSkills: "Couldn't load the skill list. Please try again.",
-  loadJobs: "Couldn't load your jobs. Please try again.",
-  loadJobSkills: "Couldn't load your jobs. Please try again.",
-  loadGeneric: "Couldn't load your dashboard. Please try again.",
   postJob: "Couldn't post your job. Please try again.",
   postSkills: "Couldn't save the job's required skills. Please try again.",
   postGeneric: "Couldn't post your job. Please try again.",
 } as const;
 
-async function loadSkills(): Promise<MasterSkill[]> {
-  const res = await supabase
-    .from('skills')
-    .select('id, skill_name')
-    .order('skill_name', { ascending: true });
-  if (res.error) {
-    console.warn('[N7-UI] skills read failed:', res.error.code, res.error.message);
-    throw new Error(COPY.loadSkills);
-  }
-  return (res.data ?? []).filter(
-    (s): s is MasterSkill => typeof s.id === 'string' && typeof s.skill_name === 'string'
-  );
-}
-
-async function loadMyJobs(clientId: string): Promise<PostedJob[]> {
-  const jobsRes = await supabase
-    .from('job_postings')
-    .select('id, title, status, scheduled_at, budget')
-    .eq('client_id', clientId)
-    .order('created_at', { ascending: false });
-  if (jobsRes.error) {
-    console.warn('[N7-UI] job_postings read failed:', jobsRes.error.code, jobsRes.error.message);
-    throw new Error(COPY.loadJobs);
-  }
-
-  const jobs = jobsRes.data ?? [];
-  if (jobs.length === 0) return [];
-
-  const skillsRes = await supabase
-    .from('job_skills')
-    .select('job_id, skills(skill_name)')
-    .in(
-      'job_id',
-      jobs.map((j) => String(j.id))
-    );
-  if (skillsRes.error) {
-    console.warn('[N7-UI] job_skills read failed:', skillsRes.error.code, skillsRes.error.message);
-    throw new Error(COPY.loadJobSkills);
-  }
-
-  const byJob = new Map<string, string[]>();
-  for (const row of (skillsRes.data ?? []) as {
-    job_id: string;
-    skills: { skill_name: string } | { skill_name: string }[] | null;
-  }[]) {
-    const rel = Array.isArray(row.skills) ? row.skills[0] : row.skills;
-    if (!rel?.skill_name) continue;
-    const list = byJob.get(row.job_id) ?? [];
-    list.push(rel.skill_name);
-    byJob.set(row.job_id, list);
-  }
-
-  return jobs.map((j) => ({
-    id: String(j.id),
-    title: String(j.title),
-    status: String(j.status ?? 'open'),
-    scheduled_at: (j.scheduled_at as string | null) ?? null,
-    budget: (j.budget as number | null) ?? null,
-    skills: (byJob.get(String(j.id)) ?? []).sort(),
-  }));
-}
-
 export default function ClientHome() {
   const { account } = useAccount();
   const router = useRouter();
   const clientId = account?.id;
-
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [skills, setSkills] = useState<MasterSkill[]>([]);
-  const [jobs, setJobs] = useState<PostedJob[]>([]);
+  const { isLoading, loadError, skills, refresh } = useClientJobs();
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -182,33 +92,6 @@ export default function ClientHome() {
   const [isPosting, setIsPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   const [postSuccess, setPostSuccess] = useState<string | null>(null);
-
-  const [isSigningOut, setIsSigningOut] = useState(false);
-  const [signOutError, setSignOutError] = useState<string | null>(null);
-
-  const refresh = useCallback(async (id: string) => {
-    const [master, myJobs] = await Promise.all([loadSkills(), loadMyJobs(id)]);
-    setSkills(master);
-    setJobs(myJobs);
-  }, []);
-
-  useEffect(() => {
-    if (!clientId) return;
-    let cancelled = false;
-    setIsLoading(true);
-    setLoadError(null);
-    refresh(clientId)
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setLoadError(e instanceof Error ? e.message : COPY.loadGeneric);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [clientId, refresh]);
 
   function toggleSkill(skillId: string) {
     setSelectedSkills((prev) =>
@@ -326,21 +209,7 @@ export default function ClientHome() {
     }
   }
 
-  async function handleSignOut() {
-    if (isSigningOut) return;
-    setSignOutError(null);
-    setIsSigningOut(true);
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) setSignOutError(error.message || 'Sign out failed. Please try again.');
-    } catch {
-      setSignOutError('Sign out failed. Please try again.');
-    } finally {
-      setIsSigningOut(false);
-    }
-  }
-
-  const busy = isPosting || isSigningOut;
+  const busy = isPosting;
 
   return (
     <KeyboardAvoidingView
@@ -358,38 +227,6 @@ export default function ClientHome() {
         {DEPLOYMENT_BARANGAY}, {DEPLOYMENT_CITY} · SkillMatch service area
       </Text>
       <Text style={styles.heading}>Post a Job</Text>
-
-      {/*
-        Entry point to the read-only N11-UI Booking list. Added alongside the
-        existing "Post a Job" form and "My Posted Jobs" section, replacing
-        neither. Same protected (client) group, so it needs no guard of its
-        own. Placed above the load switch so it stays reachable even when the
-        skills/jobs read fails: Bookings come from a different RPC and must not
-        be hidden by an unrelated failure.
-      */}
-      <Pressable
-        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
-        onPress={() => router.push('/client/bookings')}
-        disabled={busy}
-        accessibilityRole="button"
-      >
-        <Text style={styles.secondaryButtonText}>My Bookings</Text>
-      </Pressable>
-
-      {/*
-        Entry point to the N12-UI Notifications inbox — added alongside the
-        existing Post a Job form, My Posted Jobs and My Bookings, replacing
-        none of them. Same protected (client) group, and placed above the load
-        switch so it stays reachable even when the skills/jobs read fails.
-      */}
-      <Pressable
-        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
-        onPress={() => router.push('/client/notifications')}
-        disabled={busy}
-        accessibilityRole="button"
-      >
-        <Text style={styles.secondaryButtonText}>Notifications</Text>
-      </Pressable>
 
       {/*
         Entry point to the AI-01 Help & FAQ screen — added alongside the
@@ -545,42 +382,8 @@ export default function ClientHome() {
             )}
           </Pressable>
 
-          <Text style={styles.sectionTitle}>My Posted Jobs</Text>
-          {jobs.length === 0 ? (
-            <Text style={styles.note}>You have not posted a job yet.</Text>
-          ) : (
-            jobs.map((job) => (
-              <View key={job.id} style={styles.card}>
-                <Text style={styles.cardTitle}>{job.title}</Text>
-                <Text style={styles.cardLine}>Status: {job.status}</Text>
-                <Text style={styles.cardLine}>
-                  Schedule: {formatSchedule(job.scheduled_at)}
-                </Text>
-                <Text style={styles.cardLine}>
-                  Budget: {job.budget === null ? 'Not set' : job.budget}
-                </Text>
-                <Text style={styles.cardLine}>
-                  Skills: {job.skills.length > 0 ? job.skills.join(', ') : 'None'}
-                </Text>
-              </View>
-            ))
-          )}
         </>
       )}
-
-      <Pressable
-        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
-        onPress={handleSignOut}
-        disabled={busy}
-        accessibilityRole="button"
-      >
-        {isSigningOut ? (
-          <ActivityIndicator />
-        ) : (
-          <Text style={styles.secondaryButtonText}>Sign Out</Text>
-        )}
-      </Pressable>
-      {signOutError ? <Text style={styles.error}>{signOutError}</Text> : null}
     </ScrollView>
     </KeyboardAvoidingView>
   );

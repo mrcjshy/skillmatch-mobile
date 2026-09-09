@@ -1,18 +1,12 @@
 import { Stack } from 'expo-router';
 
-// Only the group entry point is hidden. `worker/index` sets no title, so its
-// header renders the raw route name; the dashboard needs no header and has no
-// screen to go back to.
-//
-// The header stays ON for the sub-screens deliberately: opportunities, bookings
-// and notifications each declare their own `<Stack.Screen options={{ title }} />`
-// ("Job Opportunities", "My Bookings", "Notifications"), and none of them
-// implements an in-content back control, so that header is also their only way
-// back to the dashboard. Hiding it group-wide would erase both.
+// The tab shell is one headerless Stack child. Pushed Worker screens remain
+// outside it so they retain this Stack's header/back affordance and never show
+// a tab bar beneath full-height content such as Booking Chat.
 export default function WorkerLayout() {
   return (
     <Stack>
-      <Stack.Screen name="worker/index" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   );
 }
