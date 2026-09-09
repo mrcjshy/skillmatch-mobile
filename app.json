@@ -31,10 +31,10 @@
           "backgroundColor": "#F5F3EF",
           "dark": {
             "backgroundColor": "#F5F3EF",
-            "image": "./assets/images/skillmatch-splash.png"
+            "image": "./assets/images/skillmatch-splash-icon.png"
           },
-          "image": "./assets/images/skillmatch-splash.png",
-          "imageWidth": 280,
+          "image": "./assets/images/skillmatch-splash-icon.png",
+          "imageWidth": 200,
           "resizeMode": "contain"
         }
       ],
