@@ -46,7 +46,7 @@ const BOOKING_STATUS_LABEL: Record<BookingStatus, string> = {
   no_show: 'No Show',
 };
 
-function isBookingStatus(v: string): v is BookingStatus {
+export function isBookingStatus(v: string): v is BookingStatus {
   return (BOOKING_STATUSES as readonly string[]).includes(v);
 }
 
