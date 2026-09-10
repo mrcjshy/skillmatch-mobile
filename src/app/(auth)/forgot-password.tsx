@@ -11,35 +11,25 @@ import {
 } from 'react-native';
 
 import { SkillMatchTheme } from '@/constants/theme';
+import {
+  RECOVERY_REDIRECT_TO,
+  RECOVERY_SUCCESS_COPY,
+  RECOVERY_TECHNICAL_FAILURE_COPY,
+  hasMinimalEmailSyntax,
+  isExistenceSensitiveResetError,
+} from '@/lib/auth-recovery';
 import { supabase } from '@/lib/supabase';
-import { useSession } from '@/providers/session-provider';
 
 /**
- * Supabase Auth sign-in UI only.
- *
- * Establishes an Auth identity/session. AccountProvider then resolves the
- * authoritative users row, and root access-state routing sends the signed-in
- * user to the Worker, Client, or Administrator shell, or to blocked /
- * bootstrap-error as appropriate.
+ * Signed-out recovery request only. Does not reveal whether the email exists.
  */
-export default function LoginScreen() {
-  const { session, isSessionLoading, sessionError } = useSession();
-
+export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const sessionStatus = isSessionLoading
-    ? 'Checking session…'
-    : sessionError
-      ? 'Session restoration error.'
-      : session
-        ? 'Authenticated session present.'
-        : 'No authenticated session.';
-
-  async function handleSignIn() {
+  async function handleSendRecoveryInstructions() {
     if (isSubmitting) return;
 
     setErrorMessage(null);
@@ -50,33 +40,23 @@ export default function LoginScreen() {
       setErrorMessage('Please enter your email.');
       return;
     }
-    if (!password) {
-      setErrorMessage('Please enter your password.');
+    if (!hasMinimalEmailSyntax(trimmedEmail)) {
+      setErrorMessage('Please enter a valid email.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: trimmedEmail,
-        password,
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: RECOVERY_REDIRECT_TO,
       });
-
-      if (error) {
-        // Do not reveal whether the email exists.
-        setErrorMessage(
-          error.status === 400 || error.status === 401 || error.status === 422
-            ? 'Invalid email or password.'
-            : error.message || 'Sign in failed. Please try again.'
-        );
-        return;
+      if (error === null || isExistenceSensitiveResetError(error)) {
+        setSuccessMessage(RECOVERY_SUCCESS_COPY);
+      } else {
+        setErrorMessage(RECOVERY_TECHNICAL_FAILURE_COPY);
       }
-
-      // SessionProvider updates the session; AccountProvider bootstrap and
-      // root access-state routing determine the destination.
-      setSuccessMessage('Signed in successfully.');
     } catch {
-      setErrorMessage('Sign in failed. Please check your connection and try again.');
+      setErrorMessage(RECOVERY_TECHNICAL_FAILURE_COPY);
     } finally {
       setIsSubmitting(false);
     }
@@ -92,8 +72,8 @@ export default function LoginScreen() {
         />
         <Text style={styles.brandName}>SkillMatch</Text>
       </View>
-      <Text style={styles.heading}>Sign In</Text>
-      <Text style={styles.status}>{sessionStatus}</Text>
+      <Text style={styles.heading}>Forgot Password</Text>
+      <Text style={styles.status}>Enter your email to request password recovery instructions.</Text>
 
       <View style={styles.form}>
         <Text style={styles.label}>Email</Text>
@@ -109,44 +89,24 @@ export default function LoginScreen() {
           accessibilityLabel="Email"
         />
 
-        <Text style={styles.label}>Password</Text>
-        <TextInput
-          style={styles.input}
-          value={password}
-          onChangeText={setPassword}
-          placeholder="Password"
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!isSubmitting}
-          accessibilityLabel="Password"
-        />
-
         {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-        {successMessage ? (
-          <Text style={styles.success}>{successMessage}</Text>
-        ) : null}
+        {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
 
         <Pressable
           style={[styles.button, isSubmitting && styles.buttonDisabled]}
-          onPress={handleSignIn}
+          onPress={handleSendRecoveryInstructions}
           disabled={isSubmitting}
           accessibilityRole="button"
         >
           {isSubmitting ? (
             <ActivityIndicator color="#ffffff" />
           ) : (
-            <Text style={styles.buttonText}>Sign In</Text>
+            <Text style={styles.buttonText}>Send Recovery Instructions</Text>
           )}
         </Pressable>
 
-        <Link href="/forgot-password" style={styles.link}>
-          Forgot Password
-        </Link>
-
-        {/* Ordinary push: Back from Register returns here. */}
-        <Link href="/register" style={styles.link}>
-          {"Don't have an account? Create one"}
+        <Link href="/login" style={styles.link}>
+          Back to Sign In
         </Link>
       </View>
     </View>

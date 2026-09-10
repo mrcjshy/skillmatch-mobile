@@ -1,6 +1,7 @@
 import { Stack, type Href } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
+import { isRecoverySurfaceActive } from '@/lib/auth-recovery';
 import {
   AccountProvider,
   useAccount,
@@ -22,12 +23,14 @@ import {
  * <Redirect> (replace semantics). Group layouts contain no routing logic.
  *
  * Inline states (session restoring, session restoration error, account
- * pending) render no route tree at all.
+ * pending) render no route tree at all. Password recovery is a routed
+ * state and is not reused as blocked or bootstrap-error.
  */
 export type AccessState =
   | 'session-restoring'
   | 'session-error'
   | 'signed-out'
+  | 'password-recovery'
   | 'account-pending'
   | 'blocked'
   | 'worker'
@@ -42,13 +45,17 @@ export type AccessState =
  * role.
  */
 export function deriveAccessState(
-  sessionValue: Pick<SessionContextValue, 'session' | 'isSessionLoading' | 'sessionError'>,
+  sessionValue: Pick<
+    SessionContextValue,
+    'session' | 'isSessionLoading' | 'sessionError' | 'recoveryStatus'
+  >,
   accountValue: Pick<AccountContextValue, 'account' | 'status'>
 ): AccessState {
-  const { session, isSessionLoading, sessionError } = sessionValue;
+  const { session, isSessionLoading, sessionError, recoveryStatus } = sessionValue;
   const { account, status } = accountValue;
 
   if (isSessionLoading) return 'session-restoring';
+  if (isRecoverySurfaceActive(recoveryStatus)) return 'password-recovery';
   if (!session) return sessionError ? 'session-error' : 'signed-out';
 
   // Authenticated from here on.
@@ -70,6 +77,7 @@ export function deriveAccessState(
 /** Forward target per routed state. Inline states have no route. */
 export const ACCESS_ROUTE: Partial<Record<AccessState, Href>> = {
   'signed-out': '/login',
+  'password-recovery': '/update-password',
   blocked: '/blocked',
   worker: '/worker',
   client: '/client',
@@ -120,6 +128,9 @@ function RootNavigator() {
       <Stack.Screen name="+not-found" />
       <Stack.Protected guard={access === 'signed-out'}>
         <Stack.Screen name="(auth)" />
+      </Stack.Protected>
+      <Stack.Protected guard={access === 'password-recovery'}>
+        <Stack.Screen name="update-password" />
       </Stack.Protected>
       <Stack.Protected guard={access === 'blocked'}>
         <Stack.Screen name="blocked" />
