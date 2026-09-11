@@ -36,7 +36,8 @@
  * mark anything paid, because neither call exists.
  */
 
-import { supabase } from '@/lib/supabase';
+import type { JobPaymentMethod } from './job-payment';
+import { supabase } from './supabase';
 
 /** The values `bookings_payment_method_check` permits. `cod` and `qrph` are
  *  both reachable; `gcash` and `maya` exist only so the UI can recognise a
@@ -69,6 +70,24 @@ export function isPayableStatus(bookingStatus: string): boolean {
 /** The Client may still choose COD: no method picked, nothing settled. */
 export function canSelectCod(p: BookingPayment | undefined): boolean {
   return p !== undefined && p.payment_method === null && p.payment_status === 'pending';
+}
+
+/**
+ * R4 Client entry on a completed Booking. Job intent decides the unclaimed
+ * branch; a non-NULL Booking method stays on the existing processing path.
+ */
+export type ClientPaymentEntry = 'legacy-choice' | 'cash' | 'qrph' | 'processing' | 'none';
+
+export function clientPaymentEntry(
+  payment: BookingPayment | undefined,
+  jobMethod: JobPaymentMethod | null
+): ClientPaymentEntry {
+  if (payment === undefined) return 'none';
+  if (payment.payment_method !== null) return 'processing';
+  if (payment.payment_status !== 'pending') return 'none';
+  if (jobMethod === 'cod') return 'cash';
+  if (jobMethod === 'qrph') return 'qrph';
+  return 'legacy-choice';
 }
 
 /** COD chosen, cash not yet confirmed — the Worker's window to confirm. */
@@ -165,6 +184,10 @@ const ALREADY = 'SM403';
 export const COPY = {
   heading: 'Payment',
   selectCod: 'Select Cash Payment',
+  continueCash: 'Continue with Cash Payment',
+  startQrphPayment: 'Start QR Ph Payment',
+  waitingClientCash: 'Waiting for the client to continue with Cash Payment.',
+  waitingClientQrph: 'Waiting for the client to start QR Ph payment.',
   selecting: 'Selecting…',
   confirmCash: 'Confirm Cash Received',
   confirming: 'Confirming…',

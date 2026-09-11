@@ -1,6 +1,7 @@
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { formatCardDateTime } from '@/lib/date-time';
+import { formatClientPostedPaymentLine } from '@/lib/job-payment';
 import { SkillMatchTheme } from '@/constants/theme';
 import { useClientJobs } from '@/providers/client-jobs-provider';
 
@@ -31,6 +32,9 @@ export default function ClientJobs() {
             <Text style={styles.cardLine}>
               Budget: {job.budget === null ? 'Not set' : job.budget}
             </Text>
+            {job.payment_method_readable ? (
+              <Text style={styles.cardLine}>{formatClientPostedPaymentLine(job.payment_method)}</Text>
+            ) : null}
             <Text style={styles.cardLine}>
               Skills: {job.skills.length > 0 ? job.skills.join(', ') : 'None'}
             </Text>

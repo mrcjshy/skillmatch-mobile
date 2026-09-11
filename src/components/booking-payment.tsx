@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { SkillMatchTheme } from '@/constants/theme';
+import { formatJobPaymentLabel, type JobPaymentMethod } from '@/lib/job-payment';
 import {
   BookingPayment as BookingPaymentState,
-  canSelectCod,
+  clientPaymentEntry,
   confirmCashReceived,
   confirmErrorCopy,
   COPY,
@@ -73,11 +74,13 @@ export default function BookingPayment({
   role,
   bookingId,
   payment,
+  jobPaymentMethod,
   onChanged,
 }: {
   role: PaymentRole;
   bookingId: string;
   payment: BookingPaymentState | undefined;
+  jobPaymentMethod: JobPaymentMethod | null;
   onChanged: () => Promise<void>;
 }) {
   const [isBusy, setIsBusy] = useState(false);
@@ -92,6 +95,9 @@ export default function BookingPayment({
   const [qr, setQr] = useState<QrphInitiation | null>(null);
 
   const methodLabel = formatPaymentMethod(payment?.payment_method ?? null);
+  const entry = clientPaymentEntry(payment, jobPaymentMethod);
+  const agreedLabel =
+    jobPaymentMethod !== null ? formatJobPaymentLabel(jobPaymentMethod) : null;
 
   /**
    * `isBusy` is the single in-flight guard for the whole card, so a double tap
@@ -200,7 +206,7 @@ export default function BookingPayment({
       <View style={styles.section}>
         <Text style={styles.heading}>{COPY.heading}</Text>
 
-        {canSelectCod(payment) ? (
+        {entry === 'legacy-choice' ? (
           <>
             <Text style={styles.line}>{COPY.chooseMethod}</Text>
             <Pressable
@@ -221,6 +227,33 @@ export default function BookingPayment({
               accessibilityRole="button"
             >
               <Text style={styles.buttonText}>{isBusy ? COPY.starting : COPY.selectQrph}</Text>
+            </Pressable>
+          </>
+        ) : entry === 'cash' ? (
+          <>
+            <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? 'Cash')}</Text>
+            <Pressable
+              style={[styles.button, isBusy ? styles.buttonDisabled : null]}
+              onPress={() => run(() => selectCod(bookingId), selectErrorCopy, {
+                refresh: true,
+                log: true,
+              })}
+              disabled={isBusy}
+              accessibilityRole="button"
+            >
+              <Text style={styles.buttonText}>{isBusy ? COPY.selecting : COPY.continueCash}</Text>
+            </Pressable>
+          </>
+        ) : entry === 'qrph' ? (
+          <>
+            <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? 'QR Ph')}</Text>
+            <Pressable
+              style={[styles.button, isBusy ? styles.buttonDisabled : null]}
+              onPress={startQrph}
+              disabled={isBusy}
+              accessibilityRole="button"
+            >
+              <Text style={styles.buttonText}>{isBusy ? COPY.starting : COPY.startQrphPayment}</Text>
             </Pressable>
           </>
         ) : (
@@ -316,7 +349,17 @@ export default function BookingPayment({
     <View style={styles.section}>
       <Text style={styles.heading}>{COPY.heading}</Text>
 
-      {methodLabel ? (
+      {entry === 'cash' ? (
+        <>
+          <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? 'Cash')}</Text>
+          <Text style={styles.line}>{COPY.waitingClientCash}</Text>
+        </>
+      ) : entry === 'qrph' ? (
+        <>
+          <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? 'QR Ph')}</Text>
+          <Text style={styles.line}>{COPY.waitingClientQrph}</Text>
+        </>
+      ) : methodLabel ? (
         <Text style={styles.line}>{COPY.methodLine(methodLabel)}</Text>
       ) : (
         // Stated rather than left blank, so the absence of a confirm control is

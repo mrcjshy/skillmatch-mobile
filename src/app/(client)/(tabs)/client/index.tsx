@@ -13,6 +13,10 @@ import {
 } from 'react-native';
 
 import { SkillMatchTheme } from '@/constants/theme';
+import {
+  type JobPaymentMethod,
+  postingPaymentError,
+} from '@/lib/job-payment';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
@@ -88,6 +92,7 @@ export default function ClientHome() {
   const [dateText, setDateText] = useState('');
   const [timeText, setTimeText] = useState('');
   const [budgetText, setBudgetText] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<JobPaymentMethod | null>(null);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
 
   const [isPosting, setIsPosting] = useState(false);
@@ -138,6 +143,11 @@ export default function ClientHome() {
         return;
       }
     }
+    const paymentError = postingPaymentError(paymentMethod, budget);
+    if (paymentError !== null || paymentMethod === null) {
+      setPostError(paymentError ?? 'Please select a payment method.');
+      return;
+    }
 
     setIsPosting(true);
     let createdJobId: string | null = null;
@@ -155,6 +165,7 @@ export default function ClientHome() {
           city: DEPLOYMENT_CITY,
           scheduled_at: schedule.toISOString(),
           budget,
+          payment_method: paymentMethod,
         })
         .select('id')
         .single();
@@ -190,6 +201,7 @@ export default function ClientHome() {
       setDateText('');
       setTimeText('');
       setBudgetText('');
+      setPaymentMethod(null);
       setSelectedSkills([]);
     } catch (e: unknown) {
       const base = e instanceof Error ? e.message : COPY.postGeneric;
@@ -342,6 +354,39 @@ export default function ClientHome() {
               accessibilityLabel="Budget in pesos"
             />
           </View>
+
+          <Text style={styles.label}>Payment Method</Text>
+          <View
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Payment Method"
+            style={{ gap: 8 }}
+          >
+            {(
+              [
+                { value: 'cod', label: 'Cash' },
+                { value: 'qrph', label: 'QR Ph' },
+              ] as const
+            ).map((option) => {
+              const on = paymentMethod === option.value;
+              return (
+                <Pressable
+                  key={option.value}
+                  style={[styles.skillToggle, on && styles.chipSelected]}
+                  onPress={() => setPaymentMethod(option.value)}
+                  disabled={busy}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on, disabled: busy }}
+                  accessibilityLabel={option.label}
+                >
+                  <Text style={[styles.chipText, on && styles.chipTextSelected]}>
+                    {on ? '✓ ' : ''}
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={styles.help}>Required. Workers see this before they accept.</Text>
 
           <Text style={styles.label}>Required Skills</Text>
           {skills.length === 0 ? (

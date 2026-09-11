@@ -11,6 +11,11 @@ import {
 } from 'react-native';
 
 import { formatCardDateTime } from '@/lib/date-time';
+import {
+  formatOpportunityPaymentLine,
+  parseJobPaymentMethod,
+  type JobPaymentMethod,
+} from '@/lib/job-payment';
 import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
@@ -55,7 +60,7 @@ import { useAccount } from '@/providers/account-provider';
  * surface, and no notification — those are separate modules.
  */
 
-/** Exactly the 11 fields `public.list_my_job_opportunities()` returns. */
+/** Exactly the 12 fields `public.list_my_job_opportunities()` returns. */
 type WorkerOpportunity = {
   job_id: string;
   title: string;
@@ -68,6 +73,7 @@ type WorkerOpportunity = {
   location_points: number;
   rating_points: number;
   total_points: number;
+  payment_method: JobPaymentMethod | null;
 };
 
 /**
@@ -107,6 +113,9 @@ function toOpportunity(row: unknown): WorkerOpportunity | null {
   if (jobId === null || title === null) return null;
   if (skill === null || location === null || rating === null || total === null) return null;
 
+  const payment = parseJobPaymentMethod(r.payment_method);
+  if (!payment.ok) return null;
+
   return {
     job_id: jobId,
     title,
@@ -119,6 +128,7 @@ function toOpportunity(row: unknown): WorkerOpportunity | null {
     location_points: location,
     rating_points: rating,
     total_points: total,
+    payment_method: payment.method,
   };
 }
 
@@ -555,6 +565,7 @@ export default function WorkerOpportunities() {
                 {location ? <Text style={styles.cardLine}>{location}</Text> : null}
                 {budget ? <Text style={styles.cardLine}>Budget: {budget}</Text> : null}
                 {schedule ? <Text style={styles.cardLine}>Schedule: {schedule}</Text> : null}
+                <Text style={styles.cardLine}>{formatOpportunityPaymentLine(job.payment_method)}</Text>
 
                 <Text style={styles.scoreTotal}>
                   Match Score: {formatPoints(job.total_points)}/100

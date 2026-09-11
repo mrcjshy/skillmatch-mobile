@@ -37,6 +37,10 @@ import {
 import { isLifecycleActionableStatus } from '@/lib/booking-lifecycle';
 import { formatDetailDateTime } from '@/lib/date-time';
 import {
+  fetchJobPaymentMethod,
+  type JobPaymentMethod,
+} from '@/lib/job-payment';
+import {
   BookingPayment as BookingPaymentState,
   fetchBookingPayments,
   isPayableStatus,
@@ -50,6 +54,8 @@ const UNAVAILABLE = 'This booking is unavailable.';
 type DetailState = {
   booking: RoleBooking;
   payment: BookingPaymentState | undefined;
+  jobPaymentMethod: JobPaymentMethod | null;
+  jobPaymentReady: boolean;
   isRated: boolean;
 };
 
@@ -77,6 +83,19 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
 
     const payable = isPayableStatus(booking.booking_status);
     const payments = payable ? await fetchBookingPayments([booking.booking_id]) : new Map();
+    let jobPaymentMethod: JobPaymentMethod | null = null;
+    let jobPaymentReady = !payable;
+    if (payable) {
+      try {
+        jobPaymentMethod = await fetchJobPaymentMethod(booking.job_id);
+        jobPaymentReady = true;
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message) {
+          console.warn('[R4] job payment_method read failed:', error.message);
+        }
+        jobPaymentReady = false;
+      }
+    }
     const rated =
       role === 'client' && isRateableStatus(booking.booking_status)
         ? await fetchMyRatedBookingIds([booking.booking_id])
@@ -85,6 +104,8 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     setDetail({
       booking,
       payment: payments.get(booking.booking_id),
+      jobPaymentMethod,
+      jobPaymentReady,
       isRated: rated.has(booking.booking_id),
     });
     setLoadError(null);
@@ -151,7 +172,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     );
   }
 
-  const { booking, payment, isRated } = detail;
+  const { booking, payment, jobPaymentMethod, jobPaymentReady, isRated } = detail;
   const schedule = formatDetailDateTime(booking.job_scheduled_at);
   const bookedAt = formatDetailDateTime(booking.booked_at);
   const completedAt = formatDetailDateTime(booking.completed_at);
@@ -215,7 +236,17 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
           <BookingLifecycle role={role} bookingId={booking.booking_id} onChanged={load} />
         ) : null}
         {isPayableStatus(booking.booking_status) ? (
-          <BookingPayment role={role} bookingId={booking.booking_id} payment={payment} onChanged={load} />
+          jobPaymentReady ? (
+            <BookingPayment
+              role={role}
+              bookingId={booking.booking_id}
+              payment={payment}
+              jobPaymentMethod={jobPaymentMethod}
+              onChanged={load}
+            />
+          ) : (
+            <Text style={styles.secondary}>Could not load the agreed payment method.</Text>
+          )
         ) : null}
         {role === 'client' && isRateableStatus(booking.booking_status) ? (
           isRated ? <Text style={styles.secondary}>{RATING_COPY.rated}</Text> : <RateWorker bookingId={booking.booking_id} onRated={load} />

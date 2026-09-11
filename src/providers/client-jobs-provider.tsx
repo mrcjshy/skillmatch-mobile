@@ -8,6 +8,7 @@ import {
 } from 'react';
 
 import { supabase } from '@/lib/supabase';
+import { parseJobPaymentMethod, type JobPaymentMethod } from '@/lib/job-payment';
 import { useAccount } from '@/providers/account-provider';
 
 export type MasterSkill = { id: string; skill_name: string };
@@ -18,6 +19,8 @@ export type PostedJob = {
   status: string;
   scheduled_at: string | null;
   budget: number | null;
+  payment_method: JobPaymentMethod | null;
+  payment_method_readable: boolean;
   skills: string[];
 };
 
@@ -46,7 +49,7 @@ async function loadSkills(): Promise<MasterSkill[]> {
 async function loadMyJobs(clientId: string): Promise<PostedJob[]> {
   const jobsResult = await supabase
     .from('job_postings')
-    .select('id, title, status, scheduled_at, budget')
+    .select('id, title, status, scheduled_at, budget, payment_method')
     .eq('client_id', clientId)
     .order('created_at', { ascending: false });
   if (jobsResult.error) {
@@ -89,14 +92,19 @@ async function loadMyJobs(clientId: string): Promise<PostedJob[]> {
     skillsByJob.set(row.job_id, list);
   }
 
-  return jobs.map((job) => ({
-    id: String(job.id),
-    title: String(job.title),
-    status: String(job.status ?? 'open'),
-    scheduled_at: (job.scheduled_at as string | null) ?? null,
-    budget: (job.budget as number | null) ?? null,
-    skills: (skillsByJob.get(String(job.id)) ?? []).sort(),
-  }));
+  return jobs.map((job) => {
+    const parsed = parseJobPaymentMethod(job.payment_method);
+    return {
+      id: String(job.id),
+      title: String(job.title),
+      status: String(job.status ?? 'open'),
+      scheduled_at: (job.scheduled_at as string | null) ?? null,
+      budget: (job.budget as number | null) ?? null,
+      payment_method: parsed.ok ? parsed.method : null,
+      payment_method_readable: parsed.ok,
+      skills: (skillsByJob.get(String(job.id)) ?? []).sort(),
+    };
+  });
 }
 
 type ClientJobsContextValue = {
@@ -123,6 +131,7 @@ export function ClientJobsProvider({ children }: { children: ReactNode }) {
     setJobs(myJobs);
   }, []);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- fetch-on-mount; established convention */
   useEffect(() => {
     if (!clientId) return;
     let cancelled = false;
@@ -140,6 +149,7 @@ export function ClientJobsProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [clientId, refresh]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   return (
     <ClientJobsContext.Provider value={{ isLoading, loadError, skills, jobs, refresh }}>
