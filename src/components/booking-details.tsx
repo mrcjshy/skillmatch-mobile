@@ -22,6 +22,7 @@ import {
   formatLocation,
   formatSkills,
   formatVerification,
+  isBookingChatAvailable,
   isCounterpartyReleased,
   loadErrorCopy,
 } from '@/lib/bookings';
@@ -157,6 +158,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const budget = formatBudget(booking.job_budget);
   const location = formatLocation(booking.job_address, booking.job_barangay, booking.job_city);
   const released = isCounterpartyReleased(booking.booking_status);
+  const chatAvailable = isBookingChatAvailable(booking.booking_status);
 
   return (
     <ScrollView
@@ -218,16 +220,18 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
         {role === 'client' && isRateableStatus(booking.booking_status) ? (
           isRated ? <Text style={styles.secondary}>{RATING_COPY.rated}</Text> : <RateWorker bookingId={booking.booking_id} onRated={load} />
         ) : null}
-        <Pressable
-          style={styles.primaryButton}
-          onPress={() => {
-            const pathname = role === 'worker' ? '/worker/chat' : '/client/chat';
-            router.push({ pathname, params: { bookingId: booking.booking_id } } as Href);
-          }}
-          accessibilityRole="button"
-        >
-          <Text style={styles.primaryButtonText}>Open Chat</Text>
-        </Pressable>
+        {chatAvailable ? (
+          <Pressable
+            style={styles.primaryButton}
+            onPress={() => {
+              const pathname = role === 'worker' ? '/worker/chat' : '/client/chat';
+              router.push({ pathname, params: { bookingId: booking.booking_id } } as Href);
+            }}
+            accessibilityRole="button"
+          >
+            <Text style={styles.primaryButtonText}>Open Chat</Text>
+          </Pressable>
+        ) : null}
         {isBookingReportableStatus(booking.booking_status) ? (
           <Pressable
             style={styles.outlineButton}

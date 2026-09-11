@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 
-import { BookingLoadError, formatBookingStatus } from '@/lib/bookings';
+import { BookingLoadError, formatBookingStatus, isBookingChatAvailable } from '@/lib/bookings';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   canSendInStatus,
@@ -65,13 +65,13 @@ import { useAccount } from '@/providers/account-provider';
  * N11 established cannot be reopened here, and a label never flips from a
  * person's name to "Other participant" as a Booking ends.
  *
- * HISTORY IS NEVER HIDDEN
- * -----------------------
- * Terminal Bookings keep their conversation: the SELECT policy carries no
- * status predicate, and this screen carries none either. `completed`,
- * `cancelled` and `no_show` render the full history with the composer replaced
- * by a closed notice — they do not render an empty screen, and the entry point
- * that leads here is not withdrawn.
+ * ORDINARY CHAT IS CONFIRMED-ONLY
+ * -------------------------------
+ * R3B: participant history is readable only while confirmed. This screen
+ * fails closed for every other status: it does not load or present a
+ * conversation, and it does not offer a composer. Historical rows remain
+ * stored server-side for report-scoped Admin evidence. Backend RLS is still
+ * the authority.
  *
  * REFRESH IS EXPLICIT
  * -------------------
@@ -81,6 +81,8 @@ import { useAccount } from '@/providers/account-provider';
  */
 
 export type ChatRole = 'worker' | 'client';
+
+const CHAT_UNAVAILABLE = 'Chat is only available while this booking is confirmed.';
 
 /** The only two fields consumed from the Booking-list row. */
 type ChatBooking = {
@@ -159,6 +161,12 @@ export default function BookingChat({
       // would return zero rows anyway, and asking would imply the id is worth
       // probing.
       setBooking(null);
+      setMessages([]);
+      setLoadError(null);
+      return;
+    }
+    if (!isBookingChatAvailable(found.status)) {
+      setBooking(found);
       setMessages([]);
       setLoadError(null);
       return;
@@ -299,7 +307,9 @@ export default function BookingChat({
     }
   }
 
-  const canSend = booking !== null && canSendInStatus(booking.status);
+  const chatAvailable = booking !== null && isBookingChatAvailable(booking.status);
+  const canSend =
+    booking !== null && isBookingChatAvailable(booking.status) && canSendInStatus(booking.status);
   const remaining = remainingCharacters(draft);
   const isDraftSendable = validateContent(draft).ok;
 
@@ -343,6 +353,10 @@ export default function BookingChat({
           <View style={styles.center}>
             <Text style={styles.note}>{COPY.notFound}</Text>
           </View>
+        ) : !chatAvailable ? (
+          <View style={styles.center}>
+            <Text style={styles.note}>{CHAT_UNAVAILABLE}</Text>
+          </View>
         ) : messages.length === 0 ? (
           // A successful read that returned nothing — not an error.
           <View style={styles.center}>
@@ -372,11 +386,10 @@ export default function BookingChat({
       </ScrollView>
 
       {/*
-        The composer is offered only while the server would accept a send. For
-        every terminal status the conversation above stays fully readable and
-        this area becomes a plain notice — the screen is never withdrawn.
+        The composer is offered only while ordinary chat is open. Non-confirmed
+        Bookings get the closed notice above and no composer.
       */}
-      {!isLoading && !loadError && booking !== null ? (
+      {!isLoading && !loadError && chatAvailable ? (
         canSend ? (
           <View style={styles.composer}>
             {sendError ? <Text style={styles.error}>{sendError}</Text> : null}

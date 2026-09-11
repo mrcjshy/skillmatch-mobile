@@ -17,6 +17,7 @@ import {
   AdminReportDetail,
   COPY,
   REPORT_DESCRIPTION_MAX,
+  ReportBookingMessage,
   ReportError,
   ReviewStatus,
   allowedReviewStatuses,
@@ -24,6 +25,7 @@ import {
   formatReportStatus,
   loadAdminReport,
   loadAdminReportErrorCopy,
+  loadReportBookingMessages,
   remainingReportCharacters,
   reviewErrorCopy,
   reviewReport,
@@ -50,6 +52,9 @@ export default function AdminReportDetails() {
   const [reviewingStatus, setReviewingStatus] = useState<ReviewStatus | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [evidence, setEvidence] = useState<ReportBookingMessage[] | null>(null);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!isReportId(reportId)) {
@@ -85,6 +90,44 @@ export default function AdminReportDetails() {
       run.cancelled = true;
     };
   }, [load, applyError]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const evidenceBookingId = detail?.booking_id ?? null;
+
+  /* eslint-disable react-hooks/set-state-in-effect -- evidence fetch is report-scoped */
+  useEffect(() => {
+    if (evidenceBookingId === null || !isReportId(reportId)) {
+      setEvidence(null);
+      setEvidenceError(null);
+      setEvidenceLoading(false);
+      return;
+    }
+    const run = { cancelled: false };
+    setEvidenceLoading(true);
+    setEvidenceError(null);
+    loadReportBookingMessages(reportId)
+      .then((rows) => {
+        if (run.cancelled) return;
+        setEvidence(rows);
+        setEvidenceError(null);
+      })
+      .catch((e: unknown) => {
+        if (run.cancelled) return;
+        if (e instanceof ReportError) {
+          console.warn('[R3B-UI] get_report_booking_messages failed:', e.code, e.message);
+        } else if (e instanceof Error && e.message) {
+          console.warn('[R3B-UI] get_report_booking_messages failed:', e.message);
+        }
+        setEvidence(null);
+        setEvidenceError(loadAdminReportErrorCopy(e));
+      })
+      .finally(() => {
+        if (!run.cancelled) setEvidenceLoading(false);
+      });
+    return () => {
+      run.cancelled = true;
+    };
+  }, [evidenceBookingId, reportId]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   async function retry() {
@@ -208,6 +251,32 @@ export default function AdminReportDetails() {
         <Text style={styles.sectionTitle}>Description</Text>
         <Text style={styles.body}>{detail.description}</Text>
       </View>
+
+      {detail.booking_id !== null ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>{COPY.evidenceTitle}</Text>
+          {evidenceLoading ? (
+            <Text style={styles.note}>{COPY.evidenceLoading}</Text>
+          ) : evidenceError ? (
+            <Text style={styles.error}>{evidenceError}</Text>
+          ) : evidence === null || evidence.length === 0 ? (
+            <Text style={styles.note}>{COPY.evidenceEmpty}</Text>
+          ) : (
+            evidence.map((row) => {
+              const sentAt = formatDetailDateTime(row.created_at);
+              return (
+                <View key={row.message_id} style={styles.evidenceRow}>
+                  <Text style={styles.detailLabel}>
+                    {row.sender_role === 'worker' ? COPY.evidenceWorker : COPY.evidenceClient}
+                  </Text>
+                  <Text style={styles.body}>{row.content}</Text>
+                  {sentAt ? <Text style={styles.note}>{sentAt}</Text> : null}
+                </View>
+              );
+            })
+          )}
+        </View>
+      ) : null}
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Admin response</Text>
@@ -342,6 +411,7 @@ const styles = StyleSheet.create({
     color: SkillMatchTheme.feedback.danger,
     fontWeight: '600',
   },
+  evidenceRow: { gap: 4 },
   detailRow: { gap: 2 },
   detailLabel: {
     color: SkillMatchTheme.text.secondary,

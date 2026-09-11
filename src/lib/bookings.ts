@@ -1,4 +1,4 @@
-import { formatCardDateTime } from '@/lib/date-time';
+import { formatCardDateTime } from './date-time';
 
 /**
  * N11-UI shared Booking presentation contract.
@@ -60,15 +60,25 @@ export function formatBookingStatus(status: string): string {
 }
 
 /**
- * The locked N11-DB release rule: ownership decides whether a Booking is
- * LISTED (every status is listed, so history never disappears); status decides
- * only whether the COUNTERPARTY projection was released.
+ * R3B live release rule: ownership still decides whether a Booking is LISTED
+ * (every status is listed, so history never disappears); status decides only
+ * whether the COUNTERPARTY projection was released.
  *
- *   confirmed / completed        -> released
- *   pending / cancelled / no_show -> suppressed (fields arrive NULL)
+ *   confirmed                     -> released
+ *   completed / cancelled /
+ *   pending / no_show / unknown   -> suppressed (fields arrive NULL)
  */
 export function isCounterpartyReleased(status: string): boolean {
-  return status === 'confirmed' || status === 'completed';
+  return status === 'confirmed';
+}
+
+/**
+ * Ordinary chat is available only while the Booking is confirmed. Terminal,
+ * pending, no_show, and unknown statuses fail closed: no Open Chat entry and
+ * no conversation UI on a direct route.
+ */
+export function isBookingChatAvailable(status: string): boolean {
+  return isCounterpartyReleased(status);
 }
 
 /* ------------------------------------------------------------------ *

@@ -177,6 +177,11 @@ export const COPY = {
   reviewConflict: 'This report is not available for review.',
   reviewGeneric: "We couldn't save this review. Please try again.",
   refreshFailed: 'That worked, but the report could not be refreshed. Pull down to refresh.',
+  evidenceTitle: 'Historical Booking Messages',
+  evidenceLoading: 'Loading messages…',
+  evidenceEmpty: 'No messages were recorded for this booking.',
+  evidenceWorker: 'Worker',
+  evidenceClient: 'Client',
 } as const;
 
 function codeOf(e: unknown): string | null {
@@ -411,6 +416,37 @@ export async function loadAdminReport(reportId: string): Promise<AdminReportDeta
     throw new ReportError('this report is not available', CONFLICT);
   }
   return detail;
+}
+
+export type ReportBookingMessage = {
+  message_id: string;
+  sender_role: 'worker' | 'client';
+  content: string;
+  created_at: string | null;
+};
+
+function toEvidenceRow(row: unknown): ReportBookingMessage | null {
+  if (typeof row !== 'object' || row === null) return null;
+  const r = row as Record<string, unknown>;
+  const messageId = toNullableText(r.message_id);
+  const senderRole = toNullableText(r.sender_role);
+  const content = typeof r.content === 'string' ? r.content : null;
+  if (messageId === null || content === null || (senderRole !== 'worker' && senderRole !== 'client')) {
+    return null;
+  }
+  return {
+    message_id: messageId,
+    sender_role: senderRole,
+    content,
+    created_at: toNullableText(r.created_at),
+  };
+}
+
+export async function loadReportBookingMessages(reportId: string): Promise<ReportBookingMessage[]> {
+  const res = await supabase.rpc('get_report_booking_messages', { p_report_id: reportId });
+  if (res.error) throwRpcError(res.error);
+  const rows = Array.isArray(res.data) ? res.data : [];
+  return rows.map(toEvidenceRow).filter((row): row is ReportBookingMessage => row !== null);
 }
 
 export async function reviewReport(
