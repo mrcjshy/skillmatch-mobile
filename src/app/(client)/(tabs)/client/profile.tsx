@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { type Href, useRouter } from 'expo-router';
 
 import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 
 export default function ClientProfile() {
+  const router = useRouter();
   const { account } = useAccount();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
@@ -39,6 +41,22 @@ export default function ClientProfile() {
         </Text>
       </View>
 
+      <Pressable
+        style={[styles.secondaryButton, isSigningOut && styles.buttonDisabled]}
+        onPress={() => router.push('/client/my-reports' as unknown as Href)}
+        disabled={isSigningOut}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>My Reports</Text>
+      </Pressable>
+      <Pressable
+        style={[styles.secondaryButton, isSigningOut && styles.buttonDisabled]}
+        onPress={() => router.push('/client/report-app' as unknown as Href)}
+        disabled={isSigningOut}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>Report an app issue</Text>
+      </Pressable>
       <Pressable
         style={[styles.secondaryButton, isSigningOut && styles.buttonDisabled]}
         onPress={handleSignOut}

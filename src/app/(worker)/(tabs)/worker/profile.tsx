@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { type Href, useRouter } from 'expo-router';
 
 import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -19,6 +20,7 @@ import {
 } from '@/providers/worker-profile-provider';
 
 export default function WorkerProfile() {
+  const router = useRouter();
   const { account } = useAccount();
   const {
     isLoading,
@@ -177,6 +179,22 @@ export default function WorkerProfile() {
         </>
       )}
 
+      <Pressable
+        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+        onPress={() => router.push('/worker/my-reports' as unknown as Href)}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>My Reports</Text>
+      </Pressable>
+      <Pressable
+        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+        onPress={() => router.push('/worker/report-app' as unknown as Href)}
+        disabled={busy}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>Report an app issue</Text>
+      </Pressable>
       <Pressable
         style={[styles.secondaryButton, busy && styles.buttonDisabled]}
         onPress={handleSignOut}

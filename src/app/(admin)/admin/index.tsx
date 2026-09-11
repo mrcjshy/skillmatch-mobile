@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { type Href, useRouter } from 'expo-router';
 
 import { formatCardDateTime } from '@/lib/date-time';
 import { SkillMatchTheme } from '@/constants/theme';
@@ -185,6 +186,7 @@ function formatSkills(skills: string[]): string {
 }
 
 export default function AdminHome() {
+  const router = useRouter();
   const { account } = useAccount();
   const adminId = account?.id;
 
@@ -383,6 +385,14 @@ export default function AdminHome() {
       contentContainerStyle={styles.container}
       refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
     >
+      <Pressable
+        style={styles.secondaryButton}
+        onPress={() => router.push('/admin/reports' as unknown as Href)}
+        disabled={verifyingUserId !== null}
+        accessibilityRole="button"
+      >
+        <Text style={styles.secondaryButtonText}>Reports</Text>
+      </Pressable>
       <Text style={styles.heading}>Worker Verification</Text>
       <Text style={styles.note}>
         Workers waiting to be verified, oldest application first.

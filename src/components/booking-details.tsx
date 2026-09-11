@@ -41,6 +41,7 @@ import {
   isPayableStatus,
 } from '@/lib/payments';
 import { COPY as RATING_COPY, fetchMyRatedBookingIds, isRateableStatus } from '@/lib/ratings';
+import { COPY as REPORT_COPY, isBookingReportableStatus } from '@/lib/reports';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UNAVAILABLE = 'This booking is unavailable.';
@@ -227,6 +228,18 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
         >
           <Text style={styles.primaryButtonText}>Open Chat</Text>
         </Pressable>
+        {isBookingReportableStatus(booking.booking_status) ? (
+          <Pressable
+            style={styles.outlineButton}
+            onPress={() => {
+              const pathname = role === 'worker' ? '/worker/report-booking' : '/client/report-booking';
+              router.push({ pathname, params: { bookingId: booking.booking_id } } as unknown as Href);
+            }}
+            accessibilityRole="button"
+          >
+            <Text style={styles.outlineButtonText}>{REPORT_COPY.reportAction}</Text>
+          </Pressable>
+        ) : null}
       </View>
     </ScrollView>
   );
