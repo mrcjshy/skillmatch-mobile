@@ -29,6 +29,12 @@ import {
   validateContent,
   validationCopy,
 } from '@/lib/messages';
+import {
+  BOOKING_STATUS_CHANGED,
+  bookingMessagesTopic,
+  MESSAGE_INSERTED,
+  subscribeInvalidation,
+} from '@/lib/realtime';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 
@@ -73,11 +79,16 @@ import { useAccount } from '@/providers/account-provider';
  * stored server-side for report-scoped Admin evidence. Backend RLS is still
  * the authority.
  *
- * REFRESH IS EXPLICIT
- * -------------------
+ * HOW THE CONVERSATION STAYS FRESH
+ * --------------------------------
  * Screen entry, pull-to-refresh, and an authoritative re-read immediately
- * after a successful send. No Realtime subscription, no polling timer, no
- * background listener.
+ * after a successful send — plus, since R5, a private Broadcast channel on
+ * `booking:<id>:messages` while the Booking is confirmed. Broadcast only says
+ * "re-read"; every rendered row still comes from `fetchBookingMessages`, so a
+ * payload is never a message. `booking_status_changed` is why the composer
+ * still closes when the counterpart ends the Booking without writing again.
+ * There is no polling timer. Pull-to-refresh remains the fallback whenever the
+ * socket is unavailable.
  */
 
 export type ChatRole = 'worker' | 'client';
@@ -225,6 +236,84 @@ export default function BookingChat({
   }, [senderId, load, applyError, finishInitialLoad]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  /**
+   * A boolean rather than the Booking itself, so the subscription effect does
+   * not tear the channel down and rebuild it on every refresh: each `load()`
+   * produces a new object, but this value only flips when the status genuinely
+   * crosses the confirmed boundary.
+   */
+  const chatAvailable = booking !== null && isBookingChatAvailable(booking.status);
+
+  /**
+   * Subscribe only while this confirmed Booking's chat is actually on screen.
+   *
+   * The guard mirrors the server: the `realtime.messages` policy authorizes
+   * this topic only for a participant of a still-confirmed Booking, so once
+   * `booking_status_changed` lands and the re-read reports a terminal status,
+   * `chatAvailable` flips and the cleanup below removes the channel. A
+   * terminal Booking is left with no active subscription and no chat access.
+   *
+   * Because `bookingId` is a dependency, changing Bookings cleans up the
+   * previous channel before opening the next one, so two channels never
+   * overlap and a rerender cannot stack duplicate listeners.
+   *
+   * `run` makes an event-driven re-read safe in two ways the mount fetch does
+   * not have to worry about, because events arrive at times this screen does
+   * not choose:
+   *
+   *   cancelled — after cleanup no further `load()` is STARTED, so an event
+   *   landing as the user leaves or switches Bookings cannot paint the
+   *   previous conversation over the next one.
+   *
+   *   inFlight/pending — re-reads never overlap. A burst of events coalesces
+   *   into one follow-up read after the current one settles, so a slower
+   *   earlier response can never overwrite a newer one, and a chatty
+   *   conversation cannot fan out into parallel requests.
+   *
+   * A failed re-read is logged and otherwise ignored. `load()` writes state
+   * only on its success path, so a rejection leaves the conversation exactly as
+   * it was; raising `loadError` instead would let a dropped socket blank out
+   * messages the user is reading, which is the opposite of what a freshness
+   * mechanism should do. The next event or a pull-to-refresh is the recovery.
+   */
+  useEffect(() => {
+    if (senderId === null || bookingId === null || !chatAvailable) return;
+    const run = { cancelled: false, inFlight: false, pending: false };
+
+    const revalidate = () => {
+      if (run.cancelled) return;
+      if (run.inFlight) {
+        run.pending = true;
+        return;
+      }
+      run.inFlight = true;
+      load()
+        .catch((e: unknown) => {
+          if (e instanceof Error && e.message) {
+            console.warn('[R5-UI] chat revalidate failed:', e.message);
+          }
+        })
+        .finally(() => {
+          run.inFlight = false;
+          if (run.pending && !run.cancelled) {
+            run.pending = false;
+            revalidate();
+          }
+        });
+    };
+
+    const cleanup = subscribeInvalidation({
+      topic: bookingMessagesTopic(bookingId),
+      events: [MESSAGE_INSERTED, BOOKING_STATUS_CHANGED],
+      onInvalidate: revalidate,
+    });
+
+    return () => {
+      run.cancelled = true;
+      cleanup();
+    };
+  }, [senderId, bookingId, chatAvailable, load]);
+
   async function handleRetry() {
     if (isLoading || isRefreshing || isSending) return;
     setIsLoading(true);
@@ -307,9 +396,7 @@ export default function BookingChat({
     }
   }
 
-  const chatAvailable = booking !== null && isBookingChatAvailable(booking.status);
-  const canSend =
-    booking !== null && isBookingChatAvailable(booking.status) && canSendInStatus(booking.status);
+  const canSend = chatAvailable && booking !== null && canSendInStatus(booking.status);
   const remaining = remainingCharacters(draft);
   const isDraftSendable = validateContent(draft).ok;
 

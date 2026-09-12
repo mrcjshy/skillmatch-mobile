@@ -219,7 +219,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'messaging',
     question: 'Paano mag-message sa Client o Worker?',
     answer:
-      'Ang messaging ay para sa Client at Worker na may Booking. Pwedeng mag-send habang confirmed ang Booking; mababasa pa rin ang history pagkatapos. Hanggang 2,000 characters ang isang message.',
+      'Ang messaging ay para sa Client at Worker na may Booking. Pwedeng magbasa at mag-send habang confirmed ang Booking. Kapag completed o cancelled na ito, hindi na bukas ang conversation. Hanggang 2,000 characters ang isang message.',
     keywords: ['message', 'chat', 'mag-message', 'usap', 'makipag-usap', 'text', 'send', 'contact'],
   },
   {
@@ -227,7 +227,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'messaging',
     question: 'Bakit hindi lumalabas agad ang bagong message?',
     answer:
-      'Hindi live ang chat sa kasalukuyang bersyon. I-refresh o buksan ulit ang conversation para makita ang bagong messages.',
+      'Karaniwang kusang lumalabas agad ang bagong message habang bukas ang confirmed na conversation. Kapag mahina o naputol ang internet, maaaring ma-delay ito — i-refresh lang o buksan ulit ang conversation.',
     keywords: ['bagong message', 'new message', 'hindi lumalabas', 'refresh', 'delay', 'live', 'instant'],
   },
 

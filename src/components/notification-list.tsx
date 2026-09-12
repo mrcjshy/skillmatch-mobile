@@ -10,6 +10,11 @@ import {
 } from 'react-native';
 
 import { SkillMatchTheme } from '@/constants/theme';
+import {
+  NOTIFICATION_INSERTED,
+  subscribeInvalidation,
+  userNotificationsTopic,
+} from '@/lib/realtime';
 import { supabase } from '@/lib/supabase';
 import {
   COPY,
@@ -135,6 +140,66 @@ export default function NotificationList() {
     };
   }, [accountId, load, applyError, finishInitialLoad]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  /**
+   * Subscribed only while this inbox is mounted, and only to the caller's own
+   * topic — the policy compares it to `auth.uid()`, so no other user's topic is
+   * authorized. R5 adds no app-global listener: the bell stays navigation-only
+   * and OS-level push remains out of scope.
+   *
+   * A Broadcast event does one thing: the same authoritative
+   * `loadNotifications()` that entry and pull-to-refresh use. The event carries
+   * only a notification id and this screen never sees it — a notification
+   * appears because the server returned the row, never because an event
+   * described one.
+   *
+   * `accountId` is a dependency, so a sign-out or account switch removes the
+   * previous channel, and `run.cancelled` then stops any further re-read from
+   * STARTING — which is what keeps one account's rows from landing in another
+   * account's inbox. `inFlight`/`pending` coalesce a burst into a single
+   * follow-up read so an older response cannot overwrite a newer one.
+   *
+   * A failed re-read is logged and dropped rather than raised: `load()` writes
+   * state only on success, so the inbox the user is reading survives a dropped
+   * socket untouched, and pull-to-refresh remains the recovery.
+   */
+  useEffect(() => {
+    if (!accountId) return;
+    const run = { cancelled: false, inFlight: false, pending: false };
+
+    const revalidate = () => {
+      if (run.cancelled) return;
+      if (run.inFlight) {
+        run.pending = true;
+        return;
+      }
+      run.inFlight = true;
+      load()
+        .catch((e: unknown) => {
+          if (e instanceof Error && e.message) {
+            console.warn('[R5-UI] notifications revalidate failed:', e.message);
+          }
+        })
+        .finally(() => {
+          run.inFlight = false;
+          if (run.pending && !run.cancelled) {
+            run.pending = false;
+            revalidate();
+          }
+        });
+    };
+
+    const cleanup = subscribeInvalidation({
+      topic: userNotificationsTopic(accountId),
+      events: [NOTIFICATION_INSERTED],
+      onInvalidate: revalidate,
+    });
+
+    return () => {
+      run.cancelled = true;
+      cleanup();
+    };
+  }, [accountId, load]);
 
   const busy = isLoading || isRefreshing || markingId !== null;
 

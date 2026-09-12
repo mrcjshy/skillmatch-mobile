@@ -14,7 +14,8 @@
  * and `anon` holds nothing at all. Both remaining privileges are then narrowed
  * by RLS to the caller's own Bookings:
  *
- *   SELECT -- participant of the Booking, in EVERY status
+ *   SELECT -- participant, Booking `confirmed` (R3B: terminal history is no
+ *             longer readable by ordinary participants)
  *   INSERT -- participant, Booking `confirmed`, sender_id = auth.uid(),
  *             non-blank content, at most 2000 characters
  *
@@ -31,10 +32,13 @@
  * ----------------------------
  * No read receipts and no `is_read` maintenance: the column exists, defaults
  * to false, and has no UPDATE policy or grant behind it, so writing it is
- * impossible by construction and is deliberately deferred. No Realtime, no
- * polling timer, no background listener, no attachments, no typing indicator,
- * no group chat. Refresh is explicit: on screen entry, on pull-to-refresh, and
- * immediately after a successful send.
+ * impossible by construction and is deliberately deferred. No attachments, no
+ * typing indicator, no group chat, no polling timer.
+ *
+ * Since R5 a confirmed Booking chat also listens on a private Broadcast topic,
+ * but that changes only WHEN this module is called, never what it returns: an
+ * event triggers `fetchBookingMessages` and nothing else. Reads still happen on
+ * screen entry, on pull-to-refresh, and immediately after a successful send.
  *
  * It also never reads counterparty contact data. A chat bubble is labelled
  * from `sender_id` alone, so no phone, email, address or verification field is
@@ -55,9 +59,10 @@ import { supabase } from '@/lib/supabase';
 export const MESSAGE_MAX_LENGTH = 2000;
 
 /**
- * Sending is permitted in exactly one Booking status. Reading is permitted in
- * all of them, which is why this predicate gates only the composer and never
- * the history.
+ * Sending is permitted in exactly one Booking status. Reading is confined to
+ * the same one (R3B), so this predicate gates the composer while
+ * `isBookingChatAvailable` gates the conversation itself — the two agree
+ * today and are kept separate because they answer different questions.
  */
 export function canSendInStatus(status: string): boolean {
   return status === 'confirmed';
@@ -200,7 +205,7 @@ export const COPY = {
     'Pull down to refresh.',
   validationEmpty: 'Type a message before sending.',
   validationTooLong: `Messages are limited to ${MESSAGE_MAX_LENGTH} characters.`,
-  closed: 'This booking is closed. You can read the conversation, but not send new messages.',
+  closed: 'This booking is closed. Messaging is no longer available.',
   notFound: 'This booking is not available.',
   composerPlaceholder: 'Write a message…',
   you: 'You',
