@@ -1,6 +1,7 @@
 import { Stack, type Href } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
+import { PushNotificationInboxIntent } from '@/components/push-notification-inbox-intent';
 import { isRecoverySurfaceActive } from '@/lib/auth-recovery';
 import {
   AccountProvider,
@@ -159,6 +160,7 @@ export default function RootLayout() {
   return (
     <SessionProvider>
       <AccountProvider>
+        <PushNotificationInboxIntent />
         <RootNavigator />
       </AccountProvider>
     </SessionProvider>

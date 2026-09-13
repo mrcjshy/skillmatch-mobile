@@ -11,7 +11,7 @@ import {
 import { type Href, useRouter } from 'expo-router';
 
 import { SkillMatchTheme } from '@/constants/theme';
-import { supabase } from '@/lib/supabase';
+import { signOutCurrentUser } from '@/lib/sign-out';
 import { useAccount } from '@/providers/account-provider';
 import {
   AVAILABILITY_OPTIONS,
@@ -46,7 +46,7 @@ export default function WorkerProfile() {
     setSignOutError(null);
     setIsSigningOut(true);
     try {
-      const { error } = await supabase.auth.signOut();
+      const { error } = await signOutCurrentUser();
       if (error) setSignOutError(error.message || 'Sign out failed. Please try again.');
     } catch {
       setSignOutError('Sign out failed. Please try again.');

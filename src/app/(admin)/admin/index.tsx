@@ -12,6 +12,7 @@ import { type Href, useRouter } from 'expo-router';
 
 import { formatCardDateTime } from '@/lib/date-time';
 import { SkillMatchTheme } from '@/constants/theme';
+import { signOutCurrentUser } from '@/lib/sign-out';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 
@@ -371,7 +372,7 @@ export default function AdminHome() {
     setSignOutError(null);
     setIsSigningOut(true);
     try {
-      const { error } = await supabase.auth.signOut();
+      const { error } = await signOutCurrentUser();
       if (error) setSignOutError(error.message || 'Sign out failed. Please try again.');
     } catch {
       setSignOutError('Sign out failed. Please try again.');

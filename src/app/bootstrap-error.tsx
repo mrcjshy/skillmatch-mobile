@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { SkillMatchTheme } from '@/constants/theme';
-import { supabase } from '@/lib/supabase';
+import { signOutCurrentUser } from '@/lib/sign-out';
 import { useAccount } from '@/providers/account-provider';
 
 /**
@@ -28,7 +28,7 @@ export default function BootstrapErrorScreen() {
     setSignOutError(null);
     setIsSigningOut(true);
     try {
-      const { error } = await supabase.auth.signOut();
+      const { error } = await signOutCurrentUser();
       if (error) setSignOutError(error.message || 'Sign out failed. Please try again.');
     } catch {
       setSignOutError('Sign out failed. Please try again.');

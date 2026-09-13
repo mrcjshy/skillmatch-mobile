@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "147485869083",
+    "project_id": "skillmatch-livelihood",
+    "storage_bucket": "skillmatch-livelihood.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:147485869083:android:cde79713f3a05db386a4be",
+        "android_client_info": {
+          "package_name": "com.mrcjshy.skillmatch"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDXE8JwC_d-GNVYHlDYYYXaCX28sbn7gfE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
