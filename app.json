@@ -45,6 +45,14 @@
         {
           "defaultChannel": "default"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SkillMatch uses your photos so you can attach project images to your portfolio.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
       ]
     ],
     "experiments": {

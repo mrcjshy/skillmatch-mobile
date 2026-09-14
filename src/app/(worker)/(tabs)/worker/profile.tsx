@@ -12,6 +12,7 @@ import { type Href, useRouter } from 'expo-router';
 
 import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { SkillMatchTheme } from '@/constants/theme';
+import { PORTFOLIO_PATH } from '@/lib/portfolio';
 import { signOutCurrentUser } from '@/lib/sign-out';
 import { workerVerificationLabel } from '@/lib/worker-profile';
 import { useAccount } from '@/providers/account-provider';
@@ -192,6 +193,12 @@ export default function WorkerProfile() {
           hint="Make a PDF resume"
           disabled={busy}
           onPress={() => router.push('/worker/resume' as Href)}
+        />
+        <NavRow
+          label="Portfolio"
+          hint="Past projects"
+          disabled={busy}
+          onPress={() => router.push(PORTFOLIO_PATH as Href)}
         />
         <NavRow
           label="Help & FAQ"
