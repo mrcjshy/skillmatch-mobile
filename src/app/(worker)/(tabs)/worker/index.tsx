@@ -63,22 +63,6 @@ export default function WorkerHome() {
           <Text style={styles.tileTitle}>Skill Gap</Text>
           <Text style={styles.tileHint}>What a job still needs</Text>
         </Pressable>
-        <Pressable
-          style={styles.tile}
-          onPress={() => router.push('/worker/resume')}
-          accessibilityRole="button"
-        >
-          <Text style={styles.tileTitle}>Resume Builder</Text>
-          <Text style={styles.tileHint}>Make a PDF resume</Text>
-        </Pressable>
-        <Pressable
-          style={styles.tile}
-          onPress={() => router.push('/worker/help')}
-          accessibilityRole="button"
-        >
-          <Text style={styles.tileTitle}>Help &amp; FAQ</Text>
-          <Text style={styles.tileHint}>Common questions</Text>
-        </Pressable>
       </View>
     </ScrollView>
   );

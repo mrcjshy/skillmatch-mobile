@@ -8,6 +8,11 @@ import {
 } from 'react';
 
 import { supabase } from '@/lib/supabase';
+import {
+  buildWorkerProfileInsertRow,
+  buildWorkerProfileUpdateRow,
+  isWorkerVerified,
+} from '@/lib/worker-profile';
 import { useAccount } from '@/providers/account-provider';
 
 export type AvailabilityStatus = 'available' | 'busy' | 'offline';
@@ -41,6 +46,7 @@ type LoadedState = {
   bio: string;
   availability: AvailabilityStatus;
   selection: SkillSelection;
+  isVerified: boolean;
 };
 
 const COPY = {
@@ -69,7 +75,7 @@ async function loadWorkerData(userId: string): Promise<LoadedState> {
 
   const profileRes = await supabase
     .from('worker_profiles')
-    .select('id, bio, availability_status')
+    .select('id, bio, availability_status, is_verified')
     .eq('user_id', userId)
     .maybeSingle();
   if (profileRes.error) {
@@ -78,7 +84,14 @@ async function loadWorkerData(userId: string): Promise<LoadedState> {
   }
 
   if (!profileRes.data) {
-    return { skills, profileId: null, bio: '', availability: 'available', selection: {} };
+    return {
+      skills,
+      profileId: null,
+      bio: '',
+      availability: 'available',
+      selection: {},
+      isVerified: false,
+    };
   }
 
   const profileId = String(profileRes.data.id);
@@ -109,6 +122,7 @@ async function loadWorkerData(userId: string): Promise<LoadedState> {
       ? profileRes.data.availability_status
       : 'available',
     selection,
+    isVerified: isWorkerVerified(profileRes.data.is_verified),
   };
 }
 
@@ -121,6 +135,7 @@ type WorkerProfileContextValue = {
   availability: AvailabilityStatus;
   setAvailability: (value: AvailabilityStatus) => void;
   selection: SkillSelection;
+  isVerified: boolean;
   isSaving: boolean;
   saveError: string | null;
   saveSuccess: string | null;
@@ -143,6 +158,7 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
   const [availability, setAvailability] = useState<AvailabilityStatus>('available');
   const [selection, setSelection] = useState<SkillSelection>({});
   const [persistedSelection, setPersistedSelection] = useState<SkillSelection>({});
+  const [isVerified, setIsVerified] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
@@ -154,6 +170,7 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
     setAvailability(loaded.availability);
     setSelection(loaded.selection);
     setPersistedSelection(loaded.selection);
+    setIsVerified(loaded.isVerified);
   }, []);
 
   useEffect(() => {
@@ -216,7 +233,13 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
       if (!currentProfileId) {
         const insertResult = await supabase
           .from('worker_profiles')
-          .insert({ user_id: userId, bio: bioValue, availability_status: availability })
+          .insert(
+            buildWorkerProfileInsertRow({
+              userId,
+              bio: bioValue,
+              availabilityStatus: availability,
+            })
+          )
           .select('id')
           .single();
         if (insertResult.error || !insertResult.data?.id) {
@@ -232,7 +255,12 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
       } else {
         const updateResult = await supabase
           .from('worker_profiles')
-          .update({ bio: bioValue, availability_status: availability })
+          .update(
+            buildWorkerProfileUpdateRow({
+              bio: bioValue,
+              availabilityStatus: availability,
+            })
+          )
           .eq('id', currentProfileId)
           .eq('user_id', userId);
         if (updateResult.error) {
@@ -323,6 +351,7 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
         availability,
         setAvailability,
         selection,
+        isVerified,
         isSaving,
         saveError,
         saveSuccess,
