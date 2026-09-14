@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   type JobPaymentMethod,
@@ -92,6 +93,7 @@ export default function ClientHome() {
   const [budgetText, setBudgetText] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<JobPaymentMethod | null>(null);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [skillQuery, setSkillQuery] = useState('');
 
   const [isPosting, setIsPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
@@ -371,28 +373,14 @@ export default function ClientHome() {
           <Text style={styles.help}>Required. Workers see this before they accept.</Text>
 
           <Text style={styles.label}>Required Skills</Text>
-          {skills.length === 0 ? (
-            <Text style={styles.note}>No skills are available yet.</Text>
-          ) : (
-            skills.map((skill) => {
-              const on = selectedSkills.includes(skill.id);
-              return (
-                <Pressable
-                  key={skill.id}
-                  style={[styles.skillToggle, on && styles.chipSelected]}
-                  onPress={() => toggleSkill(skill.id)}
-                  disabled={busy}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: on }}
-                >
-                  <Text style={[styles.chipText, on && styles.chipTextSelected]}>
-                    {on ? '✓ ' : ''}
-                    {skill.skill_name}
-                  </Text>
-                </Pressable>
-              );
-            })
-          )}
+          <SkillCatalogPicker
+            skills={skills}
+            query={skillQuery}
+            onQueryChange={setSkillQuery}
+            isSkillSelected={(skillId) => selectedSkills.includes(skillId)}
+            onToggleSkill={toggleSkill}
+            disabled={busy}
+          />
 
           {postError ? <Text style={styles.error}>{postError}</Text> : null}
           {postSuccess ? <Text style={styles.success}>{postSuccess}</Text> : null}

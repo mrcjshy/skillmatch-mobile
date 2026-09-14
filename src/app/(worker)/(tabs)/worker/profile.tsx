@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { type Href, useRouter } from 'expo-router';
 
+import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { SkillMatchTheme } from '@/constants/theme';
 import { signOutCurrentUser } from '@/lib/sign-out';
 import { workerVerificationLabel } from '@/lib/worker-profile';
@@ -42,6 +43,7 @@ export default function WorkerProfile() {
   } = useWorkerProfile();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [skillQuery, setSkillQuery] = useState('');
 
   async function handleSignOut() {
     if (isSigningOut) return;
@@ -129,56 +131,41 @@ export default function WorkerProfile() {
           </View>
 
           <Text style={styles.sectionTitle}>Skills</Text>
-          {skills.length === 0 ? (
-            <Text style={styles.note}>No skills are available yet.</Text>
-          ) : (
-            skills.map((skill) => {
+          <SkillCatalogPicker
+            skills={skills}
+            query={skillQuery}
+            onQueryChange={setSkillQuery}
+            isSkillSelected={(skillId) => selection[skillId] !== undefined}
+            onToggleSkill={toggleSkill}
+            disabled={busy}
+            renderAfterSkill={(skill) => {
               const level = selection[skill.id];
-              const selected = level !== undefined;
+              if (level === undefined) return null;
               return (
-                <View key={skill.id} style={styles.skillBlock}>
-                  <Pressable
-                    style={[styles.skillToggle, selected && styles.chipSelected]}
-                    onPress={() => toggleSkill(skill.id)}
-                    disabled={busy}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: selected }}
-                  >
-                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                      {selected ? '✓ ' : ''}
-                      {skill.skill_name}
-                    </Text>
-                  </Pressable>
-                  {selected ? (
-                    <View style={styles.row} accessibilityRole="radiogroup">
-                      {PROFICIENCY_OPTIONS.map((option) => {
-                        const selectedLevel = level === option.value;
-                        return (
-                          <Pressable
-                            key={option.value}
-                            style={[styles.chipSmall, selectedLevel && styles.chipSelected]}
-                            onPress={() => setProficiency(skill.id, option.value)}
-                            disabled={busy}
-                            accessibilityRole="radio"
-                            accessibilityState={{ selected: selectedLevel }}
-                          >
-                            <Text
-                              style={[
-                                styles.chipTextSmall,
-                                selectedLevel && styles.chipTextSelected,
-                              ]}
-                            >
-                              {option.label}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  ) : null}
+                <View style={styles.row} accessibilityRole="radiogroup">
+                  {PROFICIENCY_OPTIONS.map((option) => {
+                    const selectedLevel = level === option.value;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        style={[styles.chipSmall, selectedLevel && styles.chipSelected]}
+                        onPress={() => setProficiency(skill.id, option.value)}
+                        disabled={busy}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: selectedLevel, disabled: busy }}
+                      >
+                        <Text
+                          style={[styles.chipTextSmall, selectedLevel && styles.chipTextSelected]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
               );
-            })
-          )}
+            }}
+          />
 
           {saveError ? <Text style={styles.error}>{saveError}</Text> : null}
           {saveSuccess ? <Text style={styles.success}>{saveSuccess}</Text> : null}
@@ -341,16 +328,6 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 16 },
   chipTextSmall: { fontSize: 14 },
   chipTextSelected: { color: SkillMatchTheme.brand.primary, fontWeight: '600' },
-  skillBlock: { gap: 8, marginBottom: 4 },
-  skillToggle: {
-    minHeight: SkillMatchTheme.size.iconTarget,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    justifyContent: 'center',
-  },
   error: { color: SkillMatchTheme.feedback.danger, fontSize: 14 },
   success: { color: SkillMatchTheme.feedback.success, fontSize: 14 },
   button: {
