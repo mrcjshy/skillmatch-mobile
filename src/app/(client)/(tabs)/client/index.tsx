@@ -11,28 +11,35 @@ import {
   View,
 } from 'react-native';
 
+import { JobLocationPicker } from '@/components/job-location-picker';
 import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { SkillMatchTheme } from '@/constants/theme';
+import {
+  COPY as JOB_LOCATION_COPY,
+  JobLocationError,
+  createJobLocationErrorCopy,
+  createMyJobWithLocation,
+  initialJobPin,
+  postingLocationError,
+  type JobPin,
+} from '@/lib/job-location';
 import {
   type JobPaymentMethod,
   postingPaymentError,
 } from '@/lib/job-payment';
-import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
 
 /**
  * Client dashboard = "Post a Job" (defense-minimum slice).
  *
- * `client_id` always comes from the authoritative account (AccountProvider),
- * never from input. Location is the fixed deployment constant Santa Ana,
- * Pateros. `status` is never sent: the database default ('open') owns it.
+ * Caller identity is `auth.uid()` inside `create_my_job_with_location`.
+ * Location is the fixed deployment constant Santa Ana, Pateros, written by
+ * the server. `status` is never sent: the database default ('open') owns it.
  * Required skills come only from the loaded public.skills master list.
  *
- * Save is job_postings INSERT -> job_id -> job_skills INSERT -> re-read.
- * These are separate requests, not one transaction: success is reported only
- * after every step and the re-read succeed, and a failure after the job row
- * exists is reported truthfully as a partial save (no rollback is claimed).
+ * Save is one atomic RPC: Job + required skills + private pin. Exact
+ * coordinates never land on public.job_postings and are not used for matching.
  */
 
 const DEPLOYMENT_BARANGAY = 'Santa Ana';
@@ -65,21 +72,6 @@ function parseSchedule(dateText: string, timeText: string): Date | null {
   return dt;
 }
 
-/**
- * Every message this screen can put in front of a Client.
- *
- * Raw PostgREST/Postgres text names tables, policies and constraints and is
- * developer diagnostic only; each failure logs its real cause through
- * `console.warn` and throws one of these instead. The post-failure catch
- * still appends its own partial-save sentence, which is deliberate and must
- * survive: a job row can exist without its required skills.
- */
-const COPY = {
-  postJob: "Couldn't post your job. Please try again.",
-  postSkills: "Couldn't save the job's required skills. Please try again.",
-  postGeneric: "Couldn't post your job. Please try again.",
-} as const;
-
 export default function ClientHome() {
   const { account } = useAccount();
   const clientId = account?.id;
@@ -88,6 +80,9 @@ export default function ClientHome() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [address, setAddress] = useState('');
+  const [pin, setPin] = useState<JobPin | null>(initialJobPin);
+  const [locationNote, setLocationNote] = useState<string | null>(null);
+  const [mapGesture, setMapGesture] = useState(false);
   const [dateText, setDateText] = useState('');
   const [timeText, setTimeText] = useState('');
   const [budgetText, setBudgetText] = useState('');
@@ -148,68 +143,48 @@ export default function ClientHome() {
       setPostError(paymentError ?? 'Please select a payment method.');
       return;
     }
+    const trimmedAddress = address.trim();
+    const locationError = postingLocationError(trimmedAddress, pin);
+    if (locationError !== null || pin === null) {
+      setPostError(locationError ?? JOB_LOCATION_COPY.missingPin);
+      return;
+    }
 
     setIsPosting(true);
-    let createdJobId: string | null = null;
+    let created = false;
     try {
-      // 1. job_postings INSERT. `status` is never sent: the database default
-      //    ('open') owns it. client_id comes from the authoritative account.
-      const ins = await supabase
-        .from('job_postings')
-        .insert({
-          client_id: clientId,
-          title: trimmedTitle,
-          description: description.trim() || null,
-          address: address.trim() || null,
-          barangay: DEPLOYMENT_BARANGAY,
-          city: DEPLOYMENT_CITY,
-          scheduled_at: schedule.toISOString(),
-          budget,
-          payment_method: paymentMethod,
-        })
-        .select('id')
-        .single();
-      if (ins.error || !ins.data?.id) {
-        console.warn(
-          '[N7-UI] job_postings insert failed:',
-          ins.error?.code,
-          ins.error?.message ?? 'no id returned'
-        );
-        throw new Error(COPY.postJob);
-      }
-      createdJobId = String(ins.data.id);
-
-      // 2. job_skills INSERT for the created job.
-      const skillIns = await supabase
-        .from('job_skills')
-        .insert(chosen.map((skill_id) => ({ job_id: createdJobId, skill_id })));
-      if (skillIns.error) {
-        console.warn(
-          '[N7-UI] job_skills insert failed:',
-          skillIns.error.code,
-          skillIns.error.message
-        );
-        throw new Error(COPY.postSkills);
-      }
-
-      // 3. Re-read persisted state; only then report success.
+      await createMyJobWithLocation({
+        title: trimmedTitle,
+        description: description.trim(),
+        address: trimmedAddress,
+        scheduledAt: schedule.toISOString(),
+        budget,
+        paymentMethod,
+        skillIds: chosen,
+        latitude: pin.latitude,
+        longitude: pin.longitude,
+      });
+      created = true;
       await refresh(clientId);
       setPostSuccess('Job posted.');
       setTitle('');
       setDescription('');
       setAddress('');
+      setPin(initialJobPin());
+      setLocationNote(null);
       setDateText('');
       setTimeText('');
       setBudgetText('');
       setPaymentMethod(null);
       setSelectedSkills([]);
     } catch (e: unknown) {
-      const base = e instanceof Error ? e.message : COPY.postGeneric;
-      setPostError(
-        createdJobId
-          ? `${base} The job was created but the post did not finish, so it may be saved without its required skills. Please review "My Posted Jobs" before trying again.`
-          : `${base} No job was created.`
-      );
+      if (created) {
+        setPostError('Job posted, but the list could not be refreshed. Check My Posted Jobs.');
+      } else {
+        const code = e instanceof JobLocationError ? e.code : 'unknown';
+        console.warn('[R5E-M1] create_my_job_with_location failed:', code);
+        setPostError(`${createJobLocationErrorCopy(e)} No job was created.`);
+      }
       if (clientId) {
         try {
           await refresh(clientId);
@@ -229,7 +204,11 @@ export default function ClientHome() {
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled"
+      scrollEnabled={!mapGesture}
+    >
       {/*
         The fixed service area, stated once at the top of the screen. Putting
         it here rather than beside Address is what stops the two from being
@@ -282,7 +261,17 @@ export default function ClientHome() {
             editable={!busy}
             accessibilityLabel="Address"
           />
-          <Text style={styles.help}>Where in the service area the work happens.</Text>
+          <Text style={styles.help}>Required. The map pin does not replace this address.</Text>
+
+          <Text style={styles.label}>Job pin</Text>
+          <JobLocationPicker
+            pin={pin}
+            onChangePin={setPin}
+            note={locationNote}
+            onNote={setLocationNote}
+            disabled={busy}
+            onMapGesture={setMapGesture}
+          />
 
           {/*
             Location is the fixed deployment constant, not an input. It is
