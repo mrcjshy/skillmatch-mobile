@@ -1,9 +1,11 @@
 /**
- * R5E-M1 Client Job-location picker helpers.
+ * R5E-M1 Client Job-location picker helpers and R5E-M2 Worker presentation.
  *
  * Coordinates are display/service-location data only. Matching remains
  * Skill 50 / Location 30 / Rating 20 on barangay/city. This module never
  * writes public.job_postings or private.job_locations directly.
+ * Pre-accept Workers use get_job_approximate_area only. Exact pin access
+ * uses get_authorized_job_location only.
  */
 
 import { supabase } from './supabase';
@@ -60,6 +62,82 @@ export const COPY = {
   invalid: 'Check the job details and selected location, then try again.',
   generic: "Couldn't post your job. Please try again.",
   useCurrentLocation: 'Use Current Location',
+  approximateHeading: 'Approximate Job Area',
+  approximateCopy:
+    'Approximate Job area. Exact location becomes available after acceptance.',
+  workerMapUnavailable: 'Map is unavailable. The general area is still shown as text.',
+  workerLocationUnavailable: 'This job location is not available.',
+  workerLocationGeneric: "Couldn't load the job location. Please try again.",
+  openInMaps: 'Open in Maps',
+  openInMapsFailed: "Couldn't open Maps.",
+} as const;
+
+export type ApproximateJobArea = {
+  jobId: string;
+  barangay: string | null;
+  city: string | null;
+  approximateAreaKey: string;
+};
+
+export type AuthorizedJobLocation = {
+  jobId: string;
+  address: string | null;
+  pin: JobPin | null;
+  barangay: string | null;
+  city: string | null;
+};
+
+export type WorkerLocationSurface =
+  | {
+      kind: 'approximate';
+      heading: typeof COPY.approximateHeading;
+      copy: typeof COPY.approximateCopy;
+      barangay: string | null;
+      city: string | null;
+      mapRegion: typeof SANTA_ANA_PATEROS_DISPLAY_REGION;
+      pin: null;
+      address: null;
+      openInMapsUrl: null;
+      showMap: boolean;
+    }
+  | {
+      kind: 'exact';
+      address: string | null;
+      pin: JobPin;
+      barangay: string | null;
+      city: string | null;
+      openInMapsUrl: string;
+      showMap: boolean;
+    }
+  | {
+      kind: 'text-fallback';
+      address: string | null;
+      barangay: string | null;
+      city: string | null;
+      pin: null;
+      openInMapsUrl: null;
+      showMap: false;
+    }
+  | {
+      kind: 'suppressed';
+      pin: null;
+      address: null;
+      openInMapsUrl: null;
+      showMap: false;
+    }
+  | {
+      kind: 'unavailable';
+      pin: null;
+      address: null;
+      openInMapsUrl: null;
+      showMap: false;
+    };
+
+const CLOSED_SURFACE = {
+  pin: null,
+  address: null,
+  openInMapsUrl: null,
+  showMap: false,
 } as const;
 
 export function initialJobPin(): JobPin | null {
@@ -152,6 +230,148 @@ export function createJobLocationErrorCopy(error: unknown): string {
   if (code === FORBIDDEN) return COPY.forbidden;
   if (code === INVALID_INPUT) return COPY.invalid;
   return COPY.generic;
+}
+
+const CLOSED = 'SM409';
+
+export function createWorkerLocationErrorCopy(error: unknown): string {
+  const code = codeOf(error);
+  if (code === FORBIDDEN || code === CLOSED) return COPY.workerLocationUnavailable;
+  return COPY.workerLocationGeneric;
+}
+
+export function mapRegionForApproximateArea(_areaKey: string) {
+  return SANTA_ANA_PATEROS_DISPLAY_REGION;
+}
+
+export function authorizedMapsNavigationUrl(pin: JobPin | null): string | null {
+  if (pin === null || !isValidJobCoordinate(pin.latitude, pin.longitude)) return null;
+  return `geo:${pin.latitude},${pin.longitude}?q=${pin.latitude},${pin.longitude}`;
+}
+
+export function projectPreAcceptWorkerLocation(
+  area: ApproximateJobArea | null,
+  mapAvailable: MapAvailability
+): WorkerLocationSurface {
+  if (area === null) {
+    return { kind: 'unavailable', ...CLOSED_SURFACE };
+  }
+  return {
+    kind: 'approximate',
+    heading: COPY.approximateHeading,
+    copy: COPY.approximateCopy,
+    barangay: area.barangay,
+    city: area.city,
+    mapRegion: mapRegionForApproximateArea(area.approximateAreaKey),
+    pin: null,
+    address: null,
+    openInMapsUrl: null,
+    showMap: mapAvailable === 'ready',
+  };
+}
+
+export function projectAssignedWorkerLocation(input: {
+  bookingStatus: string;
+  exact: AuthorizedJobLocation | null;
+  mapAvailable: MapAvailability;
+}): WorkerLocationSurface {
+  if (input.bookingStatus !== 'confirmed') {
+    return { kind: 'suppressed', ...CLOSED_SURFACE };
+  }
+  if (input.exact === null) {
+    return { kind: 'unavailable', ...CLOSED_SURFACE };
+  }
+  const url = authorizedMapsNavigationUrl(input.exact.pin);
+  if (input.exact.pin === null || url === null) {
+    return {
+      kind: 'text-fallback',
+      address: input.exact.address,
+      barangay: input.exact.barangay,
+      city: input.exact.city,
+      pin: null,
+      openInMapsUrl: null,
+      showMap: false,
+    };
+  }
+  return {
+    kind: 'exact',
+    address: input.exact.address,
+    pin: input.exact.pin,
+    barangay: input.exact.barangay,
+    city: input.exact.city,
+    openInMapsUrl: url,
+    showMap: input.mapAvailable === 'ready',
+  };
+}
+
+function firstRpcRow(data: unknown): Record<string, unknown> | null {
+  const rows = Array.isArray(data) ? data : data !== null && data !== undefined ? [data] : [];
+  const row = rows[0];
+  if (typeof row !== 'object' || row === null) return null;
+  return row as Record<string, unknown>;
+}
+
+function toOptionalText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
+function toOptionalCoordinate(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+export async function getJobApproximateArea(jobId: string): Promise<ApproximateJobArea> {
+  const res = await supabase.rpc('get_job_approximate_area', { p_job_id: jobId });
+  if (res.error) {
+    throw new JobLocationError(res.error.message || COPY.workerLocationGeneric, res.error.code ?? null);
+  }
+  const row = firstRpcRow(res.data);
+  if (row === null) {
+    throw new JobLocationError(COPY.workerLocationGeneric, null);
+  }
+  const id = typeof row.job_id === 'string' ? row.job_id : null;
+  const key = typeof row.approximate_area_key === 'string' ? row.approximate_area_key : null;
+  if (id === null || key === null) {
+    throw new JobLocationError(COPY.workerLocationGeneric, null);
+  }
+  return {
+    jobId: id,
+    barangay: toOptionalText(row.barangay),
+    city: toOptionalText(row.city),
+    approximateAreaKey: key,
+  };
+}
+
+export async function getAuthorizedJobLocation(jobId: string): Promise<AuthorizedJobLocation> {
+  const res = await supabase.rpc('get_authorized_job_location', { p_job_id: jobId });
+  if (res.error) {
+    throw new JobLocationError(res.error.message || COPY.workerLocationGeneric, res.error.code ?? null);
+  }
+  const row = firstRpcRow(res.data);
+  if (row === null) {
+    throw new JobLocationError(COPY.workerLocationGeneric, null);
+  }
+  const id = typeof row.job_id === 'string' ? row.job_id : null;
+  if (id === null) {
+    throw new JobLocationError(COPY.workerLocationGeneric, null);
+  }
+  const latitude = toOptionalCoordinate(row.latitude);
+  const longitude = toOptionalCoordinate(row.longitude);
+  const pin =
+    latitude !== null && longitude !== null && isValidJobCoordinate(latitude, longitude)
+      ? { latitude, longitude }
+      : null;
+  return {
+    jobId: id,
+    address: toOptionalText(row.address),
+    pin,
+    barangay: toOptionalText(row.barangay),
+    city: toOptionalText(row.city),
+  };
 }
 
 export type CreateMyJobWithLocationInput = {

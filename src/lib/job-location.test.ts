@@ -4,16 +4,25 @@ import { supabase } from './supabase';
 import {
   JobLocationError,
   SANTA_ANA_PATEROS_DISPLAY_REGION,
+  authorizedMapsNavigationUrl,
   classifyForegroundPermission,
   classifyMapAvailability,
   createJobLocationErrorCopy,
   createMyJobWithLocation,
+  createWorkerLocationErrorCopy,
   decideCurrentLocationAction,
+  getAuthorizedJobLocation,
+  getJobApproximateArea,
   initialJobPin,
   isValidJobCoordinate,
+  mapRegionForApproximateArea,
   postingLocationError,
   postingPinState,
+  projectAssignedWorkerLocation,
+  projectPreAcceptWorkerLocation,
   resolveCurrentLocationPin,
+  type ApproximateJobArea,
+  type AuthorizedJobLocation,
   type ForegroundLocationLike,
 } from './job-location';
 
@@ -219,5 +228,269 @@ describe('createMyJobWithLocation', () => {
     expect(createJobLocationErrorCopy(new Error('network'))).toBe(
       "Couldn't post your job. Please try again."
     );
+  });
+});
+
+const santaAnaArea: ApproximateJobArea = {
+  jobId: 'job-1',
+  barangay: 'Santa Ana',
+  city: 'Pateros',
+  approximateAreaKey: 'santa_ana_pateros',
+};
+
+const authorizedExact: AuthorizedJobLocation = {
+  jobId: 'job-1',
+  address: '123 Secret Street',
+  pin: { latitude: 14.5411111, longitude: 121.0800001 },
+  barangay: 'Santa Ana',
+  city: 'Pateros',
+};
+
+describe('general-area map-region mapping', () => {
+  it('maps the Santa Ana area key to the verified OSM display region, not a Job pin', () => {
+    expect(mapRegionForApproximateArea('santa_ana_pateros')).toEqual(
+      SANTA_ANA_PATEROS_DISPLAY_REGION
+    );
+    expect(mapRegionForApproximateArea('santa_ana_pateros').latitude).toBe(14.5470774);
+    expect(mapRegionForApproximateArea('santa_ana_pateros').longitude).toBe(121.0716472);
+  });
+
+  it('does not invent a second center for another barangay/city key', () => {
+    expect(mapRegionForApproximateArea('general_barangay_city')).toEqual(
+      SANTA_ANA_PATEROS_DISPLAY_REGION
+    );
+  });
+});
+
+describe('approximate-versus-exact lifecycle projection', () => {
+  it('projects a pre-accept Worker surface with general area only', () => {
+    const surface = projectPreAcceptWorkerLocation(santaAnaArea, 'ready');
+    expect(surface).toEqual({
+      kind: 'approximate',
+      heading: 'Approximate Job Area',
+      copy: 'Approximate Job area. Exact location becomes available after acceptance.',
+      barangay: 'Santa Ana',
+      city: 'Pateros',
+      mapRegion: SANTA_ANA_PATEROS_DISPLAY_REGION,
+      pin: null,
+      address: null,
+      openInMapsUrl: null,
+      showMap: true,
+    });
+  });
+
+  it('never derives the approximate map from a private exact pin', () => {
+    const surface = projectPreAcceptWorkerLocation(santaAnaArea, 'ready');
+    expect(surface.kind).toBe('approximate');
+    if (surface.kind !== 'approximate') return;
+    expect(surface.mapRegion).toEqual(SANTA_ANA_PATEROS_DISPLAY_REGION);
+    expect(surface.mapRegion.latitude).not.toBe(authorizedExact.pin?.latitude);
+    expect(surface.mapRegion.longitude).not.toBe(authorizedExact.pin?.longitude);
+    expect(surface.pin).toBeNull();
+    expect(surface.address).toBeNull();
+    expect(surface.openInMapsUrl).toBeNull();
+  });
+
+  it('keeps pre-accept text when the native map is unavailable', () => {
+    const surface = projectPreAcceptWorkerLocation(santaAnaArea, 'unavailable');
+    expect(surface.kind).toBe('approximate');
+    if (surface.kind !== 'approximate') return;
+    expect(surface.showMap).toBe(false);
+    expect(surface.pin).toBeNull();
+    expect(surface.address).toBeNull();
+    expect(surface.openInMapsUrl).toBeNull();
+  });
+
+  it('fails closed when the approximate area is missing', () => {
+    expect(projectPreAcceptWorkerLocation(null, 'ready')).toEqual({
+      kind: 'unavailable',
+      pin: null,
+      address: null,
+      openInMapsUrl: null,
+      showMap: false,
+    });
+  });
+
+  it('shows the exact pin and Open in Maps only for a confirmed assigned Worker', () => {
+    const surface = projectAssignedWorkerLocation({
+      bookingStatus: 'confirmed',
+      exact: authorizedExact,
+      mapAvailable: 'ready',
+    });
+    expect(surface.kind).toBe('exact');
+    if (surface.kind !== 'exact') return;
+    expect(surface.address).toBe('123 Secret Street');
+    expect(surface.pin).toEqual(authorizedExact.pin);
+    expect(surface.openInMapsUrl).toBe(
+      'geo:14.5411111,121.0800001?q=14.5411111,121.0800001'
+    );
+    expect(surface.showMap).toBe(true);
+    expect(surface.barangay).toBe('Santa Ana');
+    expect(surface.city).toBe('Pateros');
+  });
+
+  it('uses text-location fallback when a confirmed Job has no pin', () => {
+    const surface = projectAssignedWorkerLocation({
+      bookingStatus: 'confirmed',
+      exact: { ...authorizedExact, pin: null },
+      mapAvailable: 'ready',
+    });
+    expect(surface).toEqual({
+      kind: 'text-fallback',
+      address: '123 Secret Street',
+      barangay: 'Santa Ana',
+      city: 'Pateros',
+      pin: null,
+      openInMapsUrl: null,
+      showMap: false,
+    });
+  });
+
+  it.each(['completed', 'cancelled', 'no_show', 'pending'] as const)(
+    'suppresses stale exact location after %s',
+    (bookingStatus) => {
+      const surface = projectAssignedWorkerLocation({
+        bookingStatus,
+        exact: authorizedExact,
+        mapAvailable: 'ready',
+      });
+      expect(surface).toEqual({
+        kind: 'suppressed',
+        pin: null,
+        address: null,
+        openInMapsUrl: null,
+        showMap: false,
+      });
+    }
+  );
+
+  it('fails closed when confirmed exact location is denied or missing', () => {
+    expect(
+      projectAssignedWorkerLocation({
+        bookingStatus: 'confirmed',
+        exact: null,
+        mapAvailable: 'ready',
+      })
+    ).toEqual({
+      kind: 'unavailable',
+      pin: null,
+      address: null,
+      openInMapsUrl: null,
+      showMap: false,
+    });
+  });
+
+  it('hides the exact map when the native module is unavailable', () => {
+    const surface = projectAssignedWorkerLocation({
+      bookingStatus: 'confirmed',
+      exact: authorizedExact,
+      mapAvailable: 'unavailable',
+    });
+    expect(surface.kind).toBe('exact');
+    if (surface.kind !== 'exact') return;
+    expect(surface.showMap).toBe(false);
+    expect(surface.openInMapsUrl).toBe(
+      'geo:14.5411111,121.0800001?q=14.5411111,121.0800001'
+    );
+  });
+});
+
+describe('external navigation URL construction', () => {
+  it('builds a geo URI only from currently authorized exact coordinates', () => {
+    expect(authorizedMapsNavigationUrl({ latitude: 14.5411111, longitude: 121.0800001 })).toBe(
+      'geo:14.5411111,121.0800001?q=14.5411111,121.0800001'
+    );
+  });
+
+  it('does not construct a URL without a valid pin and never uses Static Maps', () => {
+    expect(authorizedMapsNavigationUrl(null)).toBeNull();
+    expect(authorizedMapsNavigationUrl({ latitude: Number.NaN, longitude: 121.08 })).toBeNull();
+    const url = authorizedMapsNavigationUrl({ latitude: 14.5411111, longitude: 121.0800001 });
+    expect(url).not.toMatch(/staticmap/i);
+    expect(url).not.toMatch(/maps\/api/i);
+  });
+});
+
+describe('getJobApproximateArea', () => {
+  beforeEach(() => {
+    rpc.mockReset();
+    from.mockReset();
+  });
+
+  it('reads only the approximate-area RPC and never the exact-location RPC or tables', async () => {
+    rpc.mockResolvedValue({
+      data: [
+        {
+          job_id: 'job-1',
+          barangay: 'Santa Ana',
+          city: 'Pateros',
+          approximate_area_key: 'santa_ana_pateros',
+        },
+      ],
+      error: null,
+    } as never);
+    await expect(getJobApproximateArea('job-1')).resolves.toEqual(santaAnaArea);
+    expect(rpc).toHaveBeenCalledWith('get_job_approximate_area', { p_job_id: 'job-1' });
+    expect(rpc).not.toHaveBeenCalledWith('get_authorized_job_location', expect.anything());
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on SM409 without exposing coordinates', async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'SM409', message: 'this job area is not available 14.54 121.07' },
+    } as never);
+    await expect(getJobApproximateArea('job-1')).rejects.toBeInstanceOf(JobLocationError);
+    const copy = createWorkerLocationErrorCopy(
+      new JobLocationError('this job area is not available 14.54 121.07', 'SM409')
+    );
+    expect(copy).toBe('This job location is not available.');
+    expect(copy).not.toMatch(/14\.|121\./);
+  });
+});
+
+describe('getAuthorizedJobLocation', () => {
+  beforeEach(() => {
+    rpc.mockReset();
+    from.mockReset();
+  });
+
+  it('reads exact location only through the authorized RPC', async () => {
+    rpc.mockResolvedValue({
+      data: [
+        {
+          job_id: 'job-1',
+          address: '123 Secret Street',
+          latitude: 14.5411111,
+          longitude: 121.0800001,
+          barangay: 'Santa Ana',
+          city: 'Pateros',
+        },
+      ],
+      error: null,
+    } as never);
+    await expect(getAuthorizedJobLocation('job-1')).resolves.toEqual(authorizedExact);
+    expect(rpc).toHaveBeenCalledWith('get_authorized_job_location', { p_job_id: 'job-1' });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('treats a legacy Job with null coordinates as text-location fallback data', async () => {
+    rpc.mockResolvedValue({
+      data: [
+        {
+          job_id: 'job-1',
+          address: '123 Secret Street',
+          latitude: null,
+          longitude: null,
+          barangay: 'Santa Ana',
+          city: 'Pateros',
+        },
+      ],
+      error: null,
+    } as never);
+    await expect(getAuthorizedJobLocation('job-1')).resolves.toEqual({
+      ...authorizedExact,
+      pin: null,
+    });
   });
 });

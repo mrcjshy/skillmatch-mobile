@@ -14,6 +14,7 @@ import BookingLifecycle from '@/components/booking-lifecycle';
 import BookingPayment from '@/components/booking-payment';
 import RateWorker from '@/components/rate-worker';
 import { StarRatingDisplay } from '@/components/star-rating-display';
+import { WorkerAssignedJobLocation, nativeJobMapsLoaded, openWorkerMapsUrl } from '@/components/job-location-map';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   BookingLoadError,
@@ -48,6 +49,14 @@ import {
 import { CLIENT_PORTFOLIO_COPY, CLIENT_PORTFOLIO_PATH, isClientPortfolioVisible } from '@/lib/client-portfolio';
 import { COPY as RATING_COPY, fetchMyRatedBookingIds, isRateableStatus } from '@/lib/ratings';
 import { COPY as REPORT_COPY, isBookingReportableStatus } from '@/lib/reports';
+import {
+  COPY as JOB_LOCATION_COPY,
+  JobLocationError,
+  classifyMapAvailability,
+  getAuthorizedJobLocation,
+  projectAssignedWorkerLocation,
+  type AuthorizedJobLocation,
+} from '@/lib/job-location';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UNAVAILABLE = 'This booking is unavailable.';
@@ -58,6 +67,11 @@ type DetailState = {
   jobPaymentMethod: JobPaymentMethod | null;
   jobPaymentReady: boolean;
   isRated: boolean;
+  exactLocation:
+    | { status: 'skipped' }
+    | { status: 'ready'; location: AuthorizedJobLocation }
+    | { status: 'denied' }
+    | { status: 'error' };
 };
 
 export default function BookingDetails({ role, bookingId }: { role: BookingRole; bookingId: string | null }) {
@@ -66,11 +80,13 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [mapsNote, setMapsNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (bookingId === null || !UUID_PATTERN.test(bookingId)) {
       setDetail(null);
       setLoadError(UNAVAILABLE);
+      setMapsNote(null);
       return;
     }
 
@@ -79,6 +95,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     if (booking === null) {
       setDetail(null);
       setLoadError(UNAVAILABLE);
+      setMapsNote(null);
       return;
     }
 
@@ -102,14 +119,27 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
         ? await fetchMyRatedBookingIds([booking.booking_id])
         : new Set<string>();
 
+    let exactLocation: DetailState['exactLocation'] = { status: 'skipped' };
+    if (role === 'worker' && booking.booking_status === 'confirmed') {
+      try {
+        exactLocation = { status: 'ready', location: await getAuthorizedJobLocation(booking.job_id) };
+      } catch (error: unknown) {
+        const code = error instanceof JobLocationError ? error.code : null;
+        console.warn('[R5E-M2] get_authorized_job_location failed:', code);
+        exactLocation = code === 'SM409' || code === '42501' ? { status: 'denied' } : { status: 'error' };
+      }
+    }
+
     setDetail({
       booking,
       payment: payments.get(booking.booking_id),
       jobPaymentMethod,
       jobPaymentReady,
       isRated: rated.has(booking.booking_id),
+      exactLocation,
     });
     setLoadError(null);
+    setMapsNote(null);
   }, [bookingId, role]);
 
   const applyError = useCallback((error: unknown) => {
@@ -173,7 +203,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     );
   }
 
-  const { booking, payment, jobPaymentMethod, jobPaymentReady, isRated } = detail;
+  const { booking, payment, jobPaymentMethod, jobPaymentReady, isRated, exactLocation } = detail;
   const schedule = formatDetailDateTime(booking.job_scheduled_at);
   const bookedAt = formatDetailDateTime(booking.booked_at);
   const completedAt = formatDetailDateTime(booking.completed_at);
@@ -181,6 +211,14 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const location = formatLocation(booking.job_address, booking.job_barangay, booking.job_city);
   const released = isCounterpartyReleased(booking.booking_status);
   const chatAvailable = isBookingChatAvailable(booking.booking_status);
+  const workerLocationSurface =
+    role === 'worker'
+      ? projectAssignedWorkerLocation({
+          bookingStatus: booking.booking_status,
+          exact: exactLocation.status === 'ready' ? exactLocation.location : null,
+          mapAvailable: classifyMapAvailability(nativeJobMapsLoaded()),
+        })
+      : null;
 
   return (
     <ScrollView
@@ -199,6 +237,20 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
         <DetailLine label="Schedule" value={schedule} />
         <DetailLine label="Budget" value={budget} />
         <DetailLine label="Location" value={location} />
+        {role === 'worker' && booking.booking_status === 'confirmed' && exactLocation.status === 'error' ? (
+          <Text style={styles.secondary}>{JOB_LOCATION_COPY.workerLocationGeneric}</Text>
+        ) : workerLocationSurface ? (
+          <WorkerAssignedJobLocation
+            surface={workerLocationSurface}
+            mapsNote={mapsNote}
+            onOpenMaps={() => {
+              const url = workerLocationSurface.kind === 'exact' ? workerLocationSurface.openInMapsUrl : null;
+              void openWorkerMapsUrl(url).then((ok) => {
+                setMapsNote(ok ? null : JOB_LOCATION_COPY.openInMapsFailed);
+              });
+            }}
+          />
+        ) : null}
         <DetailLine label="Booked" value={bookedAt} />
         <DetailLine label="Completed" value={completedAt} />
       </View>

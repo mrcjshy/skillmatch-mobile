@@ -16,6 +16,7 @@ import {
   parseJobPaymentMethod,
   type JobPaymentMethod,
 } from '@/lib/job-payment';
+import { WorkerApproximateJobArea } from '@/components/job-location-map';
 import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
@@ -24,10 +25,14 @@ import { useAccount } from '@/providers/account-provider';
  * Worker "Job Opportunities" = read-only discovery of the jobs this Worker has
  * matched into (N8-UI).
  *
- * The ONLY data source is the hosted RPC `public.list_my_job_opportunities()`,
+ * The list source is the hosted RPC `public.list_my_job_opportunities()`,
  * called with ZERO arguments. The Worker identity comes from `auth.uid()`
  * inside that SECURITY DEFINER function, so there is no worker id to pass and
  * none that could be substituted to view someone else's opportunities.
+ *
+ * R5E-M2 adds one supplementary read per card: `public.get_job_approximate_area(p_job_id)`.
+ * That RPC returns barangay, city, and a general-area key only. This screen
+ * never calls `get_authorized_job_location` and never receives an exact pin.
  *
  * Nothing about matching is reimplemented here. Stage 1 eligibility
  * (role/active/verified/available/skill overlap) and the Skill 50 /
@@ -45,9 +50,8 @@ import { useAccount } from '@/providers/account-provider';
  * different meanings.
  *
  * The RPC withholds Client identity/contact data, competitor Workers, their
- * scores, and this Worker's rank; this screen renders only what it returns and
- * makes no supplementary lookup to fill those in. Client contact details are
- * released only after a confirmed booking.
+ * scores, and this Worker's rank. This screen does not fill those withheld
+ * fields. Client contact details are released only after a confirmed booking.
  *
  * N9-UI adds the ONE write this screen performs: `Accept`, which calls
  * `public.accept_job_opportunity(p_job_id)`. That RPC is the entire acceptance
@@ -563,6 +567,7 @@ export default function WorkerOpportunities() {
                   <Text style={styles.cardLine}>{job.description}</Text>
                 ) : null}
                 {location ? <Text style={styles.cardLine}>{location}</Text> : null}
+                <WorkerApproximateJobArea jobId={job.job_id} />
                 {budget ? <Text style={styles.cardLine}>Budget: {budget}</Text> : null}
                 {schedule ? <Text style={styles.cardLine}>Schedule: {schedule}</Text> : null}
                 <Text style={styles.cardLine}>{formatOpportunityPaymentLine(job.payment_method)}</Text>
