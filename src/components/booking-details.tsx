@@ -45,6 +45,7 @@ import {
   fetchBookingPayments,
   isPayableStatus,
 } from '@/lib/payments';
+import { CLIENT_PORTFOLIO_COPY, CLIENT_PORTFOLIO_PATH, isClientPortfolioVisible } from '@/lib/client-portfolio';
 import { COPY as RATING_COPY, fetchMyRatedBookingIds, isRateableStatus } from '@/lib/ratings';
 import { COPY as REPORT_COPY, isBookingReportableStatus } from '@/lib/reports';
 
@@ -227,6 +228,18 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
               <StarRatingDisplay average={booking.worker_rating_avg} count={booking.worker_rating_count} />
             </View>
           </>
+        ) : null}
+        {role === 'client' && isClientPortfolioVisible(booking.booking_status) ? (
+          <Pressable
+            style={styles.outlineButton}
+            onPress={() => {
+              router.push({ pathname: CLIENT_PORTFOLIO_PATH, params: { bookingId: booking.booking_id } } as unknown as Href);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={CLIENT_PORTFOLIO_COPY.viewAction}
+          >
+            <Text style={styles.outlineButtonText}>{CLIENT_PORTFOLIO_COPY.viewAction}</Text>
+          </Pressable>
         ) : null}
       </View>
 
