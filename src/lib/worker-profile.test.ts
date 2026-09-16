@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  WORKER_PROFILE_AVAILABILITY_READ_COLUMNS,
   WORKER_PROFILE_PROTECTED_WRITE_FIELDS,
+  buildWorkerProfileAvailabilityUpdateRow,
   buildWorkerProfileInsertRow,
   buildWorkerProfileUpdateRow,
   isWorkerVerified,
+  parseWorkerProfileAvailabilityStatus,
   workerVerificationLabel,
 } from './worker-profile';
 
@@ -81,5 +84,42 @@ describe('worker profile write payloads', () => {
     for (const field of protectedFields) {
       expect(row).not.toHaveProperty(field);
     }
+  });
+
+  it('Home persist writes only availability_status', () => {
+    const row = buildWorkerProfileAvailabilityUpdateRow({
+      availabilityStatus: 'offline',
+    });
+
+    expect(row).toEqual({ availability_status: 'offline' });
+    expect(Object.keys(row)).toEqual(['availability_status']);
+    expect(row).not.toHaveProperty('bio');
+    for (const field of protectedFields) {
+      expect(row).not.toHaveProperty(field);
+    }
+  });
+
+  it('Home authority refresh reads only availability_status', () => {
+    expect(WORKER_PROFILE_AVAILABILITY_READ_COLUMNS).toEqual(['availability_status']);
+    expect(WORKER_PROFILE_AVAILABILITY_READ_COLUMNS).not.toContain('bio');
+    for (const field of protectedFields) {
+      expect(WORKER_PROFILE_AVAILABILITY_READ_COLUMNS).not.toContain(field);
+    }
+  });
+
+  it('accepts only persisted availability values', () => {
+    expect(parseWorkerProfileAvailabilityStatus('available')).toBe('available');
+    expect(parseWorkerProfileAvailabilityStatus('busy')).toBe('busy');
+    expect(parseWorkerProfileAvailabilityStatus('offline')).toBe('offline');
+  });
+
+  it('does not invent availability from invalid or extra payload fields', () => {
+    expect(parseWorkerProfileAvailabilityStatus(null)).toBeNull();
+    expect(parseWorkerProfileAvailabilityStatus(undefined)).toBeNull();
+    expect(parseWorkerProfileAvailabilityStatus('Available')).toBeNull();
+    expect(parseWorkerProfileAvailabilityStatus({
+      availability_status: 'busy',
+      bio: 'should be ignored',
+    })).toBeNull();
   });
 });

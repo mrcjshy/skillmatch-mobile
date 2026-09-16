@@ -9,9 +9,12 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import {
+  WORKER_PROFILE_AVAILABILITY_READ_COLUMNS,
+  buildWorkerProfileAvailabilityUpdateRow,
   buildWorkerProfileInsertRow,
   buildWorkerProfileUpdateRow,
   isWorkerVerified,
+  parseWorkerProfileAvailabilityStatus,
 } from '@/lib/worker-profile';
 import { useAccount } from '@/providers/account-provider';
 
@@ -57,6 +60,8 @@ const COPY = {
   saveProfile: "Couldn't save your profile. Please try again.",
   saveSkills: "Couldn't save your skills. Please try again.",
   saveGeneric: "Couldn't save your changes. Please try again.",
+  persistAvailability: "Couldn't update availability. Please try again.",
+  refreshPersistedAvailability: "Couldn't refresh availability. Please try again.",
 } as const;
 
 async function loadWorkerData(userId: string): Promise<LoadedState> {
@@ -139,6 +144,11 @@ type WorkerProfileContextValue = {
   isSaving: boolean;
   saveError: string | null;
   saveSuccess: string | null;
+  isPersistingAvailability: boolean;
+  persistAvailabilityError: string | null;
+  persistAvailability: (status: AvailabilityStatus) => Promise<void>;
+  refreshPersistedAvailabilityError: string | null;
+  refreshPersistedAvailability: () => Promise<void>;
   toggleSkill: (skillId: string) => void;
   setProficiency: (skillId: string, level: Proficiency) => void;
   handleSave: () => Promise<void>;
@@ -162,6 +172,11 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [isPersistingAvailability, setIsPersistingAvailability] = useState(false);
+  const [persistAvailabilityError, setPersistAvailabilityError] = useState<string | null>(null);
+  const [refreshPersistedAvailabilityError, setRefreshPersistedAvailabilityError] = useState<
+    string | null
+  >(null);
 
   const applyLoaded = useCallback((loaded: LoadedState) => {
     setSkills(loaded.skills);
@@ -194,6 +209,69 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [userId, applyLoaded]);
+
+  async function persistAvailability(status: AvailabilityStatus) {
+    if (isPersistingAvailability || isSaving || !userId) return;
+    if (!isAvailability(status)) return;
+    if (status === availability) return;
+    if (!profileId) {
+      setPersistAvailabilityError(COPY.persistAvailability);
+      return;
+    }
+
+    setPersistAvailabilityError(null);
+    setIsPersistingAvailability(true);
+    try {
+      const updateResult = await supabase
+        .from('worker_profiles')
+        .update(buildWorkerProfileAvailabilityUpdateRow({ availabilityStatus: status }))
+        .eq('id', profileId)
+        .eq('user_id', userId);
+      if (updateResult.error) {
+        console.warn(
+          '[V2-A] availability update failed:',
+          updateResult.error.code,
+          updateResult.error.message
+        );
+        throw new Error(COPY.persistAvailability);
+      }
+      setAvailability(status);
+    } catch {
+      setPersistAvailabilityError(COPY.persistAvailability);
+    } finally {
+      setIsPersistingAvailability(false);
+    }
+  }
+
+  const refreshPersistedAvailability = useCallback(async () => {
+    if (!userId || !profileId || isPersistingAvailability || isSaving) return;
+
+    try {
+      const result = await supabase
+        .from('worker_profiles')
+        .select(WORKER_PROFILE_AVAILABILITY_READ_COLUMNS.join(','))
+        .eq('id', profileId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (result.error) {
+        console.warn(
+          '[V2-A] availability refresh failed:',
+          result.error.code,
+          result.error.message
+        );
+        throw new Error(COPY.refreshPersistedAvailability);
+      }
+      const row = result.data as { availability_status?: unknown } | null;
+      const parsed = parseWorkerProfileAvailabilityStatus(row?.availability_status);
+      if (parsed === null) {
+        throw new Error(COPY.refreshPersistedAvailability);
+      }
+      setAvailability(parsed);
+      setRefreshPersistedAvailabilityError(null);
+    } catch {
+      setRefreshPersistedAvailabilityError(COPY.refreshPersistedAvailability);
+    }
+  }, [userId, profileId, isPersistingAvailability, isSaving]);
 
   function toggleSkill(skillId: string) {
     setSelection((previous) => {
@@ -355,6 +433,11 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
         isSaving,
         saveError,
         saveSuccess,
+        isPersistingAvailability,
+        persistAvailabilityError,
+        persistAvailability,
+        refreshPersistedAvailabilityError,
+        refreshPersistedAvailability,
         toggleSkill,
         setProficiency,
         handleSave,

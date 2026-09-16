@@ -45,3 +45,22 @@ export function buildWorkerProfileUpdateRow(input: {
     availability_status: input.availabilityStatus,
   };
 }
+
+/** Home-only persist. Writes availability_status and nothing else. */
+export function buildWorkerProfileAvailabilityUpdateRow(input: {
+  availabilityStatus: WorkerProfileWriteAvailability;
+}): { availability_status: WorkerProfileWriteAvailability } {
+  return {
+    availability_status: input.availabilityStatus,
+  };
+}
+
+/** Home authority refresh. Reads availability_status and nothing else. */
+export const WORKER_PROFILE_AVAILABILITY_READ_COLUMNS = ['availability_status'] as const;
+
+export function parseWorkerProfileAvailabilityStatus(
+  value: unknown
+): WorkerProfileWriteAvailability | null {
+  if (value === 'available' || value === 'busy' || value === 'offline') return value;
+  return null;
+}

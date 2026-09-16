@@ -10,17 +10,14 @@ import {
 } from 'react-native';
 import { type Href, useRouter } from 'expo-router';
 
+import { AvailabilityControl } from '@/components/availability-control';
 import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { SkillMatchTheme } from '@/constants/theme';
 import { PORTFOLIO_PATH } from '@/lib/portfolio';
 import { signOutCurrentUser } from '@/lib/sign-out';
 import { workerVerificationLabel } from '@/lib/worker-profile';
 import { useAccount } from '@/providers/account-provider';
-import {
-  AVAILABILITY_OPTIONS,
-  PROFICIENCY_OPTIONS,
-  useWorkerProfile,
-} from '@/providers/worker-profile-provider';
+import { PROFICIENCY_OPTIONS, useWorkerProfile } from '@/providers/worker-profile-provider';
 
 export default function WorkerProfile() {
   const router = useRouter();
@@ -111,25 +108,7 @@ export default function WorkerProfile() {
           />
 
           <Text style={styles.fieldLabel}>Availability</Text>
-          <View style={styles.row} accessibilityRole="radiogroup">
-            {AVAILABILITY_OPTIONS.map((option) => {
-              const selected = availability === option.value;
-              return (
-                <Pressable
-                  key={option.value}
-                  style={[styles.chip, selected && styles.chipSelected]}
-                  onPress={() => setAvailability(option.value)}
-                  disabled={busy}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                >
-                  <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                    {option.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+          <AvailabilityControl value={availability} onChange={setAvailability} disabled={busy} />
 
           <Text style={styles.sectionTitle}>Skills</Text>
           <SkillCatalogPicker

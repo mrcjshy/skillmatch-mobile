@@ -49,6 +49,7 @@ export default function WorkerTabsLayout() {
           name="worker/index"
           options={{
             title: 'Home',
+            headerShown: false,
             tabBarIcon: ({ color, size }) => (
               <TabIcon name={{ android: 'home', ios: 'house.fill' }} color={color} size={size} />
             ),

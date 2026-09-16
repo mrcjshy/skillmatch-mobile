@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { HomeHeader } from '@/components/home-header';
 import { JobLocationPicker } from '@/components/job-location-picker';
 import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { SkillMatchTheme } from '@/constants/theme';
@@ -209,6 +210,8 @@ export default function ClientHome() {
       keyboardShouldPersistTaps="handled"
       scrollEnabled={!mapGesture}
     >
+      <HomeHeader fullName={account?.full_name ?? '—'} role="client" />
+      <View style={styles.form}>
       {/*
         The fixed service area, stated once at the top of the screen. Putting
         it here rather than beside Address is what stops the two from being
@@ -218,7 +221,6 @@ export default function ClientHome() {
       <Text style={styles.serviceArea}>
         {DEPLOYMENT_BARANGAY}, {DEPLOYMENT_CITY} · SkillMatch service area
       </Text>
-      <Text style={styles.heading}>Post a Job</Text>
 
       {isLoading ? (
         <View style={styles.center}>
@@ -379,16 +381,18 @@ export default function ClientHome() {
             onPress={handlePost}
             disabled={busy}
             accessibilityRole="button"
+            accessibilityLabel="Post Job"
           >
             {isPosting ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
-              <Text style={styles.buttonText}>Post Job</Text>
+              <Text style={styles.buttonText}>+ Post Job</Text>
             )}
           </Pressable>
 
         </>
       )}
+      </View>
     </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -399,9 +403,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   container: {
-    padding: 24,
     gap: 10,
     paddingBottom: 48,
+    backgroundColor: SkillMatchTheme.brand.background,
+  },
+  form: {
+    paddingHorizontal: 24,
+    gap: 10,
   },
   serviceArea: {
     fontSize: 13,
@@ -540,10 +548,12 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 10,
+    minHeight: SkillMatchTheme.size.primaryCtaHeight,
     backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 12,
+    borderRadius: SkillMatchTheme.radius.input,
+    paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   secondaryButton: {
     marginTop: 20,
@@ -558,8 +568,8 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
   },
   secondaryButtonText: {
     color: SkillMatchTheme.brand.primary,
