@@ -1,9 +1,13 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
+import { InlineStatus } from '@/components/inline-status';
 import { SkillMatchTheme } from '@/constants/theme';
 import { signOutCurrentUser } from '@/lib/sign-out';
 import { useAccount } from '@/providers/account-provider';
+
+const { colors, type, spacing } = SkillMatchTheme.ui;
 
 /**
  * Fail-closed surface for authoritative account lookup/bootstrap failure
@@ -37,45 +41,37 @@ export default function BootstrapErrorScreen() {
     }
   }
 
+  const statusMessage = hasActiveError
+    ? accountError.message
+    : isAccountLoading
+      ? 'Checking your account…'
+      : 'Your account could not be resolved into a valid SkillMatch account.';
+
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Account Setup Error</Text>
 
-      {hasActiveError ? (
-        <Text style={styles.note}>{accountError.message}</Text>
-      ) : isAccountLoading ? (
-        <Text style={styles.note}>Checking your account…</Text>
-      ) : (
-        <Text style={styles.note}>
-          Your account could not be resolved into a valid SkillMatch account.
-        </Text>
-      )}
+      <InlineStatus
+        variant={hasActiveError ? 'error' : isAccountLoading ? 'loading' : 'note'}
+        message={statusMessage}
+      />
 
-      <Pressable
-        style={[styles.button, (isAccountLoading || isSigningOut) && styles.buttonDisabled]}
+      <AppButton
+        label="Retry"
         onPress={retryAccountBootstrap}
-        disabled={isAccountLoading || isSigningOut}
-        accessibilityRole="button"
-      >
-        {isAccountLoading ? (
-          <ActivityIndicator color="#ffffff" />
-        ) : (
-          <Text style={styles.buttonText}>Retry</Text>
-        )}
-      </Pressable>
+        loading={isAccountLoading}
+        disabled={isSigningOut}
+        style={styles.action}
+      />
 
-      <Pressable
-        style={[styles.secondaryButton, (isSigningOut || isAccountLoading) && styles.buttonDisabled]}
+      <AppButton
+        label="Sign Out"
+        variant="ghost"
         onPress={handleSignOut}
-        disabled={isSigningOut || isAccountLoading}
-        accessibilityRole="button"
-      >
-        {isSigningOut ? (
-          <ActivityIndicator />
-        ) : (
-          <Text style={styles.secondaryButtonText}>Sign Out</Text>
-        )}
-      </Pressable>
+        loading={isSigningOut}
+        disabled={isAccountLoading}
+        style={styles.action}
+      />
       {signOutError ? <Text style={styles.error}>{signOutError}</Text> : null}
     </View>
   );
@@ -86,53 +82,21 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    gap: 12,
+    padding: spacing.xl,
+    gap: spacing.sm,
+    backgroundColor: colors.background,
   },
   heading: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    ...type.screenTitle,
+    color: colors.textPrimary,
     textAlign: 'center',
   },
-  note: {
-    fontSize: 14,
-    textAlign: 'center',
-    opacity: 0.7,
-  },
-  button: {
-    marginTop: 8,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    minWidth: 160,
-  },
-  secondaryButton: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    minWidth: 160,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 16,
-    fontWeight: '600',
+  action: {
+    alignSelf: 'stretch',
   },
   error: {
-    color: '#b91c1c',
-    fontSize: 14,
+    ...type.helper,
+    color: colors.danger,
     textAlign: 'center',
   },
 });

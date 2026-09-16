@@ -1,13 +1,12 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { NotificationBell } from '@/components/notification-bell';
 import { InitialsAvatar } from '@/components/initials-avatar';
+import { NotificationBell } from '@/components/notification-bell';
 import { SkillMatchTheme } from '@/constants/theme';
 import { homeGreeting } from '@/lib/home-greeting';
 
-const WORKER_ACCENT = '#9FE870';
-const CLIENT_ACCENT = '#70C8E8';
+const { colors, type, spacing } = SkillMatchTheme.ui;
 
 type HomeHeaderProps = {
   fullName: string;
@@ -16,12 +15,12 @@ type HomeHeaderProps = {
 
 export function HomeHeader({ fullName, role }: HomeHeaderProps) {
   const insets = useSafeAreaInsets();
-  const accent = role === 'worker' ? WORKER_ACCENT : CLIENT_ACCENT;
+  const accent = role === 'worker' ? colors.accentWorker : colors.accentClient;
 
   return (
-    <View style={[styles.wrap, { paddingTop: insets.top + 8 }]}>
+    <View style={[styles.wrap, { paddingTop: insets.top + spacing.sm }]}>
       <View style={styles.row}>
-        <InitialsAvatar name={fullName} accent={accent} />
+        <InitialsAvatar name={fullName} accent={accent} size={40} />
         <View style={styles.copy}>
           <Text style={styles.greeting}>{homeGreeting()}</Text>
           <Text style={styles.name}>{fullName}</Text>
@@ -34,26 +33,25 @@ export function HomeHeader({ fullName, role }: HomeHeaderProps) {
 
 const styles = StyleSheet.create({
   wrap: {
-    paddingHorizontal: SkillMatchTheme.spacing.screenGutter,
-    paddingBottom: 12,
+    paddingHorizontal: spacing.gutter,
+    paddingBottom: spacing.md,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: spacing.md,
   },
   copy: {
     flex: 1,
-    gap: 2,
+    gap: spacing.xxs,
   },
   greeting: {
-    color: SkillMatchTheme.text.secondary,
-    fontSize: 14,
+    ...type.helper,
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   name: {
-    color: SkillMatchTheme.text.primary,
-    fontSize: 22,
-    fontWeight: '700',
+    ...type.screenTitle,
+    color: colors.textPrimary,
   },
 });

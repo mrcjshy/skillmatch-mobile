@@ -1,15 +1,17 @@
 import { Link } from 'expo-router';
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
-  Pressable,
+  KeyboardAvoidingView,
+  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppButton } from '@/components/app-button';
+import { AppField } from '@/components/app-field';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   RECOVERY_REDIRECT_TO,
@@ -20,10 +22,13 @@ import {
 } from '@/lib/auth-recovery';
 import { supabase } from '@/lib/supabase';
 
+const { colors, type, spacing } = SkillMatchTheme.ui;
+
 /**
  * Signed-out recovery request only. Does not reveal whether the email exists.
  */
 export default function ForgotPasswordScreen() {
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -63,131 +68,112 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.brand}>
-        <Image
-          source={require('@/assets/images/skillmatch-logo.png')}
-          style={styles.brandLogo}
-          accessibilityIgnoresInvertColors
-        />
-        <Text style={styles.brandName}>SkillMatch</Text>
-      </View>
-      <Text style={styles.heading}>Forgot Password</Text>
-      <Text style={styles.status}>Enter your email to request password recovery instructions.</Text>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior="padding"
+    >
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + spacing.xxxl },
+        ]}
+      >
+        <View style={styles.brand}>
+          <Image
+            source={require('@/assets/images/skillmatch-logo.png')}
+            style={styles.brandLogo}
+            accessibilityIgnoresInvertColors
+          />
+          <Text style={styles.brandName}>SkillMatch</Text>
+        </View>
+        <Text style={styles.heading}>Forgot Password</Text>
+        <Text style={styles.status}>Enter your email to request password recovery instructions.</Text>
 
-      <View style={styles.form}>
-        <Text style={styles.label}>Email</Text>
-        <TextInput
-          style={styles.input}
-          value={email}
-          onChangeText={setEmail}
-          placeholder="you@example.com"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!isSubmitting}
-          accessibilityLabel="Email"
-        />
+        <View style={styles.form}>
+          <AppField
+            label="Email"
+            value={email}
+            onChangeText={setEmail}
+            placeholder="you@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            disabled={isSubmitting}
+            accessibilityLabel="Email"
+          />
 
-        {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-        {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
+          {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+          {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
 
-        <Pressable
-          style={[styles.button, isSubmitting && styles.buttonDisabled]}
-          onPress={handleSendRecoveryInstructions}
-          disabled={isSubmitting}
-          accessibilityRole="button"
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.buttonText}>Send Recovery Instructions</Text>
-          )}
-        </Pressable>
+          <AppButton
+            label="Send Recovery Instructions"
+            onPress={handleSendRecoveryInstructions}
+            loading={isSubmitting}
+          />
 
-        <Link href="/login" style={styles.link}>
-          Back to Sign In
-        </Link>
-      </View>
-    </View>
+          <Link href="/login" style={styles.link}>
+            Back to Sign In
+          </Link>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  flex: {
     flex: 1,
-    justifyContent: 'center',
-    padding: 24,
-    gap: 12,
+  },
+  content: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.gutter,
+    paddingBottom: spacing.xxl,
   },
   brand: {
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
   },
   brandLogo: {
     width: 56,
     height: 56,
   },
   brandName: {
-    color: '#163300',
+    color: colors.primary,
     fontSize: 20,
     fontWeight: 'bold',
     textAlign: 'center',
   },
   heading: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    ...type.display,
+    color: colors.textPrimary,
     textAlign: 'center',
+    marginTop: spacing.lg,
   },
   status: {
-    fontSize: 13,
+    ...type.helper,
+    color: colors.textSecondary,
     textAlign: 'center',
-    opacity: 0.7,
+    marginTop: spacing.sm,
   },
   form: {
-    marginTop: 16,
-    gap: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#9ca3af',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+    marginTop: spacing.lg,
+    gap: spacing.lg,
   },
   error: {
-    color: '#b91c1c',
-    fontSize: 14,
+    ...type.helper,
+    color: colors.danger,
   },
   success: {
-    color: '#15803d',
-    fontSize: 14,
-  },
-  button: {
-    marginTop: 8,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+    ...type.helper,
+    color: colors.success,
   },
   link: {
-    marginTop: 16,
-    fontSize: 15,
-    color: SkillMatchTheme.brand.primary,
+    fontSize: 16,
+    fontWeight: '600',
+    lineHeight: 20,
+    color: colors.primary,
     textAlign: 'center',
-    padding: 4,
+    paddingVertical: 12,
   },
 });

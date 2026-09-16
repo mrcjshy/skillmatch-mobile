@@ -3,10 +3,28 @@ import { StyleSheet, Text, View } from 'react-native';
 import { SkillMatchTheme } from '@/constants/theme';
 import { initialsFromName } from '@/lib/initials';
 
-export function InitialsAvatar({ name, accent }: { name: string; accent: string }) {
+const { colors } = SkillMatchTheme.ui;
+
+export function InitialsAvatar({
+  name,
+  accent,
+  size = 48,
+}: {
+  name: string;
+  accent: string;
+  size?: number;
+}) {
   return (
     <View
-      style={[styles.circle, { backgroundColor: accent }]}
+      style={[
+        styles.circle,
+        {
+          backgroundColor: accent,
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+        },
+      ]}
       accessibilityRole="image"
       accessibilityLabel={`Avatar ${initialsFromName(name)}`}
     >
@@ -17,14 +35,11 @@ export function InitialsAvatar({ name, accent }: { name: string; accent: string 
 
 const styles = StyleSheet.create({
   circle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   letters: {
-    color: SkillMatchTheme.brand.primary,
+    color: colors.primary,
     fontSize: 16,
     fontWeight: '700',
   },

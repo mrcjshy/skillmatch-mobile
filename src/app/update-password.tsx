@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
-  Pressable,
+  KeyboardAvoidingView,
+  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppButton } from '@/components/app-button';
+import { AppField } from '@/components/app-field';
+import { InlineStatus } from '@/components/inline-status';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   RECOVERY_INVALID_LINK_COPY,
@@ -17,11 +20,14 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/providers/session-provider';
 
+const { colors, type, spacing } = SkillMatchTheme.ui;
+
 /**
  * Recovery-only password update. The form submits only when SessionProvider
  * has bound recovery authorization to the current session user id.
  */
 export default function UpdatePasswordScreen() {
+  const insets = useSafeAreaInsets();
   const {
     session,
     recoveryStatus,
@@ -96,146 +102,104 @@ export default function UpdatePasswordScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>Update Password</Text>
+    <KeyboardAvoidingView
+      style={[styles.flex, styles.canvas]}
+      behavior="padding"
+    >
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + spacing.xxxl },
+        ]}
+      >
+        <Text style={styles.heading}>Update Password</Text>
 
-      {showProcessing ? (
-        <>
-          <Text style={styles.note}>Checking recovery link…</Text>
-          <ActivityIndicator />
-        </>
-      ) : null}
+        {showProcessing ? (
+          <InlineStatus variant="loading" message="Checking recovery link…" />
+        ) : null}
 
-      {showComplete ? (
-        <>
-          <Text style={styles.success}>Your password has been updated.</Text>
-          <Pressable
-            style={styles.button}
-            onPress={clearRecoveryAuthorization}
-            accessibilityRole="button"
-          >
-            <Text style={styles.buttonText}>Continue</Text>
-          </Pressable>
-        </>
-      ) : null}
+        {showComplete ? (
+          <>
+            <InlineStatus variant="note" message="Your password has been updated." />
+            <AppButton label="Continue" onPress={clearRecoveryAuthorization} />
+          </>
+        ) : null}
 
-      {showInvalid ? (
-        <>
-          <Text style={styles.error}>{recoveryError ?? RECOVERY_INVALID_LINK_COPY}</Text>
-          <Pressable
-            style={styles.button}
-            onPress={clearRecoveryAuthorization}
-            accessibilityRole="button"
-          >
-            <Text style={styles.buttonText}>Continue</Text>
-          </Pressable>
-        </>
-      ) : null}
+        {showInvalid ? (
+          <>
+            <InlineStatus
+              variant="error"
+              message={recoveryError ?? RECOVERY_INVALID_LINK_COPY}
+            />
+            <AppButton label="Continue" onPress={clearRecoveryAuthorization} />
+          </>
+        ) : null}
 
-      {showForm ? (
-        <View style={styles.form}>
-          <Text style={styles.label}>New Password</Text>
-          <TextInput
-            style={styles.input}
-            value={newPassword}
-            onChangeText={setNewPassword}
-            placeholder="New password"
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!isSubmitting}
-            accessibilityLabel="New Password"
-          />
+        {showForm ? (
+          <View style={styles.form}>
+            <AppField
+              label="New Password"
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="New password"
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              disabled={isSubmitting}
+              accessibilityLabel="New Password"
+            />
 
-          <Text style={styles.label}>Confirm New Password</Text>
-          <TextInput
-            style={styles.input}
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            placeholder="Confirm new password"
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!isSubmitting}
-            accessibilityLabel="Confirm New Password"
-          />
+            <AppField
+              label="Confirm New Password"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Confirm new password"
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              disabled={isSubmitting}
+              accessibilityLabel="Confirm New Password"
+            />
 
-          {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+            {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
 
-          <Pressable
-            style={[styles.button, isSubmitting && styles.buttonDisabled]}
-            onPress={handleUpdatePassword}
-            disabled={isSubmitting}
-            accessibilityRole="button"
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text style={styles.buttonText}>Update Password</Text>
-            )}
-          </Pressable>
-        </View>
-      ) : null}
-    </View>
+            <AppButton
+              label="Update Password"
+              onPress={handleUpdatePassword}
+              loading={isSubmitting}
+            />
+          </View>
+        ) : null}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  flex: {
     flex: 1,
-    justifyContent: 'center',
-    padding: 24,
-    gap: 12,
+  },
+  canvas: {
+    backgroundColor: colors.background,
+  },
+  content: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.gutter,
+    paddingBottom: spacing.xxl,
   },
   heading: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    ...type.display,
+    color: colors.textPrimary,
     textAlign: 'center',
-  },
-  note: {
-    fontSize: 14,
-    textAlign: 'center',
-    opacity: 0.7,
   },
   form: {
-    marginTop: 8,
-    gap: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#9ca3af',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+    marginTop: spacing.lg,
+    gap: spacing.lg,
   },
   error: {
-    color: '#b91c1c',
-    fontSize: 14,
+    ...type.helper,
+    color: colors.danger,
     textAlign: 'center',
-  },
-  success: {
-    color: '#15803d',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  button: {
-    marginTop: 8,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

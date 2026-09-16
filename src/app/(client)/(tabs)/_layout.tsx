@@ -6,8 +6,9 @@ import { NotificationBell } from '@/components/notification-bell';
 import { SkillMatchTheme } from '@/constants/theme';
 import { ClientJobsProvider } from '@/providers/client-jobs-provider';
 
-const ACTIVE_COLOR = SkillMatchTheme.brand.primary;
-const INACTIVE_COLOR = '#64748b';
+const { colors } = SkillMatchTheme.ui;
+const ACTIVE_COLOR = colors.primary;
+const INACTIVE_COLOR = colors.textDisabled;
 
 function TabIcon({
   name,
@@ -30,7 +31,9 @@ function TabLabel({
   color: ColorValue;
   children: string;
 }) {
-  return <Text style={{ color, fontSize: 12, fontWeight: focused ? '700' : '400' }}>{children}</Text>;
+  return (
+    <Text style={{ color, fontSize: 11, fontWeight: focused ? '700' : '400' }}>{children}</Text>
+  );
 }
 
 export default function ClientTabsLayout() {
@@ -42,6 +45,10 @@ export default function ClientTabsLayout() {
           headerRight: () => <NotificationBell role="client" />,
           tabBarActiveTintColor: ACTIVE_COLOR,
           tabBarInactiveTintColor: INACTIVE_COLOR,
+          tabBarStyle: {
+            backgroundColor: colors.background,
+            borderTopWidth: 0,
+          },
           sceneStyle: { backgroundColor: SkillMatchTheme.brand.background },
         }}
       >
@@ -50,8 +57,8 @@ export default function ClientTabsLayout() {
           options={{
             title: 'Home',
             headerShown: false,
-            tabBarIcon: ({ color, size }) => (
-              <TabIcon name={{ android: 'home', ios: 'house.fill' }} color={color} size={size} />
+            tabBarIcon: ({ color }) => (
+              <TabIcon name={{ android: 'home', ios: 'house.fill' }} color={color} size={24} />
             ),
             tabBarLabel: ({ focused, color }) => (
               <TabLabel focused={focused} color={color}>Home</TabLabel>
@@ -62,11 +69,11 @@ export default function ClientTabsLayout() {
           name="client/jobs"
           options={{
             title: 'My Jobs',
-            tabBarIcon: ({ color, size }) => (
+            tabBarIcon: ({ color }) => (
               <TabIcon
                 name={{ android: 'list_alt', ios: 'list.bullet.rectangle' }}
                 color={color}
-                size={size}
+                size={24}
               />
             ),
             tabBarLabel: ({ focused, color }) => (
@@ -78,11 +85,11 @@ export default function ClientTabsLayout() {
           name="client/bookings"
           options={{
             title: 'Bookings',
-            tabBarIcon: ({ color, size }) => (
+            tabBarIcon: ({ color }) => (
               <TabIcon
                 name={{ android: 'event_list', ios: 'calendar' }}
                 color={color}
-                size={size}
+                size={24}
               />
             ),
             tabBarLabel: ({ focused, color }) => (
@@ -94,8 +101,8 @@ export default function ClientTabsLayout() {
           name="client/profile"
           options={{
             title: 'Profile',
-            tabBarIcon: ({ color, size }) => (
-              <TabIcon name={{ android: 'person', ios: 'person.fill' }} color={color} size={size} />
+            tabBarIcon: ({ color }) => (
+              <TabIcon name={{ android: 'person', ios: 'person.fill' }} color={color} size={24} />
             ),
             tabBarLabel: ({ focused, color }) => (
               <TabLabel focused={focused} color={color}>Profile</TabLabel>

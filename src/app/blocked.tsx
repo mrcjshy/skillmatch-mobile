@@ -1,8 +1,11 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
 import { SkillMatchTheme } from '@/constants/theme';
 import { signOutCurrentUser } from '@/lib/sign-out';
+
+const { colors, type, spacing } = SkillMatchTheme.ui;
 
 /**
  * Reserved for a successfully resolved authoritative account whose
@@ -34,18 +37,7 @@ export default function BlockedScreen() {
         Your SkillMatch account is currently inactive. Please contact the
         administrator for assistance.
       </Text>
-      <Pressable
-        style={[styles.button, isSigningOut && styles.buttonDisabled]}
-        onPress={handleSignOut}
-        disabled={isSigningOut}
-        accessibilityRole="button"
-      >
-        {isSigningOut ? (
-          <ActivityIndicator color="#ffffff" />
-        ) : (
-          <Text style={styles.buttonText}>Sign Out</Text>
-        )}
-      </Pressable>
+      <AppButton label="Sign Out" onPress={handleSignOut} loading={isSigningOut} />
       {signOutError ? <Text style={styles.error}>{signOutError}</Text> : null}
     </View>
   );
@@ -56,38 +48,23 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    gap: 12,
+    padding: spacing.xl,
+    gap: spacing.lg,
+    backgroundColor: colors.background,
   },
   heading: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    ...type.screenTitle,
+    color: colors.textPrimary,
     textAlign: 'center',
   },
   note: {
-    fontSize: 14,
+    ...type.helper,
+    color: colors.textSecondary,
     textAlign: 'center',
-    opacity: 0.7,
-  },
-  button: {
-    marginTop: 8,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   error: {
-    color: '#b91c1c',
-    fontSize: 14,
+    ...type.helper,
+    color: colors.danger,
     textAlign: 'center',
   },
 });
