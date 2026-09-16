@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +12,7 @@ import {
 
 import { HomeHeader } from '@/components/home-header';
 import { JobLocationPicker } from '@/components/job-location-picker';
+import { JobSchedulePicker } from '@/components/job-schedule-picker';
 import { SelectedSkillChips } from '@/components/selected-skill-chips';
 import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { SkillMatchTheme } from '@/constants/theme';
@@ -29,6 +29,7 @@ import {
   type JobPaymentMethod,
   postingPaymentError,
 } from '@/lib/job-payment';
+import { combineJobSchedule, postingScheduleError } from '@/lib/job-posting-schedule';
 import { selectedCatalogSkills } from '@/lib/skill-catalog';
 import { useAccount } from '@/providers/account-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
@@ -48,33 +49,6 @@ import { useClientJobs } from '@/providers/client-jobs-provider';
 const DEPLOYMENT_BARANGAY = 'Santa Ana';
 const DEPLOYMENT_CITY = 'Pateros';
 
-/** Strict YYYY-MM-DD + HH:MM -> local Date; null when invalid or rolled over. */
-function parseSchedule(dateText: string, timeText: string): Date | null {
-  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateText.trim());
-  const t = /^(\d{2}):(\d{2})$/.exec(timeText.trim());
-  if (!d || !t) return null;
-  const year = Number(d[1]);
-  const month = Number(d[2]);
-  const day = Number(d[3]);
-  const hour = Number(t[1]);
-  const minute = Number(t[2]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  if (hour > 23 || minute > 59) return null;
-  const dt = new Date(year, month - 1, day, hour, minute, 0, 0);
-  // Reject impossible calendar values that JavaScript would silently roll
-  // over (e.g. 2026-02-30 becoming March 2).
-  if (
-    dt.getFullYear() !== year ||
-    dt.getMonth() !== month - 1 ||
-    dt.getDate() !== day ||
-    dt.getHours() !== hour ||
-    dt.getMinutes() !== minute
-  ) {
-    return null;
-  }
-  return dt;
-}
-
 export default function ClientHome() {
   const { account } = useAccount();
   const clientId = account?.id;
@@ -86,8 +60,8 @@ export default function ClientHome() {
   const [pin, setPin] = useState<JobPin | null>(initialJobPin);
   const [locationNote, setLocationNote] = useState<string | null>(null);
   const [mapGesture, setMapGesture] = useState(false);
-  const [dateText, setDateText] = useState('');
-  const [timeText, setTimeText] = useState('');
+  const [scheduleDate, setScheduleDate] = useState<Date | null>(null);
+  const [scheduleTime, setScheduleTime] = useState<Date | null>(null);
   const [budgetText, setBudgetText] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<JobPaymentMethod | null>(null);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
@@ -113,19 +87,20 @@ export default function ClientHome() {
       setPostError('Please enter a job title.');
       return;
     }
-    const knownIds = new Set(skills.map((s) => s.id));
-    const chosen = selectedSkills.filter((id) => knownIds.has(id));
-    if (chosen.length === 0) {
-      setPostError('Please select at least one required skill.');
+    const trimmedAddress = address.trim();
+    const locationError = postingLocationError(trimmedAddress, pin);
+    if (locationError !== null || pin === null) {
+      setPostError(locationError ?? JOB_LOCATION_COPY.missingPin);
       return;
     }
-    const schedule = parseSchedule(dateText, timeText);
-    if (!schedule) {
-      setPostError('Please enter a valid date (YYYY-MM-DD) and time (HH:MM).');
+    const scheduleError = postingScheduleError(scheduleDate, scheduleTime);
+    if (scheduleError !== null) {
+      setPostError(scheduleError);
       return;
     }
-    if (schedule.getTime() <= Date.now()) {
-      setPostError('Please choose a schedule in the future.');
+    const schedule = combineJobSchedule(scheduleDate, scheduleTime);
+    if (schedule === null) {
+      setPostError('Please choose a valid date and time.');
       return;
     }
     let budget: number | null = null;
@@ -146,10 +121,10 @@ export default function ClientHome() {
       setPostError(paymentError ?? 'Please select a payment method.');
       return;
     }
-    const trimmedAddress = address.trim();
-    const locationError = postingLocationError(trimmedAddress, pin);
-    if (locationError !== null || pin === null) {
-      setPostError(locationError ?? JOB_LOCATION_COPY.missingPin);
+    const knownIds = new Set(skills.map((s) => s.id));
+    const chosen = selectedSkills.filter((id) => knownIds.has(id));
+    if (chosen.length === 0) {
+      setPostError('Please select at least one required skill.');
       return;
     }
 
@@ -175,11 +150,13 @@ export default function ClientHome() {
       setAddress('');
       setPin(initialJobPin());
       setLocationNote(null);
-      setDateText('');
-      setTimeText('');
+      setScheduleDate(null);
+      setScheduleTime(null);
       setBudgetText('');
       setPaymentMethod(null);
       setSelectedSkills([]);
+      setSkillQuery('');
+      setPostError(null);
     } catch (e: unknown) {
       if (created) {
         setPostError('Job posted, but the list could not be refreshed. Check My Posted Jobs.');
@@ -203,23 +180,15 @@ export default function ClientHome() {
   const busy = isPosting;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <KeyboardAvoidingView style={styles.flex} behavior="padding">
     <ScrollView
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets
       scrollEnabled={!mapGesture}
     >
       <HomeHeader fullName={account?.full_name ?? '—'} role="client" />
       <View style={styles.form}>
-      {/*
-        The fixed service area, stated once at the top of the screen. Putting
-        it here rather than beside Address is what stops the two from being
-        confused: this is context for everything below, and the Address field
-        is the only place the Client types a location.
-      */}
       <Text style={styles.serviceArea}>
         {DEPLOYMENT_BARANGAY}, {DEPLOYMENT_CITY} · SkillMatch service area
       </Text>
@@ -233,170 +202,158 @@ export default function ClientHome() {
         <Text style={styles.error}>{loadError}</Text>
       ) : (
         <>
-          <Text style={styles.label}>Job Title</Text>
-          <TextInput
-            style={styles.input}
-            value={title}
-            onChangeText={setTitle}
-            placeholder="e.g. Plumbing Repair Assistance"
-            editable={!busy}
-            accessibilityLabel="Job Title"
-          />
-
-          <Text style={styles.label}>Description / Service Expectations</Text>
-          <TextInput
-            style={styles.textArea}
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Describe the work needed."
-            multiline
-            numberOfLines={3}
-            textAlignVertical="top"
-            editable={!busy}
-            accessibilityLabel="Description"
-          />
-
-          <Text style={styles.label}>Address</Text>
-          <TextInput
-            style={styles.input}
-            value={address}
-            onChangeText={setAddress}
-            placeholder="House / street / landmark"
-            editable={!busy}
-            accessibilityLabel="Address"
-          />
-          <Text style={styles.help}>Required. The map pin does not replace this address.</Text>
-
-          <Text style={styles.label}>Job pin</Text>
-          <JobLocationPicker
-            pin={pin}
-            onChangePin={setPin}
-            note={locationNote}
-            onNote={setLocationNote}
-            disabled={busy}
-            onMapGesture={setMapGesture}
-          />
-
-          {/*
-            Location is the fixed deployment constant, not an input. It is
-            given a locked row rather than a field so it cannot read as
-            something the Client forgot to fill in. Address above is the only
-            location the Client types.
-          */}
-          <Text style={styles.label}>Location</Text>
-          <View style={styles.lockedRow} accessibilityLabel="Location, fixed service area">
-            <Text style={styles.lockedValue}>
-              {DEPLOYMENT_BARANGAY}, {DEPLOYMENT_CITY}
-            </Text>
-            <Text style={styles.lockedTag}>Fixed</Text>
-          </View>
-
-          <Text style={styles.label}>Scheduled Date (YYYY-MM-DD)</Text>
-          <TextInput
-            style={styles.input}
-            value={dateText}
-            onChangeText={setDateText}
-            placeholder="2026-09-01"
-            keyboardType="numbers-and-punctuation"
-            editable={!busy}
-            accessibilityLabel="Scheduled Date"
-          />
-
-          <Text style={styles.label}>Scheduled Time (HH:MM)</Text>
-          <TextInput
-            style={styles.input}
-            value={timeText}
-            onChangeText={setTimeText}
-            placeholder="09:00"
-            keyboardType="numbers-and-punctuation"
-            editable={!busy}
-            accessibilityLabel="Scheduled Time"
-          />
-
-          {/*
-            The peso glyph is decoration outside the input, so `budgetText`
-            and its validation are untouched -- the Client still types digits
-            only and the submitted value is unchanged.
-          */}
-          <Text style={styles.label}>Budget</Text>
-          <View style={styles.inputWithPrefix}>
-            <Text style={styles.inputPrefix}>₱</Text>
+          <View style={styles.section} accessibilityLabel="Job Details">
+            <Text style={styles.sectionTitle}>Job Details</Text>
+            <Text style={styles.label}>Title</Text>
             <TextInput
-              style={styles.inputPrefixed}
-              value={budgetText}
-              onChangeText={setBudgetText}
-              placeholder="800"
-              keyboardType="numeric"
+              style={styles.input}
+              value={title}
+              onChangeText={setTitle}
+              placeholder="e.g. Plumbing Repair Assistance"
               editable={!busy}
-              accessibilityLabel="Budget in pesos"
+              accessibilityLabel="Job Title"
+            />
+
+            <Text style={styles.label}>Description (Optional)</Text>
+            <TextInput
+              style={styles.textArea}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Describe the work needed."
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              editable={!busy}
+              accessibilityLabel="Description"
             />
           </View>
 
-          <Text style={styles.label}>Payment Method</Text>
-          <View
-            accessibilityRole="radiogroup"
-            accessibilityLabel="Payment Method"
-            style={{ gap: 8 }}
-          >
-            {(
-              [
-                { value: 'cod', label: 'Cash' },
-                { value: 'qrph', label: 'QR Ph' },
-              ] as const
-            ).map((option) => {
-              const on = paymentMethod === option.value;
-              return (
-                <Pressable
-                  key={option.value}
-                  style={[styles.skillToggle, on && styles.chipSelected]}
-                  onPress={() => setPaymentMethod(option.value)}
-                  disabled={busy}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on, disabled: busy }}
-                  accessibilityLabel={option.label}
-                >
-                  <Text style={[styles.chipText, on && styles.chipTextSelected]}>
-                    {on ? '✓ ' : ''}
-                    {option.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
+          <View style={styles.section} accessibilityLabel="Where">
+            <Text style={styles.sectionTitle}>Where</Text>
+            <Text style={styles.label}>Address</Text>
+            <TextInput
+              style={styles.input}
+              value={address}
+              onChangeText={setAddress}
+              placeholder="House / street / landmark"
+              editable={!busy}
+              accessibilityLabel="Address"
+            />
+            <Text style={styles.help}>
+              Required. Write the house, street, or landmark. The pin does not replace this
+              address.
+            </Text>
+
+            <Text style={styles.label}>Map</Text>
+            <JobLocationPicker
+              pin={pin}
+              onChangePin={setPin}
+              note={locationNote}
+              onNote={setLocationNote}
+              disabled={busy}
+              onMapGesture={setMapGesture}
+            />
           </View>
-          <Text style={styles.help}>Required. Workers see this before they accept.</Text>
 
-          <Text style={styles.label}>Required Skills</Text>
-          <SelectedSkillChips
-            skills={selectedCatalogSkills(skills, selectedSkills)}
-            onRemove={toggleSkill}
-            disabled={busy}
-          />
-          <SkillCatalogPicker
-            skills={skills}
-            query={skillQuery}
-            onQueryChange={setSkillQuery}
-            isSkillSelected={(skillId) => selectedSkills.includes(skillId)}
-            onToggleSkill={toggleSkill}
-            disabled={busy}
-          />
+          <View style={styles.section} accessibilityLabel="Schedule">
+            <Text style={styles.sectionTitle}>Schedule</Text>
+            <JobSchedulePicker
+              date={scheduleDate}
+              time={scheduleTime}
+              onChangeDate={setScheduleDate}
+              onChangeTime={setScheduleTime}
+              disabled={busy}
+            />
+          </View>
 
-          {postError ? <Text style={styles.error}>{postError}</Text> : null}
-          {postSuccess ? <Text style={styles.success}>{postSuccess}</Text> : null}
+          <View style={styles.section} accessibilityLabel="Budget and Payment">
+            <Text style={styles.sectionTitle}>Budget & Payment</Text>
+            <Text style={styles.label}>Budget (Optional)</Text>
+            <View style={styles.inputWithPrefix}>
+              <Text style={styles.inputPrefix}>₱</Text>
+              <TextInput
+                style={styles.inputPrefixed}
+                value={budgetText}
+                onChangeText={setBudgetText}
+                placeholder="800"
+                keyboardType="numeric"
+                editable={!busy}
+                accessibilityLabel="Budget in pesos"
+              />
+            </View>
 
-          <Pressable
-            style={[styles.button, busy && styles.buttonDisabled]}
-            onPress={handlePost}
-            disabled={busy}
-            accessibilityRole="button"
-            accessibilityLabel="Post Job"
-          >
-            {isPosting ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text style={styles.buttonText}>+ Post Job</Text>
-            )}
-          </Pressable>
+            <Text style={styles.label}>Payment Method</Text>
+            <View
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Payment Method"
+              style={{ gap: 8 }}
+            >
+              {(
+                [
+                  { value: 'cod', label: 'Cash' },
+                  { value: 'qrph', label: 'QR Ph' },
+                ] as const
+              ).map((option) => {
+                const on = paymentMethod === option.value;
+                return (
+                  <Pressable
+                    key={option.value}
+                    style={[styles.skillToggle, on && styles.chipSelected]}
+                    onPress={() => setPaymentMethod(option.value)}
+                    disabled={busy}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: on, disabled: busy }}
+                    accessibilityLabel={option.label}
+                  >
+                    <Text style={[styles.chipText, on && styles.chipTextSelected]}>
+                      {on ? '✓ ' : ''}
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text style={styles.help}>Required. Workers see this before they accept.</Text>
+            {paymentMethod === 'qrph' ? (
+              <Text style={styles.help}>QR Ph needs a budget of at least ₱1.00.</Text>
+            ) : null}
+          </View>
 
+          <View style={styles.section} accessibilityLabel="Required Skills">
+            <Text style={styles.sectionTitle}>Required Skills</Text>
+            <SelectedSkillChips
+              skills={selectedCatalogSkills(skills, selectedSkills)}
+              onRemove={toggleSkill}
+              disabled={busy}
+            />
+            <SkillCatalogPicker
+              skills={skills}
+              query={skillQuery}
+              onQueryChange={setSkillQuery}
+              isSkillSelected={(skillId) => selectedSkills.includes(skillId)}
+              onToggleSkill={toggleSkill}
+              disabled={busy}
+            />
+          </View>
+
+          <View style={styles.section} accessibilityLabel="Post Job">
+            {postError ? <Text style={styles.error}>{postError}</Text> : null}
+            {postSuccess ? <Text style={styles.success}>{postSuccess}</Text> : null}
+
+            <Pressable
+              style={[styles.button, busy && styles.buttonDisabled]}
+              onPress={handlePost}
+              disabled={busy}
+              accessibilityRole="button"
+              accessibilityLabel="Post Job"
+            >
+              {isPosting ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.buttonText}>+ Post Job</Text>
+              )}
+            </Pressable>
+          </View>
         </>
       )}
       </View>
@@ -416,6 +373,9 @@ const styles = StyleSheet.create({
   },
   form: {
     paddingHorizontal: 24,
+    gap: 16,
+  },
+  section: {
     gap: 10,
   },
   serviceArea: {
@@ -426,28 +386,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     opacity: 0.6,
     marginTop: -4,
-  },
-  lockedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    backgroundColor: '#f1f5f9',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  lockedValue: {
-    fontSize: 16,
-    color: '#334155',
-    flexShrink: 1,
-  },
-  lockedTag: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   inputWithPrefix: {
     flexDirection: 'row',
@@ -480,7 +418,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    marginTop: 20,
   },
   label: {
     fontSize: 13,

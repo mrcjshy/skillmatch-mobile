@@ -7,6 +7,7 @@ import {
   SANTA_ANA_PATEROS_DISPLAY_REGION,
   classifyMapAvailability,
   isValidJobCoordinate,
+  postingPinState,
   resolveCurrentLocationPin,
   type ForegroundLocationLike,
   type JobPin,
@@ -189,8 +190,9 @@ export function JobLocationPicker({
         </View>
       )}
       <Text style={styles.help}>
-        Tap the map to place the Job pin, or drag the pin to adjust it. The starting
-        view is the Santa Ana, Pateros area, not an exact Job location.
+        {postingPinState(pin) === 'selected'
+          ? 'Job location selected. Tap another area or drag the pin to adjust it.'
+          : 'No job location selected yet. Tap the map to place the job pin.'}
       </Text>
       <Pressable
         style={[styles.button, busy && styles.buttonDisabled]}

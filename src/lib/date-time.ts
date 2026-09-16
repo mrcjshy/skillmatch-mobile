@@ -12,6 +12,16 @@ function format(value: DateTimeValue, options: Intl.DateTimeFormatOptions): stri
   return new Intl.DateTimeFormat(undefined, { ...options, hour12: true }).format(parsed);
 }
 
+/** Device-local calendar date for Post Job, for example "Sep 16, 2026". */
+export function formatScheduleDate(value: DateTimeValue): string | null {
+  return format(value, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/** Device-local 12-hour clock for Post Job, for example "3:30 PM". */
+export function formatScheduleTime(value: DateTimeValue): string | null {
+  return format(value, { hour: 'numeric', minute: '2-digit' });
+}
+
 /** Device-local compact card timestamp, for example "Sep 18 • 9:00 AM". */
 export function formatCardDateTime(value: DateTimeValue): string | null {
   const parsed = parseDateTime(value);
