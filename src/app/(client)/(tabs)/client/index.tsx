@@ -13,6 +13,7 @@ import {
 
 import { HomeHeader } from '@/components/home-header';
 import { JobLocationPicker } from '@/components/job-location-picker';
+import { SelectedSkillChips } from '@/components/selected-skill-chips';
 import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
@@ -28,6 +29,7 @@ import {
   type JobPaymentMethod,
   postingPaymentError,
 } from '@/lib/job-payment';
+import { selectedCatalogSkills } from '@/lib/skill-catalog';
 import { useAccount } from '@/providers/account-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
 
@@ -364,6 +366,11 @@ export default function ClientHome() {
           <Text style={styles.help}>Required. Workers see this before they accept.</Text>
 
           <Text style={styles.label}>Required Skills</Text>
+          <SelectedSkillChips
+            skills={selectedCatalogSkills(skills, selectedSkills)}
+            onRemove={toggleSkill}
+            disabled={busy}
+          />
           <SkillCatalogPicker
             skills={skills}
             query={skillQuery}

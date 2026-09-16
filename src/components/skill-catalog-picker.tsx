@@ -56,7 +56,7 @@ export function SkillCatalogPicker({
                 accessibilityState={{ checked: selected, disabled }}
                 accessibilityLabel={skill.skill_name}
               >
-                <Text style={[styles.skillText, selected && styles.skillTextSelected]}>
+                <Text style={[styles.skillText, selected && styles.skillTextSelected]} numberOfLines={3}>
                   {selected ? '✓ ' : ''}
                   {skill.skill_name}
                 </Text>
@@ -87,17 +87,19 @@ const styles = StyleSheet.create({
   skillBlock: { gap: 8 },
   skillToggle: {
     minHeight: SkillMatchTheme.size.iconTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: SkillMatchTheme.border.default,
     borderRadius: 6,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
   },
   skillToggleSelected: {
     borderColor: SkillMatchTheme.brand.primary,
     backgroundColor: SkillMatchTheme.brand.primaryMuted,
   },
-  skillText: { fontSize: 16, color: SkillMatchTheme.text.primary },
+  skillText: { fontSize: 16, color: SkillMatchTheme.text.primary, flexShrink: 1 },
   skillTextSelected: { color: SkillMatchTheme.brand.primary, fontWeight: '600' },
 });

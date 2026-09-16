@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,18 +13,38 @@ import {
   View,
 } from 'react-native';
 import { type Href, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AvailabilityControl } from '@/components/availability-control';
+import { SelectedSkillChips } from '@/components/selected-skill-chips';
 import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { SkillMatchTheme } from '@/constants/theme';
+import {
+  copySkillSelection,
+  hasSkillSelectionChanged,
+  selectedCatalogSkills,
+  toggleSkillInSelection,
+  type SkillSelectionMap,
+} from '@/lib/skill-catalog';
 import { PORTFOLIO_PATH } from '@/lib/portfolio';
 import { signOutCurrentUser } from '@/lib/sign-out';
 import { workerVerificationLabel } from '@/lib/worker-profile';
 import { useAccount } from '@/providers/account-provider';
-import { PROFICIENCY_OPTIONS, useWorkerProfile } from '@/providers/worker-profile-provider';
+import {
+  PROFICIENCY_OPTIONS,
+  useWorkerProfile,
+} from '@/providers/worker-profile-provider';
+
+const SKILL_CONFIRMATION = {
+  title: 'Confirm selected skills?',
+  body: "Please confirm that you have experience performing the skills you've selected. These skills will appear on your profile and may be used to match you with relevant job opportunities.",
+  cancel: 'Cancel',
+  confirm: 'Confirm Skills',
+} as const;
 
 export default function WorkerProfile() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { account } = useAccount();
   const {
     isLoading,
@@ -31,6 +55,8 @@ export default function WorkerProfile() {
     availability,
     setAvailability,
     selection,
+    persistedSelection,
+    applySkillDraft,
     isVerified,
     isSaving,
     saveError,
@@ -41,7 +67,12 @@ export default function WorkerProfile() {
   } = useWorkerProfile();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
-  const [skillQuery, setSkillQuery] = useState('');
+  const [isAddingSkills, setIsAddingSkills] = useState(false);
+  const [modalQuery, setModalQuery] = useState('');
+  const [modalWorkingSelection, setModalWorkingSelection] = useState<SkillSelectionMap>({});
+  const busy = isSaving || isSigningOut;
+  const verificationLabel = workerVerificationLabel(isVerified);
+  const selectedSkills = selectedCatalogSkills(skills, Object.keys(selection));
 
   async function handleSignOut() {
     if (isSigningOut) return;
@@ -57,8 +88,35 @@ export default function WorkerProfile() {
     }
   }
 
-  const busy = isSaving || isSigningOut;
-  const verificationLabel = workerVerificationLabel(isVerified);
+  function openAddSkills() {
+    if (busy) return;
+    setModalWorkingSelection(copySkillSelection(selection));
+    setModalQuery('');
+    setIsAddingSkills(true);
+  }
+
+  function closeAddSkillsWithoutApply() {
+    setIsAddingSkills(false);
+    setModalQuery('');
+    setModalWorkingSelection({});
+  }
+
+  function confirmAddSkills() {
+    applySkillDraft(modalWorkingSelection);
+    closeAddSkillsWithoutApply();
+  }
+
+  function promptSave() {
+    if (busy) return;
+    if (!hasSkillSelectionChanged(selection, persistedSelection)) {
+      void handleSave();
+      return;
+    }
+    Alert.alert(SKILL_CONFIRMATION.title, SKILL_CONFIRMATION.body, [
+      { text: SKILL_CONFIRMATION.cancel, style: 'cancel' },
+      { text: SKILL_CONFIRMATION.confirm, onPress: () => void handleSave() },
+    ]);
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
@@ -111,18 +169,19 @@ export default function WorkerProfile() {
           <AvailabilityControl value={availability} onChange={setAvailability} disabled={busy} />
 
           <Text style={styles.sectionTitle}>Skills</Text>
-          <SkillCatalogPicker
-            skills={skills}
-            query={skillQuery}
-            onQueryChange={setSkillQuery}
-            isSkillSelected={(skillId) => selection[skillId] !== undefined}
-            onToggleSkill={toggleSkill}
+          <SelectedSkillChips
+            skills={selectedSkills}
+            onRemove={toggleSkill}
             disabled={busy}
             renderAfterSkill={(skill) => {
               const level = selection[skill.id];
               if (level === undefined) return null;
               return (
-                <View style={styles.row} accessibilityRole="radiogroup">
+                <View
+                  style={styles.row}
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel={`${skill.skill_name} proficiency`}
+                >
                   {PROFICIENCY_OPTIONS.map((option) => {
                     const selectedLevel = level === option.value;
                     return (
@@ -133,6 +192,7 @@ export default function WorkerProfile() {
                         disabled={busy}
                         accessibilityRole="radio"
                         accessibilityState={{ selected: selectedLevel, disabled: busy }}
+                        accessibilityLabel={option.label}
                       >
                         <Text
                           style={[styles.chipTextSmall, selectedLevel && styles.chipTextSelected]}
@@ -146,13 +206,76 @@ export default function WorkerProfile() {
               );
             }}
           />
+          <Pressable
+            style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+            onPress={openAddSkills}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel="Add Skills"
+          >
+            <Text style={styles.secondaryButtonText}>+ Add Skills</Text>
+          </Pressable>
+
+          <Modal
+            visible={isAddingSkills}
+            animationType="slide"
+            onRequestClose={closeAddSkillsWithoutApply}
+          >
+            <KeyboardAvoidingView
+              style={styles.modalFlex}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            >
+              <View
+                style={[
+                  styles.modalScreen,
+                  { paddingTop: insets.top + 16, paddingBottom: Math.max(insets.bottom, 16) },
+                ]}
+              >
+                <Text style={styles.modalTitle}>Add Skills</Text>
+                <ScrollView
+                  style={styles.modalFlex}
+                  contentContainerStyle={styles.modalContent}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  <SkillCatalogPicker
+                    skills={skills}
+                    query={modalQuery}
+                    onQueryChange={setModalQuery}
+                    isSkillSelected={(skillId) => modalWorkingSelection[skillId] !== undefined}
+                    onToggleSkill={(skillId) =>
+                      setModalWorkingSelection((current) => toggleSkillInSelection(current, skillId))
+                    }
+                    disabled={busy}
+                  />
+                </ScrollView>
+                <Pressable
+                  style={[styles.button, busy && styles.buttonDisabled]}
+                  onPress={confirmAddSkills}
+                  disabled={busy}
+                  accessibilityRole="button"
+                  accessibilityLabel="Done"
+                >
+                  <Text style={styles.buttonText}>Done</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+                  onPress={closeAddSkillsWithoutApply}
+                  disabled={busy}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel"
+                >
+                  <Text style={styles.secondaryButtonText}>Cancel</Text>
+                </Pressable>
+              </View>
+            </KeyboardAvoidingView>
+          </Modal>
 
           {saveError ? <Text style={styles.error}>{saveError}</Text> : null}
           {saveSuccess ? <Text style={styles.success}>{saveSuccess}</Text> : null}
 
           <Pressable
             style={[styles.button, busy && styles.buttonDisabled]}
-            onPress={handleSave}
+            onPress={promptSave}
             disabled={busy}
             accessibilityRole="button"
           >
@@ -352,4 +475,13 @@ const styles = StyleSheet.create({
   navLabel: { fontSize: 16, fontWeight: '600', color: SkillMatchTheme.brand.primary },
   navHint: { fontSize: 12, color: SkillMatchTheme.text.secondary },
   navChevron: { fontSize: 22, color: SkillMatchTheme.text.secondary, lineHeight: 24 },
+  modalFlex: { flex: 1 },
+  modalScreen: {
+    flex: 1,
+    paddingHorizontal: 24,
+    gap: 12,
+    backgroundColor: SkillMatchTheme.brand.background,
+  },
+  modalTitle: { fontSize: 22, fontWeight: '700', color: SkillMatchTheme.text.primary },
+  modalContent: { gap: 12, paddingBottom: 24 },
 });

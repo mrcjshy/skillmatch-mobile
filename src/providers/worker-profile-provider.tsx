@@ -140,6 +140,8 @@ type WorkerProfileContextValue = {
   availability: AvailabilityStatus;
   setAvailability: (value: AvailabilityStatus) => void;
   selection: SkillSelection;
+  persistedSelection: SkillSelection;
+  applySkillDraft: (next: Record<string, string>) => void;
   isVerified: boolean;
   isSaving: boolean;
   saveError: string | null;
@@ -286,6 +288,17 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
     setSelection((previous) => ({ ...previous, [skillId]: level }));
   }
 
+  function applySkillDraft(next: Record<string, string>) {
+    const knownSkillIds = new Set(skills.map((skill) => skill.id));
+    const cleaned: SkillSelection = {};
+    for (const [skillId, level] of Object.entries(next)) {
+      if (knownSkillIds.has(skillId) && isProficiency(level)) {
+        cleaned[skillId] = level;
+      }
+    }
+    setSelection(cleaned);
+  }
+
   async function handleSave() {
     if (isSaving || !userId) return;
     setSaveError(null);
@@ -429,6 +442,8 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
         availability,
         setAvailability,
         selection,
+        persistedSelection,
+        applySkillDraft,
         isVerified,
         isSaving,
         saveError,
