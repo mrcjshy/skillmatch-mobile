@@ -13,6 +13,7 @@ type AppSegmentProps<T extends string> = {
   options: readonly AppSegmentOption<T>[];
   value: T;
   onChange: (value: T) => void;
+  disabled?: boolean;
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 };
@@ -21,6 +22,7 @@ export function AppSegment<T extends string>({
   options,
   value,
   onChange,
+  disabled = false,
   accessibilityLabel,
   style,
 }: AppSegmentProps<T>) {
@@ -36,8 +38,9 @@ export function AppSegment<T extends string>({
           <Pressable
             key={option.value}
             accessibilityRole="radio"
-            accessibilityState={{ selected }}
+            accessibilityState={{ selected, disabled }}
             accessibilityLabel={option.label}
+            disabled={disabled}
             onPress={() => onChange(option.value)}
             style={[styles.option, selected ? styles.optionSelected : null]}
           >

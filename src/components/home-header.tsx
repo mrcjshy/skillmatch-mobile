@@ -11,9 +11,10 @@ const { colors, type, spacing } = SkillMatchTheme.ui;
 type HomeHeaderProps = {
   fullName: string;
   role: 'worker' | 'client';
+  variant?: 'identity' | 'chrome';
 };
 
-export function HomeHeader({ fullName, role }: HomeHeaderProps) {
+export function HomeHeader({ fullName, role, variant = 'identity' }: HomeHeaderProps) {
   const insets = useSafeAreaInsets();
   const accent = role === 'worker' ? colors.accentWorker : colors.accentClient;
 
@@ -21,10 +22,14 @@ export function HomeHeader({ fullName, role }: HomeHeaderProps) {
     <View style={[styles.wrap, { paddingTop: insets.top + spacing.sm }]}>
       <View style={styles.row}>
         <InitialsAvatar name={fullName} accent={accent} size={40} />
-        <View style={styles.copy}>
-          <Text style={styles.greeting}>{homeGreeting()}</Text>
-          <Text style={styles.name}>{fullName}</Text>
-        </View>
+        {variant === 'identity' ? (
+          <View style={styles.copy}>
+            <Text style={styles.greeting}>{homeGreeting()}</Text>
+            <Text style={styles.name}>{fullName}</Text>
+          </View>
+        ) : (
+          <View style={styles.copy} />
+        )}
         <NotificationBell role={role} />
       </View>
     </View>

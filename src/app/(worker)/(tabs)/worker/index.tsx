@@ -1,17 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SymbolView } from 'expo-symbols';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { AvailabilityControl } from '@/components/availability-control';
+import { AppButton } from '@/components/app-button';
+import { AppChip } from '@/components/app-chip';
+import { AppListRow } from '@/components/app-list-row';
+import { AppSegment } from '@/components/app-segment';
 import { HomeHeader } from '@/components/home-header';
+import { InlineStatus } from '@/components/inline-status';
+import { SectionHeader } from '@/components/section-header';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatCardDateTime } from '@/lib/date-time';
+import { homeGreeting } from '@/lib/home-greeting';
+import { firstNameFromFullName } from '@/lib/initials';
 import { supabase } from '@/lib/supabase';
 import { workerVerificationLabel } from '@/lib/worker-profile';
 import { useAccount } from '@/providers/account-provider';
-import { useWorkerProfile } from '@/providers/worker-profile-provider';
+import { AVAILABILITY_OPTIONS, useWorkerProfile } from '@/providers/worker-profile-provider';
 
-const WORKER_ACCENT = '#9FE870';
+const { colors, type, spacing, size } = SkillMatchTheme.ui;
 const PREVIEW_LIMIT = 3;
 
 type OpportunityPreview = {
@@ -130,187 +138,179 @@ export default function WorkerHome() {
   }, [availability, isLoading, loadError, loadPreview]);
 
   const fullName = account?.full_name ?? '—';
+  const firstName = firstNameFromFullName(account?.full_name ?? '');
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <HomeHeader fullName={fullName} role="worker" />
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <HomeHeader fullName={fullName} role="worker" variant="chrome" />
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Availability</Text>
+      <View style={styles.titleBlock}>
+        <Text style={styles.greeting}>{homeGreeting()}</Text>
+        <Text
+          style={styles.displayTitle}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          accessibilityRole="header"
+        >
+          {firstName}
+        </Text>
+      </View>
+
+      <View style={styles.availabilityBlock}>
+        {!isLoading && !loadError && !isVerified ? (
+          <AppChip variant="warning" label={workerVerificationLabel(false)} />
+        ) : null}
+        <Text style={styles.sectionTitle}>Availability</Text>
         <Text style={styles.help}>This is the status used for matching.</Text>
         {isLoading ? (
-          <Text style={styles.note}>Loading your profile…</Text>
+          <InlineStatus variant="loading" message="Loading your profile…" />
         ) : loadError ? (
-          <Text style={styles.error}>{loadError}</Text>
+          <InlineStatus variant="error" message={loadError} />
         ) : (
-          <AvailabilityControl
+          <AppSegment
+            options={AVAILABILITY_OPTIONS}
             value={availability}
             onChange={(status) => {
               void persistAvailability(status);
             }}
             disabled={isPersistingAvailability}
-            accentColor={WORKER_ACCENT}
+            accessibilityLabel="Availability"
+            style={styles.availabilitySegment}
           />
         )}
-        {isPersistingAvailability ? <ActivityIndicator /> : null}
-        {persistAvailabilityError ? <Text style={styles.error}>{persistAvailabilityError}</Text> : null}
-        {refreshPersistedAvailabilityError ? (
-          <Text style={styles.error}>{refreshPersistedAvailabilityError}</Text>
+        {isPersistingAvailability ? <ActivityIndicator color={colors.primary} /> : null}
+        {persistAvailabilityError ? (
+          <InlineStatus variant="error" message={persistAvailabilityError} />
         ) : null}
-        {!isLoading && !loadError && !isVerified ? (
-          <Text style={styles.help}>{workerVerificationLabel(false)}</Text>
+        {refreshPersistedAvailabilityError ? (
+          <InlineStatus variant="error" message={refreshPersistedAvailabilityError} />
         ) : null}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Job opportunities</Text>
+      <View style={styles.jobsBlock}>
+        <SectionHeader
+          title="Job opportunities"
+          style={styles.sectionHeader}
+          trailing={
+            availability === 'available' ? (
+              <AppButton
+                variant="ghost"
+                label="View all"
+                onPress={() => router.push('/worker/opportunities')}
+                accessibilityLabel="View all job opportunities"
+              />
+            ) : undefined
+          }
+        />
         {availability !== 'available' ? (
-          <Text style={styles.note}>
-            Set your status to Available to receive matching job opportunities. Busy and Offline
-            workers are not included in matching.
-          </Text>
+          <InlineStatus
+            variant="note"
+            message="Set your status to Available to receive matching job opportunities. Busy and Offline workers are not included in matching."
+            style={styles.statusPad}
+          />
         ) : oppLoading ? (
-          <View style={styles.center}>
-            <ActivityIndicator />
-            <Text style={styles.note}>Loading your opportunities…</Text>
-          </View>
+          <InlineStatus
+            variant="loading"
+            message="Loading your opportunities…"
+            style={styles.statusPad}
+          />
         ) : oppError ? (
-          <Text style={styles.error}>{oppError}</Text>
+          <InlineStatus variant="error" message={oppError} style={styles.statusPad} />
         ) : opportunities.length === 0 ? (
-          <Text style={styles.note}>No matching job opportunities right now.</Text>
+          <InlineStatus
+            variant="empty"
+            message="No matching job opportunities right now."
+            style={styles.statusPad}
+          />
         ) : (
-          opportunities.map((job) => {
+          opportunities.map((job, index) => {
             const location = formatLocation(job.barangay, job.city);
             const schedule = formatCardDateTime(job.scheduled_at);
+            const subtitle = [location, schedule].filter((part): part is string => part !== null).join(
+              ' · '
+            );
             return (
-              <View key={job.job_id} style={styles.preview}>
-                <Text style={styles.previewTitle}>{job.title}</Text>
-                {location ? <Text style={styles.previewLine}>{location}</Text> : null}
-                {schedule ? <Text style={styles.previewLine}>{schedule}</Text> : null}
-                <Text style={styles.previewScore}>Match Score: {formatPoints(job.total_points)}/100</Text>
-              </View>
+              <AppListRow
+                key={job.job_id}
+                title={job.title}
+                subtitle={subtitle.length > 0 ? subtitle : undefined}
+                trailing={`Match Score: ${formatPoints(job.total_points)}/100`}
+                showDivider={index < opportunities.length - 1}
+                style={styles.listRow}
+              />
             );
           })
         )}
-        {availability === 'available' ? (
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={() => router.push('/worker/opportunities')}
-            accessibilityRole="button"
-            accessibilityLabel="View all job opportunities"
-          >
-            <Text style={styles.secondaryButtonText}>View all</Text>
-          </Pressable>
-        ) : null}
       </View>
 
-      <Text style={styles.sectionTitle}>Tools</Text>
-      <Pressable
-        style={styles.tile}
+      <AppListRow
+        title="Skill Gap"
+        subtitle="What a job still needs"
         onPress={() => router.push('/worker/skill-gap')}
-        accessibilityRole="button"
-      >
-        <Text style={styles.tileTitle}>Skill Gap</Text>
-        <Text style={styles.tileHint}>What a job still needs</Text>
-      </Pressable>
+        trailing={
+          <SymbolView
+            name={{ android: 'chevron_right', ios: 'chevron.right', web: 'chevron_right' }}
+            size={size.icon}
+            tintColor={colors.textSecondary}
+          />
+        }
+        style={styles.listRow}
+      />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    paddingBottom: 48,
-    gap: 12,
-    backgroundColor: SkillMatchTheme.brand.background,
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
-  card: {
-    marginHorizontal: SkillMatchTheme.spacing.screenGutter,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
-    gap: SkillMatchTheme.spacing.cardGap,
-    backgroundColor: SkillMatchTheme.surface.default,
+  content: {
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    paddingBottom: spacing.xxxl + spacing.sm,
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: SkillMatchTheme.text.primary,
+  titleBlock: {
+    paddingHorizontal: spacing.gutter,
+    paddingTop: spacing.lg,
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  greeting: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  displayTitle: {
+    ...type.display,
+    color: colors.textPrimary,
+  },
+  availabilityBlock: {
+    paddingHorizontal: spacing.gutter,
+    gap: spacing.sm,
+    marginBottom: spacing.xxl,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: SkillMatchTheme.text.primary,
-    marginHorizontal: SkillMatchTheme.spacing.screenGutter,
+    ...type.sectionTitle,
+    color: colors.textPrimary,
   },
   help: {
-    fontSize: 13,
-    color: SkillMatchTheme.text.secondary,
+    ...type.helper,
+    color: colors.textSecondary,
   },
-  note: {
-    fontSize: 14,
-    color: SkillMatchTheme.text.secondary,
+  availabilitySegment: {
+    height: 44,
   },
-  error: {
-    color: SkillMatchTheme.feedback.danger,
-    fontSize: 14,
+  jobsBlock: {
+    gap: spacing.md,
+    marginBottom: spacing.xxl,
   },
-  center: {
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 8,
+  sectionHeader: {
+    paddingHorizontal: spacing.gutter,
   },
-  preview: {
-    gap: 4,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: SkillMatchTheme.border.default,
+  statusPad: {
+    paddingHorizontal: spacing.gutter,
   },
-  previewTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: SkillMatchTheme.text.primary,
-  },
-  previewLine: {
-    fontSize: 14,
-    color: SkillMatchTheme.text.secondary,
-  },
-  previewScore: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: SkillMatchTheme.brand.primary,
-  },
-  secondaryButton: {
-    minHeight: SkillMatchTheme.size.iconTarget,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  tile: {
-    marginHorizontal: SkillMatchTheme.spacing.screenGutter,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    gap: 2,
-    backgroundColor: SkillMatchTheme.surface.default,
-  },
-  tileTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: SkillMatchTheme.brand.primary,
-  },
-  tileHint: {
-    fontSize: 12,
-    color: SkillMatchTheme.text.secondary,
+  listRow: {
+    paddingHorizontal: spacing.gutter,
   },
 });
