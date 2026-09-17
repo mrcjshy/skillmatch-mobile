@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Modal,
@@ -9,13 +8,20 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { type Href, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AppButton } from '@/components/app-button';
+import { AppCard } from '@/components/app-card';
+import { AppChip } from '@/components/app-chip';
+import { AppField } from '@/components/app-field';
+import { AppNotice } from '@/components/app-notice';
+import { AppSegment } from '@/components/app-segment';
 import { AvailabilityControl } from '@/components/availability-control';
+import { InlineStatus } from '@/components/inline-status';
+import { SectionHeader } from '@/components/section-header';
 import { SelectedSkillChips } from '@/components/selected-skill-chips';
 import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { SkillMatchTheme } from '@/constants/theme';
@@ -34,6 +40,8 @@ import {
   PROFICIENCY_OPTIONS,
   useWorkerProfile,
 } from '@/providers/worker-profile-provider';
+
+const { colors, type, spacing, size } = SkillMatchTheme.ui;
 
 const SKILL_CONFIRMATION = {
   title: 'Confirm selected skills?',
@@ -119,18 +127,24 @@ export default function WorkerProfile() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <View style={styles.card}>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
+      <AppCard>
         <Text style={styles.identityName}>{account?.full_name ?? '—'}</Text>
         {!isLoading && !loadError ? (
           <View
-            style={[styles.badge, isVerified ? styles.badgeVerified : styles.badgePending]}
+            accessible
             accessibilityRole="text"
             accessibilityLabel={verificationLabel}
+            style={styles.badgeWrap}
           >
-            <Text style={[styles.badgeText, isVerified ? styles.badgeTextVerified : styles.badgeTextPending]}>
-              {verificationLabel}
-            </Text>
+            <AppChip
+              label={verificationLabel}
+              variant={isVerified ? 'positive' : 'warning'}
+            />
           </View>
         ) : null}
         <Text style={styles.location}>
@@ -140,27 +154,22 @@ export default function WorkerProfile() {
         <Text style={styles.value}>{account?.phone ?? '—'}</Text>
         <Text style={styles.label}>Email</Text>
         <Text style={styles.value}>{account?.email ?? '—'}</Text>
-      </View>
+      </AppCard>
 
       {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator />
-          <Text style={styles.note}>Loading your profile…</Text>
-        </View>
+        <InlineStatus variant="loading" message="Loading your profile…" />
       ) : loadError ? (
-        <Text style={styles.error}>{loadError}</Text>
+        <InlineStatus variant="error" message={loadError} />
       ) : (
         <>
-          <Text style={styles.sectionTitle}>Worker profile</Text>
-          <Text style={styles.fieldLabel}>About Me</Text>
-          <TextInput
-            style={styles.textArea}
+          <SectionHeader title="Worker profile" />
+          <AppField
+            label="About Me"
             value={bio}
             onChangeText={setBio}
             placeholder="Tell clients about your work experience."
             multiline
             numberOfLines={4}
-            textAlignVertical="top"
             editable={!busy}
             accessibilityLabel="About Me"
           />
@@ -168,7 +177,7 @@ export default function WorkerProfile() {
           <Text style={styles.fieldLabel}>Availability</Text>
           <AvailabilityControl value={availability} onChange={setAvailability} disabled={busy} />
 
-          <Text style={styles.sectionTitle}>Skills</Text>
+          <SectionHeader title="Skills" />
           <SelectedSkillChips
             skills={selectedSkills}
             onRemove={toggleSkill}
@@ -177,44 +186,23 @@ export default function WorkerProfile() {
               const level = selection[skill.id];
               if (level === undefined) return null;
               return (
-                <View
-                  style={styles.row}
-                  accessibilityRole="radiogroup"
+                <AppSegment
+                  options={PROFICIENCY_OPTIONS}
+                  value={level}
+                  onChange={(next) => setProficiency(skill.id, next)}
+                  disabled={busy}
                   accessibilityLabel={`${skill.skill_name} proficiency`}
-                >
-                  {PROFICIENCY_OPTIONS.map((option) => {
-                    const selectedLevel = level === option.value;
-                    return (
-                      <Pressable
-                        key={option.value}
-                        style={[styles.chipSmall, selectedLevel && styles.chipSelected]}
-                        onPress={() => setProficiency(skill.id, option.value)}
-                        disabled={busy}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected: selectedLevel, disabled: busy }}
-                        accessibilityLabel={option.label}
-                      >
-                        <Text
-                          style={[styles.chipTextSmall, selectedLevel && styles.chipTextSelected]}
-                        >
-                          {option.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
+                />
               );
             }}
           />
-          <Pressable
-            style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+          <AppButton
+            variant="secondary"
+            label="+ Add Skills"
             onPress={openAddSkills}
             disabled={busy}
-            accessibilityRole="button"
             accessibilityLabel="Add Skills"
-          >
-            <Text style={styles.secondaryButtonText}>+ Add Skills</Text>
-          </Pressable>
+          />
 
           <Modal
             visible={isAddingSkills}
@@ -228,7 +216,7 @@ export default function WorkerProfile() {
               <View
                 style={[
                   styles.modalScreen,
-                  { paddingTop: insets.top + 16, paddingBottom: Math.max(insets.bottom, 16) },
+                  { paddingTop: insets.top + spacing.lg, paddingBottom: Math.max(insets.bottom, spacing.lg) },
                 ]}
               >
                 <Text style={styles.modalTitle}>Add Skills</Text>
@@ -248,48 +236,39 @@ export default function WorkerProfile() {
                     disabled={busy}
                   />
                 </ScrollView>
-                <Pressable
-                  style={[styles.button, busy && styles.buttonDisabled]}
+                <AppButton
+                  variant="primary"
+                  label="Done"
                   onPress={confirmAddSkills}
                   disabled={busy}
-                  accessibilityRole="button"
                   accessibilityLabel="Done"
-                >
-                  <Text style={styles.buttonText}>Done</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+                />
+                <AppButton
+                  variant="secondary"
+                  label="Cancel"
                   onPress={closeAddSkillsWithoutApply}
                   disabled={busy}
-                  accessibilityRole="button"
                   accessibilityLabel="Cancel"
-                >
-                  <Text style={styles.secondaryButtonText}>Cancel</Text>
-                </Pressable>
+                />
               </View>
             </KeyboardAvoidingView>
           </Modal>
 
-          {saveError ? <Text style={styles.error}>{saveError}</Text> : null}
-          {saveSuccess ? <Text style={styles.success}>{saveSuccess}</Text> : null}
+          {saveError ? <AppNotice variant="danger" message={saveError} /> : null}
+          {saveSuccess ? <AppNotice variant="success" message={saveSuccess} /> : null}
 
-          <Pressable
-            style={[styles.button, busy && styles.buttonDisabled]}
+          <AppButton
+            variant="primary"
+            label="Save Profile"
             onPress={promptSave}
+            loading={isSaving}
             disabled={busy}
-            accessibilityRole="button"
-          >
-            {isSaving ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text style={styles.buttonText}>Save Profile</Text>
-            )}
-          </Pressable>
+          />
         </>
       )}
 
-      <Text style={styles.sectionTitle}>Tools / Support</Text>
-      <View style={styles.card}>
+      <SectionHeader title="Tools / Support" />
+      <AppCard>
         <NavRow
           label="Resume Builder"
           hint="Make a PDF resume"
@@ -321,22 +300,17 @@ export default function WorkerProfile() {
           last
           onPress={() => router.push('/worker/report-app' as unknown as Href)}
         />
-      </View>
+      </AppCard>
 
-      <Text style={styles.sectionTitle}>Account</Text>
-      <Pressable
-        style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+      <SectionHeader title="Account" />
+      <AppButton
+        variant="secondary"
+        label="Sign Out"
         onPress={handleSignOut}
+        loading={isSigningOut}
         disabled={busy}
-        accessibilityRole="button"
-      >
-        {isSigningOut ? (
-          <ActivityIndicator />
-        ) : (
-          <Text style={styles.secondaryButtonText}>Sign Out</Text>
-        )}
-      </Pressable>
-      {signOutError ? <Text style={styles.error}>{signOutError}</Text> : null}
+      />
+      {signOutError ? <AppNotice variant="danger" message={signOutError} /> : null}
     </ScrollView>
   );
 }
@@ -356,7 +330,7 @@ function NavRow({
 }) {
   return (
     <Pressable
-      style={[styles.navRow, !last && styles.navRowBorder, disabled && styles.buttonDisabled]}
+      style={[styles.navRow, !last && styles.navRowBorder, disabled && styles.navDisabled]}
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
@@ -374,114 +348,83 @@ function NavRow({
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 24, gap: 12, paddingBottom: 48 },
-  center: { alignItems: 'center', gap: 8, paddingVertical: 16 },
-  card: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
-    gap: SkillMatchTheme.spacing.cardGap,
-    backgroundColor: SkillMatchTheme.surface.default,
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
-  identityName: { fontSize: 22, fontWeight: '700', color: SkillMatchTheme.text.primary },
-  location: { fontSize: 14, color: SkillMatchTheme.text.secondary },
-  badge: {
+  content: {
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.lg,
+    paddingBottom: spacing.xxxl + spacing.sm,
+  },
+  identityName: {
+    ...type.screenTitle,
+    color: colors.textPrimary,
+  },
+  badgeWrap: {
     alignSelf: 'flex-start',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
   },
-  badgeVerified: { backgroundColor: SkillMatchTheme.brand.primaryMuted },
-  badgePending: { backgroundColor: SkillMatchTheme.surface.subtle },
-  badgeText: { fontSize: 13, fontWeight: '600' },
-  badgeTextVerified: { color: SkillMatchTheme.brand.primary },
-  badgeTextPending: { color: SkillMatchTheme.text.secondary },
-  label: { fontSize: 12, fontWeight: '600', opacity: 0.6, marginTop: 6 },
-  fieldLabel: { fontSize: 13, fontWeight: '600', color: SkillMatchTheme.text.secondary },
-  value: { fontSize: 16, color: SkillMatchTheme.text.primary },
-  sectionTitle: { fontSize: 16, fontWeight: '600', marginTop: 8, color: SkillMatchTheme.text.primary },
-  note: { fontSize: 14, opacity: 0.7 },
-  textArea: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    minHeight: 96,
-    backgroundColor: SkillMatchTheme.surface.default,
+  location: {
+    ...type.helper,
+    color: colors.textSecondary,
   },
-  row: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  chip: {
-    flex: 1,
-    minHeight: SkillMatchTheme.size.iconTarget,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: 6,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+  label: {
+    ...type.helper,
+    color: colors.textSecondary,
   },
-  chipSmall: {
-    flex: 1,
-    minHeight: 40,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: 6,
-    paddingVertical: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+  value: {
+    ...type.body,
+    color: colors.textPrimary,
   },
-  chipSelected: { borderColor: SkillMatchTheme.brand.primary, backgroundColor: SkillMatchTheme.brand.primaryMuted },
-  chipText: { fontSize: 16 },
-  chipTextSmall: { fontSize: 14 },
-  chipTextSelected: { color: SkillMatchTheme.brand.primary, fontWeight: '600' },
-  error: { color: SkillMatchTheme.feedback.danger, fontSize: 14 },
-  success: { color: SkillMatchTheme.feedback.success, fontSize: 14 },
-  button: {
-    marginTop: 8,
-    minHeight: SkillMatchTheme.size.primaryCtaHeight,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+    color: colors.primary,
   },
-  secondaryButton: {
-    minHeight: SkillMatchTheme.size.iconTarget,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: SkillMatchTheme.text.inverse, fontSize: 16, fontWeight: '600' },
-  secondaryButtonText: { color: SkillMatchTheme.brand.primary, fontSize: 16, fontWeight: '600' },
   navRow: {
-    minHeight: SkillMatchTheme.size.iconTarget,
+    minHeight: size.listRowMinHeight,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    gap: 12,
+    gap: spacing.md,
   },
   navRowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: SkillMatchTheme.border.default,
+    borderBottomColor: colors.border,
   },
   navCopy: { flex: 1, gap: 2 },
-  navLabel: { fontSize: 16, fontWeight: '600', color: SkillMatchTheme.brand.primary },
-  navHint: { fontSize: 12, color: SkillMatchTheme.text.secondary },
-  navChevron: { fontSize: 22, color: SkillMatchTheme.text.secondary, lineHeight: 24 },
-  modalFlex: { flex: 1 },
+  navLabel: {
+    ...type.cardTitle,
+    color: colors.textPrimary,
+  },
+  navHint: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  navChevron: {
+    fontSize: 22,
+    color: colors.textSecondary,
+    lineHeight: 24,
+  },
+  navDisabled: { opacity: 0.4 },
+  modalFlex: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   modalScreen: {
     flex: 1,
-    paddingHorizontal: 24,
-    gap: 12,
-    backgroundColor: SkillMatchTheme.brand.background,
+    paddingHorizontal: spacing.gutter,
+    gap: spacing.md,
+    backgroundColor: colors.background,
   },
-  modalTitle: { fontSize: 22, fontWeight: '700', color: SkillMatchTheme.text.primary },
-  modalContent: { gap: 12, paddingBottom: 24 },
+  modalTitle: {
+    ...type.screenTitle,
+    color: colors.textPrimary,
+  },
+  modalContent: {
+    gap: spacing.md,
+    paddingBottom: spacing.xl,
+  },
 });

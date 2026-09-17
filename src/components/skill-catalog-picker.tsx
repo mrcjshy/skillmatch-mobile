@@ -1,8 +1,11 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { AppField } from '@/components/app-field';
 import { SkillMatchTheme } from '@/constants/theme';
 import { filterSkills, type CatalogSkill } from '@/lib/skill-catalog';
+
+const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
 
 type SkillCatalogPickerProps = {
   skills: readonly CatalogSkill[];
@@ -31,8 +34,8 @@ export function SkillCatalogPicker({
 
   return (
     <View style={styles.wrap}>
-      <TextInput
-        style={styles.search}
+      <AppField
+        variant="search"
         value={query}
         onChangeText={onQueryChange}
         placeholder="Search skills"
@@ -71,35 +74,29 @@ export function SkillCatalogPicker({
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: 8 },
-  search: {
-    minHeight: SkillMatchTheme.size.iconTarget,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    backgroundColor: SkillMatchTheme.surface.default,
-    color: SkillMatchTheme.text.primary,
-  },
-  note: { fontSize: 14, color: SkillMatchTheme.text.secondary },
-  skillBlock: { gap: 8 },
+  wrap: { gap: spacing.sm },
+  note: { ...type.helper, color: colors.textSecondary },
+  skillBlock: { gap: spacing.sm },
   skillToggle: {
-    minHeight: SkillMatchTheme.size.iconTarget,
+    minHeight: size.ghostButton,
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     justifyContent: 'flex-start',
+    backgroundColor: colors.surfaceSubtle,
   },
   skillToggleSelected: {
-    borderColor: SkillMatchTheme.brand.primary,
-    backgroundColor: SkillMatchTheme.brand.primaryMuted,
+    backgroundColor: colors.accentSoft,
   },
-  skillText: { fontSize: 16, color: SkillMatchTheme.text.primary, flexShrink: 1 },
-  skillTextSelected: { color: SkillMatchTheme.brand.primary, fontWeight: '600' },
+  skillText: {
+    ...type.body,
+    color: colors.textPrimary,
+    flexShrink: 1,
+  },
+  skillTextSelected: {
+    ...type.bodyEmphasis,
+    color: colors.primary,
+  },
 });

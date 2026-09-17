@@ -9,6 +9,11 @@ import {
   View,
 } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
+import { AppCard } from '@/components/app-card';
+import { AppChip } from '@/components/app-chip';
+import { AppNotice } from '@/components/app-notice';
+import { InlineStatus } from '@/components/inline-status';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   NOTIFICATION_INSERTED,
@@ -28,6 +33,8 @@ import {
   toNotificationRow,
 } from '@/lib/notifications';
 import { useAccount } from '@/providers/account-provider';
+
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 /**
  * The Notifications inbox, shared by the Worker and Client routes.
@@ -280,41 +287,33 @@ export default function NotificationList() {
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
     >
-      <Text style={styles.heading}>Notifications</Text>
       <Text style={styles.note}>{COPY.intro}</Text>
 
-      {notice ? (
-        <View style={styles.notice}>
-          <Text style={styles.noticeText}>{notice.text}</Text>
-        </View>
-      ) : null}
+      {notice ? <AppNotice variant="warning" message={notice.text} /> : null}
 
       {isLoading ? (
         // Rendered instead of, never before, the empty state.
-        <View style={styles.center}>
-          <ActivityIndicator />
-          <Text style={styles.note}>{COPY.loading}</Text>
-        </View>
+        <InlineStatus variant="loading" message={COPY.loading} />
       ) : loadError ? (
-        <View style={styles.center}>
-          <Text style={styles.error}>{loadError}</Text>
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={handleRetry}
-            disabled={busy}
-            accessibilityRole="button"
-          >
-            <Text style={styles.secondaryButtonText}>Retry</Text>
-          </Pressable>
-        </View>
+        <InlineStatus
+          variant="error"
+          message={loadError}
+          action={<AppButton label="Retry" variant="secondary" onPress={handleRetry} disabled={busy} />}
+        />
       ) : notifications.length === 0 ? (
         // A successful call that returned nothing — not an error, not a block.
-        <View style={styles.center}>
-          <Text style={styles.note}>{COPY.empty}</Text>
-        </View>
+        <InlineStatus variant="empty" message={COPY.empty} />
       ) : (
         notifications.map((n) => {
           const unread = isUnread(n.is_read);
@@ -325,11 +324,7 @@ export default function NotificationList() {
             <>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardLabel}>{formatNotificationLabel(n.type)}</Text>
-                {unread ? (
-                  <View style={styles.unreadPill}>
-                    <Text style={styles.unreadPillText}>{COPY.unread}</Text>
-                  </View>
-                ) : null}
+                {unread ? <AppChip label={COPY.unread} variant="neutral" /> : null}
               </View>
               {/*
                 The server's own message. After N12-DB only trusted
@@ -340,7 +335,7 @@ export default function NotificationList() {
               {created ? <Text style={styles.timestamp}>{created}</Text> : null}
               {isMarkingThis ? (
                 <View style={styles.markingRow}>
-                  <ActivityIndicator />
+                  <ActivityIndicator color={colors.primary} />
                   <Text style={styles.note}>Marking as read…</Text>
                 </View>
               ) : unread ? (
@@ -354,19 +349,17 @@ export default function NotificationList() {
           return unread ? (
             <Pressable
               key={n.id}
-              style={[styles.card, styles.cardUnread, busy && !isMarkingThis && styles.cardDisabled]}
               onPress={() => handleMarkRead(n.id)}
               disabled={busy}
               accessibilityRole="button"
               accessibilityState={{ disabled: busy, busy: isMarkingThis }}
               accessibilityLabel={`${formatNotificationLabel(n.type)}, unread. ${n.message}`}
+              style={busy && !isMarkingThis ? styles.cardDisabled : undefined}
             >
-              {body}
+              <AppCard style={styles.cardUnread}>{body}</AppCard>
             </Pressable>
           ) : (
-            <View key={n.id} style={styles.card}>
-              {body}
-            </View>
+            <AppCard key={n.id}>{body}</AppCard>
           );
         })
       )}
@@ -375,36 +368,24 @@ export default function NotificationList() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 24,
-    gap: 12,
-    paddingBottom: 48,
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
-  center: {
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 16,
-  },
-  heading: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
+  content: {
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.md,
+    paddingBottom: spacing.xxxl + spacing.sm,
   },
   note: {
-    fontSize: 14,
-    opacity: 0.7,
-  },
-  card: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
-    gap: 4,
-    backgroundColor: SkillMatchTheme.surface.default,
+    ...type.helper,
+    color: colors.textSecondary,
   },
   cardUnread: {
-    borderColor: SkillMatchTheme.feedback.info,
-    backgroundColor: '#eff6ff',
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.md,
   },
   cardDisabled: {
     opacity: 0.5,
@@ -413,75 +394,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: spacing.sm,
   },
   cardLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: SkillMatchTheme.brand.primary,
+    ...type.cardTitle,
+    color: colors.textPrimary,
     flexShrink: 1,
   },
-  unreadPill: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.feedback.info,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  unreadPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: SkillMatchTheme.feedback.info,
-  },
   message: {
-    fontSize: 15,
-    opacity: 0.85,
+    ...type.body,
+    color: colors.textSecondary,
   },
   messageUnread: {
-    fontWeight: '600',
-    opacity: 1,
+    ...type.bodyEmphasis,
+    color: colors.textPrimary,
   },
   timestamp: {
-    fontSize: 13,
-    opacity: 0.6,
+    ...type.caption,
+    color: colors.textSecondary,
   },
   hint: {
-    fontSize: 13,
-    color: SkillMatchTheme.brand.primary,
-    marginTop: 2,
+    ...type.bodyEmphasis,
+    color: colors.primary,
   },
   markingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 2,
-  },
-  error: {
-    color: '#b91c1c',
-    fontSize: 14,
-  },
-  notice: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    borderColor: '#b45309',
-    backgroundColor: '#fffbeb',
-  },
-  noticeText: {
-    fontSize: 14,
-  },
-  secondaryButton: {
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 16,
-    fontWeight: '600',
+    gap: spacing.sm,
   },
 });

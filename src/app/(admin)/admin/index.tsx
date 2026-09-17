@@ -1,20 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { type Href, useRouter } from 'expo-router';
 
+import { AppButton } from '@/components/app-button';
+import { AppCard } from '@/components/app-card';
+import { AppNotice } from '@/components/app-notice';
+import { InlineStatus } from '@/components/inline-status';
 import { formatCardDateTime } from '@/lib/date-time';
 import { SkillMatchTheme } from '@/constants/theme';
 import { signOutCurrentUser } from '@/lib/sign-out';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
+
+const { colors, type, spacing } = SkillMatchTheme.ui;
 
 /**
  * Administrator "Worker Verification" dashboard = the pending verification
@@ -383,17 +381,23 @@ export default function AdminHome() {
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
     >
-      <Pressable
-        style={styles.secondaryButton}
+      <AppButton
+        label="Reports"
+        variant="secondary"
         onPress={() => router.push('/admin/reports' as unknown as Href)}
         disabled={verifyingUserId !== null}
-        accessibilityRole="button"
-      >
-        <Text style={styles.secondaryButtonText}>Reports</Text>
-      </Pressable>
+      />
       <Text style={styles.heading}>Worker Verification</Text>
       <Text style={styles.note}>
         Workers waiting to be verified, oldest application first.
@@ -404,53 +408,47 @@ export default function AdminHome() {
         survives whatever the follow-up server read does to the list below.
       */}
       {notice ? (
-        <View
-          style={[
-            styles.notice,
-            notice.tone === 'success'
-              ? styles.noticeSuccess
-              : notice.tone === 'info'
-                ? styles.noticeInfo
-                : styles.noticeWarning,
-          ]}
-        >
-          <Text style={styles.noticeHeadline}>{notice.headline}</Text>
+        <View style={styles.noticeBlock}>
+          {notice.tone === 'info' ? (
+            <AppCard variant="status">
+              <Text style={styles.infoNotice}>{notice.headline}</Text>
+            </AppCard>
+          ) : (
+            <AppNotice
+              variant={notice.tone === 'success' ? 'success' : 'warning'}
+              message={notice.headline}
+            />
+          )}
           {notice.offerRefresh ? (
-            <Pressable
-              style={styles.secondaryButton}
+            <AppButton
+              label="Refresh"
+              variant="secondary"
               onPress={handleRefresh}
               disabled={isLoading || isRefreshing || verifyingUserId !== null}
-              accessibilityRole="button"
-            >
-              <Text style={styles.secondaryButtonText}>Refresh</Text>
-            </Pressable>
+            />
           ) : null}
         </View>
       ) : null}
 
       {isLoading ? (
         // Rendered instead of, never before, the empty state.
-        <View style={styles.center}>
-          <ActivityIndicator />
-          <Text style={styles.note}>Loading the verification queue…</Text>
-        </View>
+        <InlineStatus variant="loading" message="Loading the verification queue…" />
       ) : loadError ? (
-        <View style={styles.center}>
-          <Text style={styles.error}>{loadError}</Text>
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={handleRetry}
-            disabled={isLoading || isRefreshing || verifyingUserId !== null}
-            accessibilityRole="button"
-          >
-            <Text style={styles.secondaryButtonText}>Retry</Text>
-          </Pressable>
-        </View>
+        <InlineStatus
+          variant="error"
+          message={loadError}
+          action={
+            <AppButton
+              label="Retry"
+              variant="secondary"
+              onPress={handleRetry}
+              disabled={isLoading || isRefreshing || verifyingUserId !== null}
+            />
+          }
+        />
       ) : workers.length === 0 ? (
         // A successful call with nobody pending — not an error, not a denial.
-        <View style={styles.center}>
-          <Text style={styles.note}>No workers are waiting for verification.</Text>
-        </View>
+        <InlineStatus variant="empty" message="No workers are waiting for verification." />
       ) : (
         workers.map((worker) => {
           const location = formatLocation(worker.barangay, worker.city);
@@ -464,173 +462,98 @@ export default function AdminHome() {
           const isVerifyDisabled =
             verifyingUserId !== null || isSubmitted || isLoading || isRefreshing;
           return (
-            <View key={worker.user_id} style={styles.card}>
+            <AppCard key={worker.user_id}>
               <Text style={styles.cardTitle}>{worker.full_name}</Text>
 
-              {worker.phone ? (
-                <Text style={styles.cardLine}>Phone: {worker.phone}</Text>
-              ) : null}
-              {location ? <Text style={styles.cardLine}>{location}</Text> : null}
-              {worker.availability_status ? (
-                <Text style={styles.cardLine}>
-                  Availability: {worker.availability_status}
-                </Text>
-              ) : null}
-              <Text style={styles.cardLine}>Skills: {formatSkills(worker.skills)}</Text>
-              {registered ? (
-                <Text style={styles.cardLine}>Registered: {registered}</Text>
-              ) : null}
-
-              <Pressable
-                style={[styles.verifyButton, isVerifyDisabled && styles.verifyButtonDisabled]}
-                onPress={() => handleVerify(worker.user_id)}
-                disabled={isVerifyDisabled}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: isVerifyDisabled, busy: isVerifyingThis }}
-                accessibilityLabel={`Verify ${worker.full_name}`}
-              >
-                {isVerifyingThis ? (
-                  <View style={styles.verifyBusy}>
-                    <ActivityIndicator color="#ffffff" />
-                    <Text style={styles.verifyButtonText}>Verifying…</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.verifyButtonText}>
-                    {/* Reached only when the post-success re-read failed. */}
-                    {isSubmitted ? 'Verification submitted' : 'Verify'}
+              <View style={styles.meta}>
+                {worker.phone ? (
+                  <Text style={styles.cardLine}>Phone: {worker.phone}</Text>
+                ) : null}
+                {location ? <Text style={styles.cardLine}>{location}</Text> : null}
+                {worker.availability_status ? (
+                  <Text style={styles.cardLine}>
+                    Availability: {worker.availability_status}
                   </Text>
-                )}
-              </Pressable>
-            </View>
+                ) : null}
+                <Text style={styles.cardLine}>Skills: {formatSkills(worker.skills)}</Text>
+                {registered ? (
+                  <Text style={styles.cardLine}>Registered: {registered}</Text>
+                ) : null}
+              </View>
+
+              <AppButton
+                variant="primary"
+                /* Reached only when the post-success re-read failed. */
+                label={
+                  isVerifyingThis
+                    ? 'Verifying…'
+                    : isSubmitted
+                      ? 'Verification submitted'
+                      : 'Verify'
+                }
+                loading={isVerifyingThis}
+                disabled={isVerifyDisabled}
+                onPress={() => handleVerify(worker.user_id)}
+                accessibilityLabel={`Verify ${worker.full_name}`}
+              />
+            </AppCard>
           );
         })
       )}
 
-      <Pressable
-        style={[styles.signOutButton, isSigningOut && styles.signOutButtonDisabled]}
+      <AppButton
+        label="Sign Out"
+        variant="secondary"
         onPress={handleSignOut}
+        loading={isSigningOut}
         disabled={isSigningOut || verifyingUserId !== null}
-        accessibilityRole="button"
-      >
-        {isSigningOut ? (
-          <ActivityIndicator color={SkillMatchTheme.brand.primary} />
-        ) : (
-          <Text style={styles.secondaryButtonText}>Sign Out</Text>
-        )}
-      </Pressable>
+      />
       {signOutError ? <Text style={styles.error}>{signOutError}</Text> : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 24,
-    gap: 12,
-    paddingBottom: 48,
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
-  center: {
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 16,
+  content: {
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.md,
+    paddingBottom: spacing.xxxl + spacing.sm,
   },
   heading: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    ...type.screenTitle,
+    color: colors.textPrimary,
   },
   note: {
-    fontSize: 14,
-    opacity: 0.7,
+    ...type.helper,
+    color: colors.textSecondary,
   },
-  card: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
-    gap: SkillMatchTheme.spacing.cardGap,
-    backgroundColor: SkillMatchTheme.surface.default,
+  noticeBlock: {
+    gap: spacing.md,
+  },
+  infoNotice: {
+    ...type.helper,
+    color: colors.textPrimary,
   },
   cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...type.cardTitle,
+    color: colors.textPrimary,
+  },
+  meta: {
+    gap: spacing.xs,
   },
   cardLine: {
-    fontSize: 14,
-    opacity: 0.8,
+    ...type.helper,
+    color: colors.textSecondary,
   },
   error: {
-    color: '#b91c1c',
-    fontSize: 14,
+    ...type.helper,
+    color: colors.danger,
     textAlign: 'center',
-  },
-  verifyButton: {
-    marginTop: 10,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  verifyButtonDisabled: {
-    opacity: 0.5,
-  },
-  verifyButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  verifyBusy: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  secondaryButton: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  signOutButton: {
-    marginTop: 24,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.feedback.info,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  signOutButtonDisabled: {
-    opacity: 0.6,
-  },
-  notice: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    gap: 4,
-  },
-  noticeSuccess: {
-    borderColor: '#15803d',
-    backgroundColor: '#f0fdf4',
-  },
-  noticeInfo: {
-    borderColor: SkillMatchTheme.brand.primary,
-    backgroundColor: '#eff6ff',
-  },
-  noticeWarning: {
-    borderColor: '#b45309',
-    backgroundColor: '#fffbeb',
-  },
-  noticeHeadline: {
-    fontSize: 15,
-    fontWeight: '600',
   },
 });

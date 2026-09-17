@@ -1,11 +1,17 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { type Href, useRouter } from 'expo-router';
 
+import { AppButton } from '@/components/app-button';
+import { AppCard } from '@/components/app-card';
+import { AppNotice } from '@/components/app-notice';
+import { SectionHeader } from '@/components/section-header';
 import { SkillMatchTheme } from '@/constants/theme';
 import { CLIENT_HELP_PATH, presentClientProfile } from '@/lib/client-profile';
 import { signOutCurrentUser } from '@/lib/sign-out';
 import { useAccount } from '@/providers/account-provider';
+
+const { colors, type, spacing, size } = SkillMatchTheme.ui;
 
 export default function ClientProfile() {
   const router = useRouter();
@@ -29,53 +35,60 @@ export default function ClientProfile() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.identityName}>{profile.fullName}</Text>
-        <Text style={styles.location}>{profile.location}</Text>
-        <Text style={styles.label}>Phone</Text>
-        <Text style={styles.value}>{profile.phone}</Text>
-        <Text style={styles.label}>Email</Text>
-        <Text style={styles.value}>{profile.email}</Text>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <AppCard>
+        <View style={styles.identityHead}>
+          <Text style={styles.identityName}>{profile.fullName}</Text>
+          <Text style={styles.location}>{profile.location}</Text>
+        </View>
+        <View style={styles.field}>
+          <Text style={styles.label}>Phone</Text>
+          <Text style={styles.value}>{profile.phone}</Text>
+        </View>
+        <View style={styles.field}>
+          <Text style={styles.label}>Email</Text>
+          <Text style={styles.value}>{profile.email}</Text>
+        </View>
+      </AppCard>
+
+      <View style={styles.section}>
+        <SectionHeader title="Tools / Support" />
+        <AppCard>
+          <View>
+            <NavRow
+              label="Help & FAQ"
+              hint="Common questions"
+              disabled={isSigningOut}
+              onPress={() => router.push(CLIENT_HELP_PATH as Href)}
+            />
+            <NavRow
+              label="My Reports"
+              hint="Reports you submitted"
+              disabled={isSigningOut}
+              onPress={() => router.push('/client/my-reports' as unknown as Href)}
+            />
+            <NavRow
+              label="Report an app issue"
+              hint="Send an app issue report"
+              disabled={isSigningOut}
+              last
+              onPress={() => router.push('/client/report-app' as unknown as Href)}
+            />
+          </View>
+        </AppCard>
       </View>
 
-      <Text style={styles.sectionTitle}>Tools / Support</Text>
-      <View style={styles.card}>
-        <NavRow
-          label="Help & FAQ"
-          hint="Common questions"
+      <View style={styles.section}>
+        <SectionHeader title="Account" />
+        <AppButton
+          label="Sign Out"
+          variant="secondary"
+          onPress={handleSignOut}
+          loading={isSigningOut}
           disabled={isSigningOut}
-          onPress={() => router.push(CLIENT_HELP_PATH as Href)}
         />
-        <NavRow
-          label="My Reports"
-          hint="Reports you submitted"
-          disabled={isSigningOut}
-          onPress={() => router.push('/client/my-reports' as unknown as Href)}
-        />
-        <NavRow
-          label="Report an app issue"
-          hint="Send an app issue report"
-          disabled={isSigningOut}
-          last
-          onPress={() => router.push('/client/report-app' as unknown as Href)}
-        />
+        {signOutError ? <AppNotice variant="danger" message={signOutError} /> : null}
       </View>
-
-      <Text style={styles.sectionTitle}>Account</Text>
-      <Pressable
-        style={[styles.secondaryButton, isSigningOut && styles.buttonDisabled]}
-        onPress={handleSignOut}
-        disabled={isSigningOut}
-        accessibilityRole="button"
-      >
-        {isSigningOut ? (
-          <ActivityIndicator />
-        ) : (
-          <Text style={styles.secondaryButtonText}>Sign Out</Text>
-        )}
-      </Pressable>
-      {signOutError ? <Text style={styles.error}>{signOutError}</Text> : null}
     </ScrollView>
   );
 }
@@ -95,7 +108,12 @@ function NavRow({
 }) {
   return (
     <Pressable
-      style={[styles.navRow, !last && styles.navRowBorder, disabled && styles.buttonDisabled]}
+      style={({ pressed }) => [
+        styles.navRow,
+        !last && styles.navRowBorder,
+        disabled && styles.navDisabled,
+        pressed && !disabled && styles.navPressed,
+      ]}
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
@@ -113,45 +131,73 @@ function NavRow({
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 24, gap: 12, paddingBottom: 48 },
-  card: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
-    gap: SkillMatchTheme.spacing.cardGap,
-    backgroundColor: SkillMatchTheme.surface.default,
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
-  identityName: { fontSize: 22, fontWeight: '700', color: SkillMatchTheme.text.primary },
-  location: { fontSize: 14, color: SkillMatchTheme.text.secondary },
-  label: { fontSize: 12, fontWeight: '600', opacity: 0.6, marginTop: 6 },
-  value: { fontSize: 16, color: SkillMatchTheme.text.primary },
-  sectionTitle: { fontSize: 16, fontWeight: '600', marginTop: 8, color: SkillMatchTheme.text.primary },
-  secondaryButton: {
-    minHeight: SkillMatchTheme.size.iconTarget,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+  content: {
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.lg,
+    paddingBottom: spacing.xxxl + spacing.sm,
   },
-  buttonDisabled: { opacity: 0.6 },
-  secondaryButtonText: { color: SkillMatchTheme.brand.primary, fontSize: 16, fontWeight: '600' },
-  error: { color: SkillMatchTheme.feedback.danger, fontSize: 14 },
+  identityHead: {
+    gap: spacing.xxs,
+  },
+  identityName: {
+    ...type.screenTitle,
+    color: colors.textPrimary,
+  },
+  location: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  field: {
+    gap: spacing.xxs,
+  },
+  label: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  value: {
+    ...type.body,
+    color: colors.textPrimary,
+  },
+  section: {
+    gap: spacing.md,
+  },
   navRow: {
-    minHeight: SkillMatchTheme.size.iconTarget,
+    minHeight: size.listRowMinHeight,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    gap: 12,
+    paddingVertical: spacing.md,
+    gap: spacing.md,
   },
   navRowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: SkillMatchTheme.border.default,
+    borderBottomColor: colors.border,
   },
-  navCopy: { flex: 1, gap: 2 },
-  navLabel: { fontSize: 16, fontWeight: '600', color: SkillMatchTheme.brand.primary },
-  navHint: { fontSize: 12, color: SkillMatchTheme.text.secondary },
-  navChevron: { fontSize: 22, color: SkillMatchTheme.text.secondary, lineHeight: 24 },
+  navPressed: {
+    backgroundColor: colors.surfaceSubtle,
+  },
+  navDisabled: {
+    opacity: 0.4,
+  },
+  navCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  navLabel: {
+    ...type.cardTitle,
+    color: colors.textPrimary,
+  },
+  navHint: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  navChevron: {
+    ...type.sectionTitle,
+    color: colors.textSecondary,
+  },
 });

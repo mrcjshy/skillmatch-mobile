@@ -1,15 +1,11 @@
 import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
+import { AppCard } from '@/components/app-card';
+import { AppChip, type AppChipVariant } from '@/components/app-chip';
+import { InlineStatus } from '@/components/inline-status';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatCardDateTime } from '@/lib/date-time';
 import {
@@ -22,6 +18,15 @@ import {
   loadAdminReportsErrorCopy,
 } from '@/lib/reports';
 import { useAccount } from '@/providers/account-provider';
+
+const { colors, type, spacing } = SkillMatchTheme.ui;
+
+function reportChipVariant(status: string): AppChipVariant {
+  if (status === 'resolved') return 'positive';
+  if (status === 'under_review') return 'warning';
+  if (status === 'dismissed') return 'danger';
+  return 'neutral';
+}
 
 export default function AdminReports() {
   const router = useRouter();
@@ -91,30 +96,33 @@ export default function AdminReports() {
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} />}
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={refresh}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
     >
       {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator />
-          <Text style={styles.note}>Loading reports…</Text>
-        </View>
+        <InlineStatus variant="loading" message="Loading reports…" />
       ) : loadError ? (
-        <View style={styles.center}>
-          <Text style={styles.error}>{loadError}</Text>
-          <Pressable style={styles.outlineButton} onPress={retry} accessibilityRole="button">
-            <Text style={styles.outlineButtonText}>Retry</Text>
-          </Pressable>
-        </View>
+        <InlineStatus
+          variant="error"
+          message={loadError}
+          action={<AppButton label="Retry" variant="secondary" onPress={retry} />}
+        />
       ) : reports.length === 0 ? (
-        <Text style={styles.note}>{COPY.adminEmpty}</Text>
+        <InlineStatus variant="empty" message={COPY.adminEmpty} />
       ) : (
         reports.map((report) => {
           const created = formatCardDateTime(report.created_at);
           return (
             <Pressable
               key={report.report_id}
-              style={styles.card}
               onPress={() => {
                 router.push({
                   pathname: '/admin/report-details',
@@ -122,19 +130,27 @@ export default function AdminReports() {
                 } as unknown as Href);
               }}
               accessibilityRole="button"
+              style={({ pressed }) => [pressed ? styles.pressed : null]}
             >
-              <View style={styles.topRow}>
-                <Text style={styles.title}>{formatReportCategory(report.category)}</Text>
-                <View style={styles.statusPill}>
-                  <Text style={styles.statusText}>{formatReportStatus(report.status)}</Text>
+              <AppCard>
+                <View style={styles.topRow}>
+                  <Text style={styles.title}>{formatReportCategory(report.category)}</Text>
+                  <AppChip
+                    label={formatReportStatus(report.status)}
+                    variant={reportChipVariant(report.status)}
+                  />
                 </View>
-              </View>
-              <Text style={styles.line}>Reporter: {report.reporter_full_name}</Text>
-              <Text style={styles.line}>
-                Reported: {report.reported_full_name ?? 'App issue'}
-              </Text>
-              {report.booking_id ? <Text style={styles.line}>Booking ID: {report.booking_id}</Text> : null}
-              {created ? <Text style={styles.meta}>{created}</Text> : null}
+                <View style={styles.meta}>
+                  <Text style={styles.line}>Reporter: {report.reporter_full_name}</Text>
+                  <Text style={styles.line}>
+                    Reported: {report.reported_full_name ?? 'App issue'}
+                  </Text>
+                  {report.booking_id ? (
+                    <Text style={styles.line}>Booking ID: {report.booking_id}</Text>
+                  ) : null}
+                  {created ? <Text style={styles.created}>{created}</Text> : null}
+                </View>
+              </AppCard>
             </Pressable>
           );
         })
@@ -144,74 +160,40 @@ export default function AdminReports() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: SkillMatchTheme.spacing.screenGutter,
-    gap: SkillMatchTheme.spacing.cardGap,
-    paddingBottom: 48,
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
-  center: {
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 16,
+  content: {
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.md,
+    paddingBottom: spacing.xxxl + spacing.sm,
   },
-  card: {
-    backgroundColor: SkillMatchTheme.surface.default,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
-    gap: 6,
+  pressed: {
+    opacity: 0.72,
   },
   topRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: spacing.sm,
   },
   title: {
     flex: 1,
-    fontSize: 16,
-    fontWeight: '700',
-    color: SkillMatchTheme.text.primary,
-  },
-  statusPill: {
-    backgroundColor: SkillMatchTheme.brand.primaryMuted,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  statusText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  line: {
-    fontSize: 14,
-    color: SkillMatchTheme.text.primary,
+    ...type.cardTitle,
+    color: colors.textPrimary,
   },
   meta: {
-    fontSize: 13,
-    color: SkillMatchTheme.text.secondary,
+    gap: spacing.xs,
   },
-  note: {
-    fontSize: 14,
-    color: SkillMatchTheme.text.secondary,
-    textAlign: 'center',
+  line: {
+    ...type.helper,
+    color: colors.textSecondary,
   },
-  error: {
-    color: SkillMatchTheme.feedback.danger,
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  outlineButton: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-  },
-  outlineButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontWeight: '700',
+  created: {
+    ...type.caption,
+    color: colors.textSecondary,
   },
 });

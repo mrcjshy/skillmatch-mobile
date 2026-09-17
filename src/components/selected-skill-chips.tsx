@@ -4,6 +4,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SkillMatchTheme } from '@/constants/theme';
 import type { CatalogSkill } from '@/lib/skill-catalog';
 
+const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
+
 type SelectedSkillChipsProps = {
   skills: readonly CatalogSkill[];
   onRemove: (skillId: string) => void;
@@ -50,39 +52,36 @@ export function SelectedSkillChips({
 }
 
 const styles = StyleSheet.create({
-  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  block: { width: '100%', gap: 8 },
-  note: { fontSize: 14, color: SkillMatchTheme.text.secondary },
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  block: { width: '100%', gap: spacing.sm },
+  note: { ...type.helper, color: colors.textSecondary },
   chip: {
-    minHeight: SkillMatchTheme.size.iconTarget,
+    minHeight: size.ghostButton,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: SkillMatchTheme.brand.primaryMuted,
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.selected,
   },
   name: {
     flex: 1,
     flexShrink: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: SkillMatchTheme.brand.primary,
+    ...type.bodyEmphasis,
+    color: colors.primary,
   },
   remove: {
-    minHeight: SkillMatchTheme.size.iconTarget,
-    minWidth: SkillMatchTheme.size.iconTarget,
+    minHeight: size.ghostButton,
+    minWidth: size.ghostButton,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing.sm,
   },
   removeText: {
-    fontSize: 14,
+    ...type.helper,
     fontWeight: '600',
-    color: SkillMatchTheme.text.primary,
+    color: colors.primary,
     textDecorationLine: 'underline',
   },
   disabled: { opacity: 0.6 },

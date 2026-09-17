@@ -1,16 +1,12 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
+import { AppCard, type AppCardTone } from '@/components/app-card';
+import { AppField } from '@/components/app-field';
+import { AppNotice } from '@/components/app-notice';
+import { InlineStatus } from '@/components/inline-status';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatDetailDateTime } from '@/lib/date-time';
 import {
@@ -33,11 +29,20 @@ import {
   isReportId,
 } from '@/lib/reports';
 
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+
 const REVIEW_LABEL: Record<ReviewStatus, string> = {
   under_review: COPY.markUnderReview,
   resolved: COPY.resolve,
   dismissed: COPY.dismiss,
 };
+
+function reportStatusTone(status: string): AppCardTone | undefined {
+  if (status === 'resolved') return 'success';
+  if (status === 'dismissed') return 'danger';
+  if (status === 'under_review') return 'warning';
+  return undefined;
+}
 
 export default function AdminReportDetails() {
   const { reportId: rawReportId } = useLocalSearchParams<{ reportId?: string | string[] }>();
@@ -195,8 +200,7 @@ export default function AdminReportDetails() {
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator />
-        <Text style={styles.note}>Loading report…</Text>
+        <InlineStatus variant="loading" message="Loading report…" />
       </View>
     );
   }
@@ -204,10 +208,11 @@ export default function AdminReportDetails() {
   if (loadError || detail === null) {
     return (
       <View style={styles.center}>
-        <Text style={styles.error}>{loadError ?? COPY.unavailable}</Text>
-        <Pressable style={styles.outlineButton} onPress={retry} accessibilityRole="button">
-          <Text style={styles.outlineButtonText}>Retry</Text>
-        </Pressable>
+        <InlineStatus
+          variant="error"
+          message={loadError ?? COPY.unavailable}
+          action={<AppButton label="Retry" variant="secondary" onPress={retry} />}
+        />
       </View>
     );
   }
@@ -220,22 +225,31 @@ export default function AdminReportDetails() {
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} />}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={refresh}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
     >
-      <View style={styles.statusCard}>
+      <AppCard variant="status" tone={reportStatusTone(detail.status)}>
         <Text style={styles.eyebrow}>STATUS</Text>
         <Text style={styles.status}>{formatReportStatus(detail.status)}</Text>
-      </View>
+      </AppCard>
 
       {notice ? (
-        <View style={styles.notice}>
-          <Text style={styles.noticeText}>{notice}</Text>
-        </View>
+        <AppNotice
+          variant={notice === COPY.reviewSaved ? 'success' : 'warning'}
+          message={notice}
+        />
       ) : null}
 
-      <View style={styles.card}>
+      <AppCard>
         <DetailLine label="Category" value={formatReportCategory(detail.category)} />
         <DetailLine label="Reporter" value={detail.reporter_full_name} />
         <DetailLine label="Reporter ID" value={detail.reporter_id} />
@@ -245,22 +259,22 @@ export default function AdminReportDetails() {
         <DetailLine label="Booking ID" value={detail.booking_id} />
         <DetailLine label="Created" value={created} />
         <DetailLine label="Reviewed" value={reviewedAt} />
-      </View>
+      </AppCard>
 
-      <View style={styles.card}>
+      <AppCard>
         <Text style={styles.sectionTitle}>Description</Text>
         <Text style={styles.body}>{detail.description}</Text>
-      </View>
+      </AppCard>
 
       {detail.booking_id !== null ? (
-        <View style={styles.card}>
+        <AppCard>
           <Text style={styles.sectionTitle}>{COPY.evidenceTitle}</Text>
           {evidenceLoading ? (
-            <Text style={styles.note}>{COPY.evidenceLoading}</Text>
+            <InlineStatus variant="loading" message={COPY.evidenceLoading} />
           ) : evidenceError ? (
-            <Text style={styles.error}>{evidenceError}</Text>
+            <InlineStatus variant="error" message={evidenceError} />
           ) : evidence === null || evidence.length === 0 ? (
-            <Text style={styles.note}>{COPY.evidenceEmpty}</Text>
+            <InlineStatus variant="empty" message={COPY.evidenceEmpty} />
           ) : (
             evidence.map((row) => {
               const sentAt = formatDetailDateTime(row.created_at);
@@ -270,25 +284,24 @@ export default function AdminReportDetails() {
                     {row.sender_role === 'worker' ? COPY.evidenceWorker : COPY.evidenceClient}
                   </Text>
                   <Text style={styles.body}>{row.content}</Text>
-                  {sentAt ? <Text style={styles.note}>{sentAt}</Text> : null}
+                  {sentAt ? <Text style={styles.evidenceTime}>{sentAt}</Text> : null}
                 </View>
               );
             })
           )}
-        </View>
+        </AppCard>
       ) : null}
 
-      <View style={styles.card}>
+      <AppCard>
         <Text style={styles.sectionTitle}>Admin response</Text>
         <Text style={styles.body}>{detail.admin_response ?? COPY.noAdminResponse}</Text>
-      </View>
+      </AppCard>
 
       {reviewTargets.length > 0 ? (
-        <View style={styles.card}>
+        <AppCard>
           <Text style={styles.sectionTitle}>Review</Text>
-          <Text style={styles.label}>{COPY.responseLabel}</Text>
-          <TextInput
-            style={styles.input}
+          <AppField
+            label={COPY.responseLabel}
             value={response}
             onChangeText={setResponse}
             placeholder={COPY.responsePlaceholder}
@@ -299,30 +312,22 @@ export default function AdminReportDetails() {
           <Text style={remaining < 0 ? styles.counterOver : styles.counter}>
             {remaining} / {REPORT_DESCRIPTION_MAX}
           </Text>
-          {reviewError ? <Text style={styles.error}>{reviewError}</Text> : null}
+          {reviewError ? <AppNotice variant="danger" message={reviewError} /> : null}
           {reviewTargets.map((status) => {
             const disabled = busy;
+            const isReviewingThis = reviewingStatus === status;
             return (
-              <Pressable
+              <AppButton
                 key={status}
-                style={[
-                  status === 'resolved' ? styles.primaryButton : styles.outlineAction,
-                  disabled ? styles.buttonDisabled : null,
-                ]}
-                onPress={() => handleReview(status)}
+                variant={status === 'resolved' ? 'primary' : 'secondary'}
+                label={isReviewingThis ? COPY.reviewing : REVIEW_LABEL[status]}
+                loading={isReviewingThis}
                 disabled={disabled}
-                accessibilityRole="button"
-                accessibilityState={{ disabled, busy: reviewingStatus === status }}
-              >
-                <Text
-                  style={status === 'resolved' ? styles.primaryButtonText : styles.outlineActionText}
-                >
-                  {reviewingStatus === status ? COPY.reviewing : REVIEW_LABEL[status]}
-                </Text>
-              </Pressable>
+                onPress={() => handleReview(status)}
+              />
             );
           })}
-        </View>
+        </AppCard>
       ) : null}
     </ScrollView>
   );
@@ -339,149 +344,72 @@ function DetailLine({ label, value }: { label: string; value: string | null }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: SkillMatchTheme.spacing.screenGutter,
-    gap: SkillMatchTheme.spacing.cardGap,
-    paddingBottom: 48,
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.md,
+    paddingBottom: spacing.xxxl + spacing.sm,
   },
   center: {
     flex: 1,
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    padding: 24,
-  },
-  card: {
-    backgroundColor: SkillMatchTheme.surface.default,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
-    gap: 10,
-  },
-  statusCard: {
-    backgroundColor: SkillMatchTheme.brand.primaryMuted,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
+    padding: spacing.gutter,
   },
   eyebrow: {
-    color: SkillMatchTheme.text.secondary,
-    fontSize: 11,
+    ...type.caption,
+    color: colors.textSecondary,
     fontWeight: '700',
     letterSpacing: 0.8,
   },
   status: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 24,
-    fontWeight: '800',
+    ...type.screenTitle,
+    color: colors.textPrimary,
   },
   sectionTitle: {
-    color: SkillMatchTheme.text.primary,
-    fontSize: 17,
-    fontWeight: '700',
+    ...type.sectionTitle,
+    color: colors.textPrimary,
   },
   body: {
-    color: SkillMatchTheme.text.secondary,
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  label: {
-    color: SkillMatchTheme.text.secondary,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    backgroundColor: SkillMatchTheme.surface.default,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    minHeight: 96,
-    color: SkillMatchTheme.text.primary,
+    ...type.body,
+    color: colors.textSecondary,
   },
   counter: {
-    fontSize: 12,
-    color: SkillMatchTheme.text.secondary,
+    ...type.caption,
+    color: colors.textSecondary,
   },
   counterOver: {
-    fontSize: 12,
-    color: SkillMatchTheme.feedback.danger,
+    ...type.caption,
+    color: colors.danger,
     fontWeight: '600',
   },
-  evidenceRow: { gap: 4 },
-  detailRow: { gap: 2 },
+  evidenceRow: {
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  evidenceTime: {
+    ...type.caption,
+    color: colors.textSecondary,
+  },
+  detailRow: {
+    gap: spacing.xxs,
+  },
   detailLabel: {
-    color: SkillMatchTheme.text.secondary,
-    fontSize: 12,
+    ...type.caption,
+    color: colors.textSecondary,
     fontWeight: '700',
     textTransform: 'uppercase',
   },
   detailValue: {
-    color: SkillMatchTheme.text.primary,
-    fontSize: 15,
-  },
-  note: {
-    color: SkillMatchTheme.text.secondary,
-    fontSize: 14,
-  },
-  error: {
-    color: SkillMatchTheme.feedback.danger,
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  notice: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.feedback.success,
-    backgroundColor: '#f0fdf4',
-    borderRadius: 8,
-    padding: 12,
-  },
-  noticeText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: SkillMatchTheme.text.primary,
-  },
-  outlineButton: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-  },
-  outlineButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontWeight: '700',
-  },
-  outlineAction: {
-    minHeight: SkillMatchTheme.size.iconTarget,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: SkillMatchTheme.radius.input,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  outlineActionText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  primaryButton: {
-    minHeight: SkillMatchTheme.size.primaryCtaHeight,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: SkillMatchTheme.radius.input,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButtonText: {
-    color: SkillMatchTheme.text.inverse,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
+    ...type.body,
+    color: colors.textPrimary,
   },
 });
