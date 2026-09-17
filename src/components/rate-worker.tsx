@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
 import { StarRatingInput } from '@/components/star-rating-input';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
@@ -12,6 +13,8 @@ import {
   submitRating,
   validateComment,
 } from '@/lib/ratings';
+
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 /**
  * The Client's rating control for one completed Booking (BL-01B-UI).
@@ -100,13 +103,12 @@ export default function RateWorker({ bookingId, onRated }: { bookingId: string; 
 
   if (!isOpen) {
     return (
-      <Pressable
-        style={styles.openButton}
+      <AppButton
+        label={COPY.action}
+        variant="secondary"
         onPress={() => setIsOpen(true)}
-        accessibilityRole="button"
-      >
-        <Text style={styles.openButtonText}>{COPY.action}</Text>
-      </Pressable>
+        style={styles.openButton}
+      />
     );
   }
 
@@ -123,8 +125,11 @@ export default function RateWorker({ bookingId, onRated }: { bookingId: string; 
         value={comment}
         onChangeText={setComment}
         placeholder={COPY.commentPlaceholder}
+        placeholderTextColor={colors.textDisabled}
         multiline
         editable={!isSubmitting}
+        textAlignVertical="top"
+        underlineColorAndroid="transparent"
         accessibilityLabel={COPY.commentLabel}
       />
       {/* Counts the trimmed length, matching what the server measures.
@@ -135,25 +140,19 @@ export default function RateWorker({ bookingId, onRated }: { bookingId: string; 
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <View style={styles.actionRow}>
-        <Pressable
-          style={styles.cancelButton}
+      <View style={styles.actionCol}>
+        <AppButton
+          label={COPY.submit}
+          onPress={handleSubmit}
+          loading={isSubmitting}
+          disabled={!canSubmit}
+        />
+        <AppButton
+          label={COPY.cancel}
+          variant="ghost"
           onPress={close}
           disabled={isSubmitting}
-          accessibilityRole="button"
-        >
-          <Text style={styles.cancelButtonText}>{COPY.cancel}</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.submitButton, !canSubmit ? styles.submitButtonDisabled : null]}
-          onPress={handleSubmit}
-          disabled={!canSubmit}
-          accessibilityRole="button"
-        >
-          <Text style={styles.submitButtonText}>
-            {isSubmitting ? COPY.submitting : COPY.submit}
-          </Text>
-        </Pressable>
+        />
       </View>
     </View>
   );
@@ -161,89 +160,54 @@ export default function RateWorker({ bookingId, onRated }: { bookingId: string; 
 
 const styles = StyleSheet.create({
   openButton: {
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    alignSelf: 'flex-start',
-  },
-  openButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 15,
-    fontWeight: '600',
+    marginTop: spacing.md,
   },
   panel: {
-    marginTop: 12,
+    marginTop: spacing.md,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#bfdbfe',
-    backgroundColor: '#eff6ff',
-    borderRadius: 8,
-    padding: 12,
-    gap: 8,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    gap: spacing.sm,
+    borderCurve: 'continuous',
   },
   heading: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...type.sectionTitle,
+    color: colors.textPrimary,
   },
   label: {
     fontSize: 13,
     fontWeight: '600',
-    opacity: 0.8,
+    lineHeight: 18,
+    color: colors.primary,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#ffffff',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 15,
-    minHeight: 60,
+    ...type.body,
+    color: colors.textPrimary,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    minHeight: 96,
     maxHeight: 140,
+    borderCurve: 'continuous',
   },
   counter: {
-    fontSize: 12,
-    opacity: 0.6,
+    ...type.caption,
+    color: colors.textSecondary,
   },
   counterOver: {
-    fontSize: 12,
-    color: '#b91c1c',
+    ...type.caption,
+    color: colors.danger,
     fontWeight: '600',
   },
   error: {
-    color: '#b91c1c',
-    fontSize: 14,
+    ...type.helper,
+    color: colors.danger,
   },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 12,
-    marginTop: 4,
-  },
-  cancelButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  cancelButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  submitButton: {
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-  },
-  submitButtonDisabled: {
-    opacity: 0.5,
-  },
-  submitButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
+  actionCol: {
+    gap: spacing.sm,
+    marginTop: spacing.xs,
   },
 });

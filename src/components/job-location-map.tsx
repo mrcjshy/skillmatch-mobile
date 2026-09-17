@@ -1,7 +1,8 @@
 import { Component, useCallback, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import * as Linking from 'expo-linking';
 
+import { AppButton } from '@/components/app-button';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   COPY,
@@ -14,6 +15,8 @@ import {
   type WorkerLocationSurface,
 } from '@/lib/job-location';
 import { formatLocation } from '@/lib/bookings';
+
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 type MapsRuntime = {
   MapView: typeof import('react-native-maps').default;
@@ -76,27 +79,33 @@ function StaticJobMap({
   region,
   pin,
   accessibilityLabel,
+  variant,
 }: {
   region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number };
   pin: JobPin | null;
   accessibilityLabel: string;
+  variant: 'approximate' | 'exact';
 }) {
   const [mapReady, setMapReady] = useState(mapsRuntime !== null);
   const MapView = mapsRuntime?.MapView;
   const Marker = mapsRuntime?.Marker;
   const available = classifyMapAvailability(mapReady && mapsRuntime !== null);
+  const isExact = variant === 'exact';
 
   if (available !== 'ready' || !MapView || !Marker) {
     return (
-      <View style={styles.unavailable} accessibilityLabel="Job location map unavailable">
-        <Text style={styles.help}>{COPY.workerMapUnavailable}</Text>
+      <View
+        style={isExact ? styles.exactUnavailable : styles.unavailable}
+        accessibilityLabel="Job location map unavailable"
+      >
+        <Text style={isExact ? styles.exactHelp : styles.help}>{COPY.workerMapUnavailable}</Text>
       </View>
     );
   }
 
   return (
     <MapErrorBoundary onError={() => setMapReady(false)}>
-      <View style={styles.mapFrame} pointerEvents="none">
+      <View style={isExact ? styles.exactMapFrame : styles.mapFrame} pointerEvents="none">
         <MapView
           style={styles.map}
           provider={Platform.OS === 'android' ? mapsRuntime?.PROVIDER_GOOGLE : undefined}
@@ -190,6 +199,7 @@ export function WorkerApproximateJobArea({ jobId }: { jobId: string }) {
           region={surface.mapRegion}
           pin={null}
           accessibilityLabel="Approximate job area map"
+          variant="approximate"
         />
       ) : (
         <View style={styles.unavailable} accessibilityLabel="Job location map unavailable">
@@ -212,8 +222,8 @@ export function WorkerAssignedJobLocation({
   if (surface.kind === 'suppressed' || surface.kind === 'unavailable') {
     if (surface.kind === 'unavailable') {
       return (
-        <View style={styles.block}>
-          <Text style={styles.note}>{COPY.workerLocationUnavailable}</Text>
+        <View style={styles.exactBlock}>
+          <Text style={styles.exactNote}>{COPY.workerLocationUnavailable}</Text>
         </View>
       );
     }
@@ -223,10 +233,10 @@ export function WorkerAssignedJobLocation({
   if (surface.kind === 'text-fallback') {
     const areaLine = formatLocation(surface.barangay, surface.city);
     return (
-      <View style={styles.block}>
-        <Text style={styles.heading}>Job location</Text>
-        {surface.address ? <Text style={styles.body}>{surface.address}</Text> : null}
-        {areaLine ? <Text style={styles.body}>{areaLine}</Text> : null}
+      <View style={styles.exactBlock}>
+        <Text style={styles.exactHeading}>Job location</Text>
+        {surface.address ? <Text style={styles.exactAddress}>{surface.address}</Text> : null}
+        {areaLine ? <Text style={styles.exactArea}>{areaLine}</Text> : null}
       </View>
     );
   }
@@ -234,32 +244,26 @@ export function WorkerAssignedJobLocation({
   if (surface.kind === 'exact') {
     const areaLine = formatLocation(surface.barangay, surface.city);
     return (
-      <View style={styles.block}>
-        <Text style={styles.heading}>Job location</Text>
-        {surface.address ? <Text style={styles.body}>{surface.address}</Text> : null}
-        {areaLine ? <Text style={styles.body}>{areaLine}</Text> : null}
+      <View style={styles.exactBlock}>
+        <Text style={styles.exactHeading}>Job location</Text>
+        {surface.address ? <Text style={styles.exactAddress}>{surface.address}</Text> : null}
+        {areaLine ? <Text style={styles.exactArea}>{areaLine}</Text> : null}
         {surface.showMap ? (
           <StaticJobMap
             region={exactPinRegion(surface.pin)}
             pin={surface.pin}
             accessibilityLabel="Exact job location map"
+            variant="exact"
           />
         ) : (
-          <View style={styles.unavailable} accessibilityLabel="Job location map unavailable">
-            <Text style={styles.help}>{COPY.workerMapUnavailable}</Text>
+          <View style={styles.exactUnavailable} accessibilityLabel="Job location map unavailable">
+            <Text style={styles.exactHelp}>{COPY.workerMapUnavailable}</Text>
           </View>
         )}
         {surface.openInMapsUrl ? (
-          <Pressable
-            style={styles.button}
-            onPress={onOpenMaps}
-            accessibilityRole="button"
-            accessibilityLabel={COPY.openInMaps}
-          >
-            <Text style={styles.buttonText}>{COPY.openInMaps}</Text>
-          </Pressable>
+          <AppButton label={COPY.openInMaps} variant="ghost" onPress={onOpenMaps} />
         ) : null}
-        {mapsNote ? <Text style={styles.note}>{mapsNote}</Text> : null}
+        {mapsNote ? <Text style={styles.exactNote}>{mapsNote}</Text> : null}
       </View>
     );
   }
@@ -327,16 +331,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: SkillMatchTheme.feedback.warning,
   },
-  button: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    alignItems: 'center',
+  exactBlock: {
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
-  buttonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 16,
-    fontWeight: '600',
+  exactMapFrame: {
+    height: 200,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSubtle,
+  },
+  exactUnavailable: {
+    height: 200,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surfaceSubtle,
+  },
+  exactHeading: {
+    ...type.sectionTitle,
+    color: colors.textPrimary,
+  },
+  exactAddress: {
+    ...type.bodyEmphasis,
+    color: colors.textPrimary,
+  },
+  exactArea: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  exactHelp: {
+    ...type.helper,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  exactNote: {
+    ...type.helper,
+    color: colors.warning,
   },
 });

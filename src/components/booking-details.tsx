@@ -1,8 +1,6 @@
 import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -10,11 +8,15 @@ import {
   View,
 } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
+import { AppChip, type AppChipVariant } from '@/components/app-chip';
 import BookingLifecycle from '@/components/booking-lifecycle';
 import BookingPayment from '@/components/booking-payment';
-import RateWorker from '@/components/rate-worker';
-import { StarRatingDisplay } from '@/components/star-rating-display';
+import { InlineStatus } from '@/components/inline-status';
 import { WorkerAssignedJobLocation, nativeJobMapsLoaded, openWorkerMapsUrl } from '@/components/job-location-map';
+import RateWorker from '@/components/rate-worker';
+import { SectionHeader } from '@/components/section-header';
+import { StarRatingDisplay } from '@/components/star-rating-display';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   BookingLoadError,
@@ -58,6 +60,8 @@ import {
   type AuthorizedJobLocation,
 } from '@/lib/job-location';
 
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UNAVAILABLE = 'This booking is unavailable.';
 
@@ -73,6 +77,14 @@ type DetailState = {
     | { status: 'denied' }
     | { status: 'error' };
 };
+
+function statusChipVariant(status: string): AppChipVariant {
+  if (status === 'confirmed') return 'positive';
+  if (status === 'completed') return 'positive';
+  if (status === 'pending') return 'warning';
+  if (status === 'cancelled' || status === 'no_show') return 'danger';
+  return 'neutral';
+}
 
 export default function BookingDetails({ role, bookingId }: { role: BookingRole; bookingId: string | null }) {
   const router = useRouter();
@@ -189,16 +201,21 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   }
 
   if (isLoading) {
-    return <View style={styles.center}><ActivityIndicator /><Text style={styles.secondary}>Loading booking…</Text></View>;
+    return (
+      <View style={styles.center}>
+        <InlineStatus variant="loading" message="Loading booking…" />
+      </View>
+    );
   }
 
   if (loadError || detail === null) {
     return (
       <View style={styles.center}>
-        <Text style={styles.error}>{loadError ?? UNAVAILABLE}</Text>
-        <Pressable style={styles.outlineButton} onPress={retry} accessibilityRole="button">
-          <Text style={styles.outlineButtonText}>Retry</Text>
-        </Pressable>
+        <InlineStatus
+          variant="error"
+          message={loadError ?? UNAVAILABLE}
+          action={<AppButton label="Retry" variant="secondary" onPress={retry} />}
+        />
       </View>
     );
   }
@@ -219,57 +236,67 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
           mapAvailable: classifyMapAvailability(nativeJobMapsLoaded()),
         })
       : null;
+  const showLifecycle = isLifecycleActionableStatus(booking.booking_status);
+  const showPayment = isPayableStatus(booking.booking_status);
+  const showRate = role === 'client' && isRateableStatus(booking.booking_status);
+  const showReport = isBookingReportableStatus(booking.booking_status);
+  const showPortfolio = role === 'client' && isClientPortfolioVisible(booking.booking_status);
+  const showActions = showLifecycle || showPayment || showRate || chatAvailable || showReport || showPortfolio;
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} />}
     >
-      <View style={styles.statusCard}>
-        <Text style={styles.eyebrow}>STATUS</Text>
-        <Text style={styles.status}>{formatBookingStatus(booking.booking_status)}</Text>
-      </View>
+      <AppChip
+        label={formatBookingStatus(booking.booking_status)}
+        variant={statusChipVariant(booking.booking_status)}
+        style={styles.statusChip}
+      />
 
-      <View style={styles.card}>
-        <Text style={styles.title}>{booking.job_title}</Text>
+      <View style={styles.section}>
+        <Text style={styles.jobTitle}>{booking.job_title}</Text>
         {booking.job_description ? <Text style={styles.body}>{booking.job_description}</Text> : null}
-        <DetailLine label="Booking ID" value={booking.booking_id} />
-        <DetailLine label="Schedule" value={schedule} />
-        <DetailLine label="Budget" value={budget} />
-        <DetailLine label="Location" value={location} />
-        {role === 'worker' && booking.booking_status === 'confirmed' && exactLocation.status === 'error' ? (
-          <Text style={styles.secondary}>{JOB_LOCATION_COPY.workerLocationGeneric}</Text>
-        ) : workerLocationSurface ? (
-          <WorkerAssignedJobLocation
-            surface={workerLocationSurface}
-            mapsNote={mapsNote}
-            onOpenMaps={() => {
-              const url = workerLocationSurface.kind === 'exact' ? workerLocationSurface.openInMapsUrl : null;
-              void openWorkerMapsUrl(url).then((ok) => {
-                setMapsNote(ok ? null : JOB_LOCATION_COPY.openInMapsFailed);
-              });
-            }}
-          />
-        ) : null}
-        <DetailLine label="Booked" value={bookedAt} />
-        <DetailLine label="Completed" value={completedAt} />
+        <View style={styles.summaryPanel}>
+          <DetailLine label="Booking ID" value={booking.booking_id} />
+          <DetailLine label="Schedule" value={schedule} />
+          <DetailLine label="Budget" value={budget} />
+          <DetailLine label="Location" value={location} />
+          {role === 'worker' && booking.booking_status === 'confirmed' && exactLocation.status === 'error' ? (
+            <Text style={styles.note}>{JOB_LOCATION_COPY.workerLocationGeneric}</Text>
+          ) : workerLocationSurface ? (
+            <WorkerAssignedJobLocation
+              surface={workerLocationSurface}
+              mapsNote={mapsNote}
+              onOpenMaps={() => {
+                const url = workerLocationSurface.kind === 'exact' ? workerLocationSurface.openInMapsUrl : null;
+                void openWorkerMapsUrl(url).then((ok) => {
+                  setMapsNote(ok ? null : JOB_LOCATION_COPY.openInMapsFailed);
+                });
+              }}
+            />
+          ) : null}
+          <DetailLine label="Booked" value={bookedAt} />
+          <DetailLine label="Completed" value={completedAt} />
+        </View>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>{role === 'worker' ? 'Client' : 'Assigned Worker'}</Text>
+      <View style={styles.section}>
+        <SectionHeader title={role === 'worker' ? 'Client' : 'Assigned Worker'} />
         {!released ? (
-          <Text style={styles.secondary}>
+          <Text style={styles.note}>
             {role === 'worker'
               ? 'Client contact is not available for this booking status.'
               : 'Worker details are not available for this booking status.'}
           </Text>
         ) : role === 'worker' && isWorkerBooking(booking) ? (
-          <>
+          <View style={styles.summaryPanel}>
             <DetailLine label="Name" value={booking.client_full_name ?? 'Not provided'} />
             <DetailLine label="Phone" value={booking.client_phone ?? 'Not provided'} />
-          </>
+          </View>
         ) : role === 'client' && isClientBooking(booking) ? (
-          <>
+          <View style={styles.summaryPanel}>
             <DetailLine label="Name" value={booking.worker_full_name ?? 'Not provided'} />
             <DetailLine label="Phone" value={booking.worker_phone ?? 'Not provided'} />
             <DetailLine label="Barangay" value={booking.worker_barangay ?? 'Not provided'} />
@@ -279,95 +306,136 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
               <Text style={styles.detailLabel}>Rating</Text>
               <StarRatingDisplay average={booking.worker_rating_avg} count={booking.worker_rating_count} />
             </View>
-          </>
-        ) : null}
-        {role === 'client' && isClientPortfolioVisible(booking.booking_status) ? (
-          <Pressable
-            style={styles.outlineButton}
-            onPress={() => {
-              router.push({ pathname: CLIENT_PORTFOLIO_PATH, params: { bookingId: booking.booking_id } } as unknown as Href);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={CLIENT_PORTFOLIO_COPY.viewAction}
-          >
-            <Text style={styles.outlineButtonText}>{CLIENT_PORTFOLIO_COPY.viewAction}</Text>
-          </Pressable>
+          </View>
         ) : null}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Actions</Text>
-        {isLifecycleActionableStatus(booking.booking_status) ? (
-          <BookingLifecycle role={role} bookingId={booking.booking_id} onChanged={load} />
-        ) : null}
-        {isPayableStatus(booking.booking_status) ? (
-          jobPaymentReady ? (
-            <BookingPayment
-              role={role}
-              bookingId={booking.booking_id}
-              payment={payment}
-              jobPaymentMethod={jobPaymentMethod}
-              onChanged={load}
+      {showActions ? (
+        <View style={styles.section}>
+          {showLifecycle ? (
+            <BookingLifecycle role={role} bookingId={booking.booking_id} onChanged={load} />
+          ) : null}
+          {showPayment ? (
+            jobPaymentReady ? (
+              <BookingPayment
+                role={role}
+                bookingId={booking.booking_id}
+                payment={payment}
+                jobPaymentMethod={jobPaymentMethod}
+                onChanged={load}
+              />
+            ) : (
+              <Text style={styles.note}>Could not load the agreed payment method.</Text>
+            )
+          ) : null}
+          {showRate ? (
+            isRated ? <Text style={styles.note}>{RATING_COPY.rated}</Text> : <RateWorker bookingId={booking.booking_id} onRated={load} />
+          ) : null}
+          {chatAvailable ? (
+            <AppButton
+              variant="primary"
+              label="Open Chat"
+              onPress={() => {
+                const pathname = role === 'worker' ? '/worker/chat' : '/client/chat';
+                router.push({ pathname, params: { bookingId: booking.booking_id } } as Href);
+              }}
             />
-          ) : (
-            <Text style={styles.secondary}>Could not load the agreed payment method.</Text>
-          )
-        ) : null}
-        {role === 'client' && isRateableStatus(booking.booking_status) ? (
-          isRated ? <Text style={styles.secondary}>{RATING_COPY.rated}</Text> : <RateWorker bookingId={booking.booking_id} onRated={load} />
-        ) : null}
-        {chatAvailable ? (
-          <Pressable
-            style={styles.primaryButton}
-            onPress={() => {
-              const pathname = role === 'worker' ? '/worker/chat' : '/client/chat';
-              router.push({ pathname, params: { bookingId: booking.booking_id } } as Href);
-            }}
-            accessibilityRole="button"
-          >
-            <Text style={styles.primaryButtonText}>Open Chat</Text>
-          </Pressable>
-        ) : null}
-        {isBookingReportableStatus(booking.booking_status) ? (
-          <Pressable
-            style={styles.outlineButton}
-            onPress={() => {
-              const pathname = role === 'worker' ? '/worker/report-booking' : '/client/report-booking';
-              router.push({ pathname, params: { bookingId: booking.booking_id } } as unknown as Href);
-            }}
-            accessibilityRole="button"
-          >
-            <Text style={styles.outlineButtonText}>{REPORT_COPY.reportAction}</Text>
-          </Pressable>
-        ) : null}
-      </View>
+          ) : null}
+          {showReport ? (
+            <AppButton
+              variant="ghost"
+              label={REPORT_COPY.reportAction}
+              onPress={() => {
+                const pathname = role === 'worker' ? '/worker/report-booking' : '/client/report-booking';
+                router.push({ pathname, params: { bookingId: booking.booking_id } } as unknown as Href);
+              }}
+            />
+          ) : null}
+          {showPortfolio ? (
+            <AppButton
+              variant="secondary"
+              label={CLIENT_PORTFOLIO_COPY.viewAction}
+              accessibilityLabel={CLIENT_PORTFOLIO_COPY.viewAction}
+              onPress={() => {
+                router.push({ pathname: CLIENT_PORTFOLIO_PATH, params: { bookingId: booking.booking_id } } as unknown as Href);
+              }}
+            />
+          ) : null}
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
 
 function DetailLine({ label, value }: { label: string; value: string | null }) {
   if (value === null) return null;
-  return <View style={styles.detailRow}><Text style={styles.detailLabel}>{label}</Text><Text style={styles.detailValue}>{value}</Text></View>;
+  return (
+    <View style={styles.detailRow}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: SkillMatchTheme.spacing.screenGutter, gap: SkillMatchTheme.spacing.cardGap, paddingBottom: 48 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, backgroundColor: SkillMatchTheme.brand.background },
-  card: { backgroundColor: SkillMatchTheme.surface.default, borderWidth: 1, borderColor: SkillMatchTheme.border.default, borderRadius: SkillMatchTheme.radius.card, padding: SkillMatchTheme.spacing.cardPadding, gap: 10 },
-  statusCard: { backgroundColor: SkillMatchTheme.brand.primaryMuted, borderRadius: SkillMatchTheme.radius.card, padding: SkillMatchTheme.spacing.cardPadding },
-  eyebrow: { color: SkillMatchTheme.text.secondary, fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-  status: { color: SkillMatchTheme.brand.primary, fontSize: 24, fontWeight: '800' },
-  title: { color: SkillMatchTheme.text.primary, fontSize: 22, fontWeight: '800' },
-  body: { color: SkillMatchTheme.text.secondary, fontSize: 15, lineHeight: 21 },
-  sectionTitle: { color: SkillMatchTheme.text.primary, fontSize: 17, fontWeight: '700' },
-  detailRow: { gap: 2 },
-  detailLabel: { color: SkillMatchTheme.text.secondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase' },
-  detailValue: { color: SkillMatchTheme.text.primary, fontSize: 15 },
-  ratingRow: { gap: 5 },
-  secondary: { color: SkillMatchTheme.text.secondary, fontSize: 14 },
-  error: { color: SkillMatchTheme.feedback.danger, fontSize: 14, textAlign: 'center' },
-  outlineButton: { borderWidth: 1, borderColor: SkillMatchTheme.brand.primary, borderRadius: SkillMatchTheme.radius.input, paddingHorizontal: 18, paddingVertical: 10 },
-  outlineButtonText: { color: SkillMatchTheme.brand.primary, fontWeight: '700' },
-  primaryButton: { minHeight: SkillMatchTheme.size.primaryCtaHeight, backgroundColor: SkillMatchTheme.brand.primary, borderRadius: SkillMatchTheme.radius.input, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
-  primaryButtonText: { color: SkillMatchTheme.text.inverse, fontSize: 16, fontWeight: '700' },
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.lg,
+    paddingBottom: spacing.xxxl + spacing.sm,
+  },
+  center: {
+    flex: 1,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.gutter,
+  },
+  statusChip: {
+    alignSelf: 'flex-start',
+  },
+  section: {
+    gap: spacing.md,
+  },
+  jobTitle: {
+    ...type.cardTitle,
+    color: colors.textPrimary,
+  },
+  body: {
+    ...type.body,
+    color: colors.textSecondary,
+  },
+  summaryPanel: {
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    gap: spacing.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  detailRow: {
+    gap: spacing.xxs,
+  },
+  detailLabel: {
+    ...type.caption,
+    color: colors.textSecondary,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  detailValue: {
+    ...type.body,
+    color: colors.textPrimary,
+  },
+  ratingRow: {
+    gap: spacing.xs,
+  },
+  note: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
 });

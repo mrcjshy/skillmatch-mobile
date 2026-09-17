@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   cancelBooking,
@@ -9,6 +10,8 @@ import {
   completeErrorCopy,
   COPY,
 } from '@/lib/booking-lifecycle';
+
+const { colors, type, spacing } = SkillMatchTheme.ui;
 
 /**
  * The lifecycle action section of one CONFIRMED Booking card (BL-01A-UI).
@@ -147,16 +150,13 @@ export default function BookingLifecycle({
         than a manufactured one -- there is no Worker action in this state.
       */}
       {role === 'client' ? (
-        <Pressable
-          style={[styles.primaryButton, isBusy ? styles.buttonDisabled : null]}
+        <AppButton
+          variant="primary"
+          label={busyAction === 'complete' ? COPY.completing : COPY.complete}
           onPress={promptComplete}
+          loading={busyAction === 'complete'}
           disabled={isBusy}
-          accessibilityRole="button"
-        >
-          <Text style={styles.primaryButtonText}>
-            {busyAction === 'complete' ? COPY.completing : COPY.complete}
-          </Text>
-        </Pressable>
+        />
       ) : null}
 
       {/*
@@ -165,18 +165,13 @@ export default function BookingLifecycle({
         sit at the same weight as the action the participant actually came to
         perform. The confirmation dialog is unchanged.
       */}
-      <Pressable
-        style={[styles.cancelButton, isBusy ? styles.buttonDisabled : null]}
+      <AppButton
+        variant="destructive"
+        label={busyAction === 'cancel' ? COPY.cancelling : COPY.cancel}
         onPress={promptCancel}
+        loading={busyAction === 'cancel'}
         disabled={isBusy}
-        accessibilityRole="button"
-      >
-        <Text style={styles.cancelButtonText}>
-          {busyAction === 'cancel' ? COPY.cancelling : COPY.cancel}
-        </Text>
-      </Pressable>
-
-      {isBusy ? <ActivityIndicator style={styles.spinner} /> : null}
+      />
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
@@ -185,46 +180,14 @@ export default function BookingLifecycle({
 
 const styles = StyleSheet.create({
   section: {
-    marginTop: 12,
-    gap: 4,
+    gap: spacing.sm,
   },
   heading: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  primaryButton: {
-    marginTop: 8,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  cancelButton: {
-    marginTop: 10,
-    paddingVertical: 6,
-    alignSelf: 'flex-start',
-  },
-  cancelButtonText: {
-    color: '#b91c1c',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  spinner: {
-    alignSelf: 'flex-start',
-    marginTop: 4,
+    ...type.sectionTitle,
+    color: colors.textPrimary,
   },
   error: {
-    color: '#b91c1c',
-    fontSize: 14,
-    marginTop: 4,
+    ...type.helper,
+    color: colors.danger,
   },
 });

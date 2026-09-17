@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Linking, StyleSheet, Text, View } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatJobPaymentLabel, type JobPaymentMethod } from '@/lib/job-payment';
 import {
@@ -21,6 +22,8 @@ import {
   selectCod,
   selectErrorCopy,
 } from '@/lib/payments';
+
+const { colors, type, spacing } = SkillMatchTheme.ui;
 
 /**
  * The payment section of one completed Booking card (BL-01D-UI, extended by
@@ -209,52 +212,41 @@ export default function BookingPayment({
         {entry === 'legacy-choice' ? (
           <>
             <Text style={styles.line}>{COPY.chooseMethod}</Text>
-            <Pressable
-              style={[styles.button, isBusy ? styles.buttonDisabled : null]}
+            <AppButton
+              label={isBusy ? COPY.selecting : COPY.selectCod}
               onPress={() => run(() => selectCod(bookingId), selectErrorCopy, {
                 refresh: true,
                 log: true,
               })}
               disabled={isBusy}
-              accessibilityRole="button"
-            >
-              <Text style={styles.buttonText}>{isBusy ? COPY.selecting : COPY.selectCod}</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.button, isBusy ? styles.buttonDisabled : null]}
+            />
+            <AppButton
+              variant="secondary"
+              label={isBusy ? COPY.starting : COPY.selectQrph}
               onPress={startQrph}
               disabled={isBusy}
-              accessibilityRole="button"
-            >
-              <Text style={styles.buttonText}>{isBusy ? COPY.starting : COPY.selectQrph}</Text>
-            </Pressable>
+            />
           </>
         ) : entry === 'cash' ? (
           <>
             <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? 'Cash')}</Text>
-            <Pressable
-              style={[styles.button, isBusy ? styles.buttonDisabled : null]}
+            <AppButton
+              label={isBusy ? COPY.selecting : COPY.continueCash}
               onPress={() => run(() => selectCod(bookingId), selectErrorCopy, {
                 refresh: true,
                 log: true,
               })}
               disabled={isBusy}
-              accessibilityRole="button"
-            >
-              <Text style={styles.buttonText}>{isBusy ? COPY.selecting : COPY.continueCash}</Text>
-            </Pressable>
+            />
           </>
         ) : entry === 'qrph' ? (
           <>
             <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? 'QR Ph')}</Text>
-            <Pressable
-              style={[styles.button, isBusy ? styles.buttonDisabled : null]}
+            <AppButton
+              label={isBusy ? COPY.starting : COPY.startQrphPayment}
               onPress={startQrph}
               disabled={isBusy}
-              accessibilityRole="button"
-            >
-              <Text style={styles.buttonText}>{isBusy ? COPY.starting : COPY.startQrphPayment}</Text>
-            </Pressable>
+            />
           </>
         ) : (
           <>
@@ -298,41 +290,31 @@ export default function BookingPayment({
                       />
                     </View>
                     {qr.test_url !== null ? (
-                      <Pressable
-                        style={[styles.button, isBusy ? styles.buttonDisabled : null]}
+                      <AppButton
+                        variant="ghost"
+                        label={COPY.openTestPage}
                         // The URL is passed straight to the handler and is
                         // never rendered, logged or stored.
                         onPress={() => openTestPage(qr.test_url as string)}
                         disabled={isBusy}
-                        accessibilityRole="button"
-                      >
-                        <Text style={styles.buttonText}>{COPY.openTestPage}</Text>
-                      </Pressable>
+                      />
                     ) : null}
                   </>
                 ) : null}
 
-                <Pressable
-                  style={[styles.button, isBusy ? styles.buttonDisabled : null]}
+                <AppButton
+                  variant="secondary"
+                  label={isBusy ? COPY.refreshingQr : COPY.showQr}
                   onPress={refreshQr}
                   disabled={isBusy}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.buttonText}>
-                    {isBusy ? COPY.refreshingQr : COPY.showQr}
-                  </Text>
-                </Pressable>
+                />
 
-                <Pressable
-                  style={[styles.button, isBusy ? styles.buttonDisabled : null]}
+                <AppButton
+                  variant="secondary"
+                  label={isBusy ? COPY.checking : COPY.refreshStatus}
                   onPress={refreshStatus}
                   disabled={isBusy}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.buttonText}>
-                    {isBusy ? COPY.checking : COPY.refreshStatus}
-                  </Text>
-                </Pressable>
+                />
               </>
             ) : null}
           </>
@@ -381,19 +363,14 @@ export default function BookingPayment({
           <Text style={styles.line}>{COPY.awaitingWorker}</Text>
           {/* Offered only for a completed COD Booking still awaiting cash, and
               never for qrph/gcash/maya — the server refuses those too. */}
-          <Pressable
-            style={[styles.button, isBusy ? styles.buttonDisabled : null]}
+          <AppButton
+            label={isBusy ? COPY.confirming : COPY.confirmCash}
             onPress={() => run(() => confirmCashReceived(bookingId), confirmErrorCopy, {
               refresh: true,
               log: true,
             })}
             disabled={isBusy}
-            accessibilityRole="button"
-          >
-            <Text style={styles.buttonText}>
-              {isBusy ? COPY.confirming : COPY.confirmCash}
-            </Text>
-          </Pressable>
+          />
         </>
       ) : null}
 
@@ -404,43 +381,25 @@ export default function BookingPayment({
 
 const styles = StyleSheet.create({
   section: {
-    marginTop: 12,
-    gap: 4,
+    marginTop: spacing.md,
+    gap: spacing.sm,
   },
   heading: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...type.sectionTitle,
+    color: colors.textPrimary,
   },
   line: {
-    fontSize: 14,
-    opacity: 0.8,
+    ...type.helper,
+    color: colors.textSecondary,
   },
   paid: {
-    fontSize: 14,
+    ...type.helper,
     fontWeight: '600',
-    color: '#15803d',
+    color: colors.success,
   },
   error: {
-    color: '#b91c1c',
-    fontSize: 14,
-    marginTop: 4,
-  },
-  button: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    alignSelf: 'flex-start',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 15,
-    fontWeight: '600',
+    ...type.helper,
+    color: colors.danger,
   },
   qrPlate: {
     marginTop: 8,

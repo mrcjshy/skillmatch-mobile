@@ -2,6 +2,8 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { SkillMatchTheme } from '@/constants/theme';
 
+const { colors } = SkillMatchTheme.ui;
+
 export function StarRatingDisplay({ average, count, showNumeric = true }: {
   average: number | null;
   count?: number | null;
@@ -32,8 +34,8 @@ export function StarRatingDisplay({ average, count, showNumeric = true }: {
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  stars: { color: SkillMatchTheme.brand.primary, fontSize: 18, letterSpacing: 1 },
-  numeric: { fontSize: 14, fontWeight: '600' },
-  count: { color: SkillMatchTheme.text.secondary, fontSize: 13 },
-  empty: { color: SkillMatchTheme.text.secondary, fontSize: 14 },
+  stars: { color: colors.primary, fontSize: 18, letterSpacing: 1 },
+  numeric: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  count: { color: colors.textSecondary, fontSize: 13 },
+  empty: { color: colors.textSecondary, fontSize: 14 },
 });
