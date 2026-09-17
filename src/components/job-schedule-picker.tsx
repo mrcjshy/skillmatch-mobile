@@ -5,6 +5,8 @@ import { SkillMatchTheme } from '@/constants/theme';
 import { formatScheduleDate, formatScheduleTime } from '@/lib/date-time';
 import { scheduleMinimumDate } from '@/lib/job-posting-schedule';
 
+const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
+
 type DateTimePickerComponent = typeof import('@expo/ui/community/datetime-picker').default;
 
 function loadDateTimePicker(): DateTimePickerComponent | null {
@@ -116,7 +118,7 @@ export function JobSchedulePicker({
             presentation="dialog"
             minimumDate={scheduleMinimumDate()}
             is24Hour={false}
-            accentColor={SkillMatchTheme.brand.primary}
+            accentColor={colors.primary}
             disabled={disabled}
             onValueChange={(_event, selected) => {
               onChangeDate(selected);
@@ -154,7 +156,7 @@ export function JobSchedulePicker({
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             presentation="dialog"
             is24Hour={false}
-            accentColor={SkillMatchTheme.brand.primary}
+            accentColor={colors.primary}
             disabled={disabled}
             onValueChange={(_event, selected) => {
               onChangeTime(selected);
@@ -176,34 +178,37 @@ export function JobSchedulePicker({
 
 const styles = StyleSheet.create({
   wrap: {
-    gap: 8,
+    gap: spacing.md,
   },
   label: {
     fontSize: 13,
     fontWeight: '600',
-    marginTop: 6,
+    lineHeight: 18,
+    color: colors.primary,
   },
   row: {
-    minHeight: SkillMatchTheme.size.iconTarget,
-    borderWidth: 1,
-    borderColor: '#9ca3af',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    height: size.fieldHeight,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSubtle,
+    paddingHorizontal: spacing.md,
     justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    borderCurve: 'continuous',
   },
   rowDisabled: {
     opacity: 0.6,
   },
   value: {
-    fontSize: 16,
+    ...type.body,
+    color: colors.textPrimary,
   },
   placeholder: {
-    fontSize: 16,
-    color: '#6b7280',
+    ...type.body,
+    color: colors.textDisabled,
   },
   note: {
-    fontSize: 14,
-    color: SkillMatchTheme.feedback.warning,
+    ...type.helper,
+    color: colors.warning,
   },
 });

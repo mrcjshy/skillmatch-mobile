@@ -13,6 +13,8 @@ import {
   type JobPin,
 } from '@/lib/job-location';
 
+const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
+
 type MapsRuntime = {
   MapView: typeof import('react-native-maps').default;
   Marker: typeof import('react-native-maps').Marker;
@@ -204,7 +206,7 @@ export function JobLocationPicker({
         accessibilityLabel={COPY.useCurrentLocation}
       >
         {locating ? (
-          <ActivityIndicator color={SkillMatchTheme.brand.primary} />
+          <ActivityIndicator color={colors.primary} />
         ) : (
           <Text style={styles.buttonText}>{COPY.useCurrentLocation}</Text>
         )}
@@ -216,14 +218,15 @@ export function JobLocationPicker({
 
 const styles = StyleSheet.create({
   wrap: {
-    gap: 8,
+    gap: spacing.sm,
   },
   mapFrame: {
     height: 220,
-    borderRadius: 8,
+    borderRadius: radius.md,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#9ca3af',
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSubtle,
   },
   map: {
     width: '100%',
@@ -231,35 +234,36 @@ const styles = StyleSheet.create({
   },
   unavailable: {
     height: 220,
-    borderRadius: 8,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#9ca3af',
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    backgroundColor: '#f8fafc',
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surfaceSubtle,
   },
   help: {
-    fontSize: 12,
-    opacity: 0.6,
+    ...type.helper,
+    color: colors.textSecondary,
   },
   note: {
-    fontSize: 14,
-    color: SkillMatchTheme.feedback.warning,
+    ...type.helper,
+    color: colors.warning,
   },
   button: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
+    minHeight: size.ghostButton,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSubtle,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 16,
-    fontWeight: '600',
+    ...type.bodyEmphasis,
+    color: colors.primary,
   },
 });

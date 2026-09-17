@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Pressable,
   ScrollView,
@@ -10,12 +9,18 @@ import {
   View,
 } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
+import { AppField } from '@/components/app-field';
 import { HomeHeader } from '@/components/home-header';
+import { InlineStatus } from '@/components/inline-status';
 import { JobLocationPicker } from '@/components/job-location-picker';
 import { JobSchedulePicker } from '@/components/job-schedule-picker';
+import { SectionHeader } from '@/components/section-header';
 import { SelectedSkillChips } from '@/components/selected-skill-chips';
 import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { SkillMatchTheme } from '@/constants/theme';
+import { homeGreeting } from '@/lib/home-greeting';
+import { firstNameFromFullName } from '@/lib/initials';
 import {
   COPY as JOB_LOCATION_COPY,
   JobLocationError,
@@ -48,6 +53,13 @@ import { useClientJobs } from '@/providers/client-jobs-provider';
 
 const DEPLOYMENT_BARANGAY = 'Santa Ana';
 const DEPLOYMENT_CITY = 'Pateros';
+
+const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
+
+const PAYMENT_OPTIONS = [
+  { value: 'cod', label: 'Cash' },
+  { value: 'qrph', label: 'QR Ph' },
+] as const;
 
 export default function ClientHome() {
   const { account } = useAccount();
@@ -178,186 +190,182 @@ export default function ClientHome() {
   }
 
   const busy = isPosting;
+  const fullName = account?.full_name ?? '—';
+  const firstName = firstNameFromFullName(account?.full_name ?? '');
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior="padding">
-    <ScrollView
-      contentContainerStyle={styles.container}
-      keyboardShouldPersistTaps="handled"
-      automaticallyAdjustKeyboardInsets
-      scrollEnabled={!mapGesture}
-    >
-      <HomeHeader fullName={account?.full_name ?? '—'} role="client" />
-      <View style={styles.form}>
-      <Text style={styles.serviceArea}>
-        {DEPLOYMENT_BARANGAY}, {DEPLOYMENT_CITY} · SkillMatch service area
-      </Text>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
+        scrollEnabled={!mapGesture}
+      >
+        <HomeHeader fullName={fullName} role="client" variant="chrome" />
 
-      {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator />
-          <Text style={styles.note}>Loading…</Text>
+        <View style={styles.titleBlock}>
+          <Text style={styles.greeting}>{homeGreeting()}</Text>
+          <Text
+            style={styles.displayTitle}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            accessibilityRole="header"
+          >
+            {firstName}
+          </Text>
+          <Text style={styles.serviceArea}>
+            {DEPLOYMENT_BARANGAY}, {DEPLOYMENT_CITY} · SkillMatch service area
+          </Text>
         </View>
-      ) : loadError ? (
-        <Text style={styles.error}>{loadError}</Text>
-      ) : (
-        <>
-          <View style={styles.section} accessibilityLabel="Job Details">
-            <Text style={styles.sectionTitle}>Job Details</Text>
-            <Text style={styles.label}>Title</Text>
-            <TextInput
-              style={styles.input}
-              value={title}
-              onChangeText={setTitle}
-              placeholder="e.g. Plumbing Repair Assistance"
-              editable={!busy}
-              accessibilityLabel="Job Title"
-            />
 
-            <Text style={styles.label}>Description (Optional)</Text>
-            <TextInput
-              style={styles.textArea}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Describe the work needed."
-              multiline
-              numberOfLines={3}
-              textAlignVertical="top"
-              editable={!busy}
-              accessibilityLabel="Description"
-            />
-          </View>
+        <View style={styles.form}>
+          {isLoading ? (
+            <InlineStatus variant="loading" message="Loading…" />
+          ) : loadError ? (
+            <InlineStatus variant="error" message={loadError} />
+          ) : (
+            <>
+              <View style={styles.section} accessibilityLabel="Job Details">
+                <SectionHeader title="Job Details" />
+                <AppField
+                  label="Title"
+                  value={title}
+                  onChangeText={setTitle}
+                  placeholder="e.g. Plumbing Repair Assistance"
+                  disabled={busy}
+                  accessibilityLabel="Job Title"
+                />
+                <AppField
+                  label="Description (Optional)"
+                  value={description}
+                  onChangeText={setDescription}
+                  placeholder="Describe the work needed."
+                  multiline
+                  numberOfLines={3}
+                  disabled={busy}
+                  accessibilityLabel="Description"
+                />
+              </View>
 
-          <View style={styles.section} accessibilityLabel="Where">
-            <Text style={styles.sectionTitle}>Where</Text>
-            <Text style={styles.label}>Address</Text>
-            <TextInput
-              style={styles.input}
-              value={address}
-              onChangeText={setAddress}
-              placeholder="House / street / landmark"
-              editable={!busy}
-              accessibilityLabel="Address"
-            />
-            <Text style={styles.help}>
-              Required. Write the house, street, or landmark. The pin does not replace this
-              address.
-            </Text>
+              <View style={styles.section} accessibilityLabel="Where">
+                <SectionHeader title="Where" />
+                <AppField
+                  label="Address"
+                  value={address}
+                  onChangeText={setAddress}
+                  placeholder="House / street / landmark"
+                  disabled={busy}
+                  accessibilityLabel="Address"
+                  helperText="Required. Write the house, street, or landmark. The pin does not replace this address."
+                />
+                <Text style={styles.mapLabel}>Map</Text>
+                <JobLocationPicker
+                  pin={pin}
+                  onChangePin={setPin}
+                  note={locationNote}
+                  onNote={setLocationNote}
+                  disabled={busy}
+                  onMapGesture={setMapGesture}
+                />
+              </View>
 
-            <Text style={styles.label}>Map</Text>
-            <JobLocationPicker
-              pin={pin}
-              onChangePin={setPin}
-              note={locationNote}
-              onNote={setLocationNote}
-              disabled={busy}
-              onMapGesture={setMapGesture}
-            />
-          </View>
+              <View style={styles.section} accessibilityLabel="Schedule">
+                <SectionHeader title="Schedule" />
+                <JobSchedulePicker
+                  date={scheduleDate}
+                  time={scheduleTime}
+                  onChangeDate={setScheduleDate}
+                  onChangeTime={setScheduleTime}
+                  disabled={busy}
+                />
+              </View>
 
-          <View style={styles.section} accessibilityLabel="Schedule">
-            <Text style={styles.sectionTitle}>Schedule</Text>
-            <JobSchedulePicker
-              date={scheduleDate}
-              time={scheduleTime}
-              onChangeDate={setScheduleDate}
-              onChangeTime={setScheduleTime}
-              disabled={busy}
-            />
-          </View>
+              <View style={styles.section} accessibilityLabel="Budget and Payment">
+                <SectionHeader title="Budget & Payment" />
+                <Text style={styles.fieldLabel}>Budget (Optional)</Text>
+                <View style={styles.budgetField}>
+                  <Text style={styles.budgetPrefix}>₱</Text>
+                  <TextInput
+                    style={styles.budgetInput}
+                    value={budgetText}
+                    onChangeText={setBudgetText}
+                    placeholder="800"
+                    placeholderTextColor={colors.textDisabled}
+                    keyboardType="numeric"
+                    editable={!busy}
+                    underlineColorAndroid="transparent"
+                    accessibilityLabel="Budget in pesos"
+                  />
+                </View>
 
-          <View style={styles.section} accessibilityLabel="Budget and Payment">
-            <Text style={styles.sectionTitle}>Budget & Payment</Text>
-            <Text style={styles.label}>Budget (Optional)</Text>
-            <View style={styles.inputWithPrefix}>
-              <Text style={styles.inputPrefix}>₱</Text>
-              <TextInput
-                style={styles.inputPrefixed}
-                value={budgetText}
-                onChangeText={setBudgetText}
-                placeholder="800"
-                keyboardType="numeric"
-                editable={!busy}
-                accessibilityLabel="Budget in pesos"
-              />
-            </View>
+                <Text style={styles.fieldLabel}>Payment Method</Text>
+                <View
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel="Payment Method"
+                  style={styles.paymentGroup}
+                >
+                  {PAYMENT_OPTIONS.map((option) => {
+                    const on = paymentMethod === option.value;
+                    return (
+                      <Pressable
+                        key={option.value}
+                        style={[styles.paymentOption, on && styles.paymentOptionSelected]}
+                        onPress={() => setPaymentMethod(option.value)}
+                        disabled={busy}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: on, disabled: busy }}
+                        accessibilityLabel={option.label}
+                      >
+                        <Text style={[styles.paymentLabel, on && styles.paymentLabelSelected]}>
+                          {on ? '✓ ' : ''}
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={styles.help}>Required. Workers see this before they accept.</Text>
+                {paymentMethod === 'qrph' ? (
+                  <Text style={styles.help}>QR Ph needs a budget of at least ₱1.00.</Text>
+                ) : null}
+              </View>
 
-            <Text style={styles.label}>Payment Method</Text>
-            <View
-              accessibilityRole="radiogroup"
-              accessibilityLabel="Payment Method"
-              style={{ gap: 8 }}
-            >
-              {(
-                [
-                  { value: 'cod', label: 'Cash' },
-                  { value: 'qrph', label: 'QR Ph' },
-                ] as const
-              ).map((option) => {
-                const on = paymentMethod === option.value;
-                return (
-                  <Pressable
-                    key={option.value}
-                    style={[styles.skillToggle, on && styles.chipSelected]}
-                    onPress={() => setPaymentMethod(option.value)}
-                    disabled={busy}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: on, disabled: busy }}
-                    accessibilityLabel={option.label}
-                  >
-                    <Text style={[styles.chipText, on && styles.chipTextSelected]}>
-                      {on ? '✓ ' : ''}
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <Text style={styles.help}>Required. Workers see this before they accept.</Text>
-            {paymentMethod === 'qrph' ? (
-              <Text style={styles.help}>QR Ph needs a budget of at least ₱1.00.</Text>
-            ) : null}
-          </View>
+              <View style={styles.section} accessibilityLabel="Required Skills">
+                <SectionHeader title="Required Skills" />
+                <SelectedSkillChips
+                  skills={selectedCatalogSkills(skills, selectedSkills)}
+                  onRemove={toggleSkill}
+                  disabled={busy}
+                />
+                <SkillCatalogPicker
+                  skills={skills}
+                  query={skillQuery}
+                  onQueryChange={setSkillQuery}
+                  isSkillSelected={(skillId) => selectedSkills.includes(skillId)}
+                  onToggleSkill={toggleSkill}
+                  disabled={busy}
+                />
+              </View>
 
-          <View style={styles.section} accessibilityLabel="Required Skills">
-            <Text style={styles.sectionTitle}>Required Skills</Text>
-            <SelectedSkillChips
-              skills={selectedCatalogSkills(skills, selectedSkills)}
-              onRemove={toggleSkill}
-              disabled={busy}
-            />
-            <SkillCatalogPicker
-              skills={skills}
-              query={skillQuery}
-              onQueryChange={setSkillQuery}
-              isSkillSelected={(skillId) => selectedSkills.includes(skillId)}
-              onToggleSkill={toggleSkill}
-              disabled={busy}
-            />
-          </View>
-
-          <View style={styles.section} accessibilityLabel="Post Job">
-            {postError ? <Text style={styles.error}>{postError}</Text> : null}
-            {postSuccess ? <Text style={styles.success}>{postSuccess}</Text> : null}
-
-            <Pressable
-              style={[styles.button, busy && styles.buttonDisabled]}
-              onPress={handlePost}
-              disabled={busy}
-              accessibilityRole="button"
-              accessibilityLabel="Post Job"
-            >
-              {isPosting ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Text style={styles.buttonText}>+ Post Job</Text>
-              )}
-            </Pressable>
-          </View>
-        </>
-      )}
-      </View>
-    </ScrollView>
+              <View style={styles.submitBlock} accessibilityLabel="Post Job">
+                {postError ? <InlineStatus variant="error" message={postError} /> : null}
+                {postSuccess ? <Text style={styles.success}>{postSuccess}</Text> : null}
+                <AppButton
+                  variant="primary"
+                  label="+ Post Job"
+                  onPress={() => {
+                    void handlePost();
+                  }}
+                  loading={isPosting}
+                  disabled={busy}
+                  accessibilityLabel="Post Job"
+                />
+              </View>
+            </>
+          )}
+        </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -365,159 +373,109 @@ export default function ClientHome() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+    backgroundColor: colors.background,
+  },
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
   },
   container: {
-    gap: 10,
-    paddingBottom: 48,
-    backgroundColor: SkillMatchTheme.brand.background,
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    paddingBottom: spacing.xxxl + spacing.sm,
   },
-  form: {
-    paddingHorizontal: 24,
-    gap: 16,
+  titleBlock: {
+    paddingHorizontal: spacing.gutter,
+    paddingTop: spacing.lg,
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
   },
-  section: {
-    gap: 10,
+  greeting: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  displayTitle: {
+    ...type.display,
+    color: colors.textPrimary,
   },
   serviceArea: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  form: {
+    paddingHorizontal: spacing.gutter,
+    gap: spacing.xxl,
+  },
+  section: {
+    gap: spacing.md,
+  },
+  fieldLabel: {
     fontSize: 13,
-    opacity: 0.6,
+    fontWeight: '600',
+    lineHeight: 18,
+    color: colors.primary,
   },
-  help: {
-    fontSize: 12,
-    opacity: 0.6,
-    marginTop: -4,
+  mapLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+    color: colors.primary,
   },
-  inputWithPrefix: {
+  budgetField: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    paddingLeft: 12,
+    height: size.fieldHeight,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSubtle,
+    paddingLeft: spacing.md,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    borderCurve: 'continuous',
   },
-  inputPrefix: {
-    fontSize: 16,
-    color: '#6b7280',
+  budgetPrefix: {
+    ...type.body,
+    color: colors.textSecondary,
   },
-  inputPrefixed: {
+  budgetInput: {
     flex: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 10,
-    fontSize: 16,
+    ...type.body,
+    color: colors.textPrimary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 0,
   },
-  center: {
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 16,
+  paymentGroup: {
+    gap: spacing.sm,
   },
-  heading: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 6,
-  },
-  value: {
-    fontSize: 16,
-  },
-  note: {
-    fontSize: 14,
-    opacity: 0.7,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#9ca3af',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  textArea: {
-    borderWidth: 1,
-    borderColor: '#9ca3af',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    minHeight: 76,
-  },
-  skillToggle: {
-    borderWidth: 1,
-    borderColor: '#9ca3af',
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  chipSelected: {
-    borderColor: SkillMatchTheme.brand.primary,
-    backgroundColor: '#dbeafe',
-  },
-  chipText: {
-    fontSize: 16,
-  },
-  chipTextSelected: {
-    color: SkillMatchTheme.brand.primary,
-    fontWeight: '600',
-  },
-  card: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
-    gap: SkillMatchTheme.spacing.cardGap,
-    backgroundColor: SkillMatchTheme.surface.default,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  cardLine: {
-    fontSize: 14,
-    opacity: 0.8,
-  },
-  error: {
-    color: '#b91c1c',
-    fontSize: 14,
-  },
-  success: {
-    color: '#15803d',
-    fontSize: 14,
-  },
-  button: {
-    marginTop: 10,
-    minHeight: SkillMatchTheme.size.primaryCtaHeight,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingVertical: 14,
-    alignItems: 'center',
+  paymentOption: {
+    minHeight: size.ghostButton,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSubtle,
+    paddingHorizontal: spacing.md,
     justifyContent: 'center',
   },
-  secondaryButton: {
-    marginTop: 20,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    alignItems: 'center',
+  paymentOptionSelected: {
+    backgroundColor: colors.surface,
   },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  secondaryButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 16,
+  paymentLabel: {
+    fontSize: 15,
     fontWeight: '600',
+    lineHeight: 20,
+    color: colors.textSecondary,
+  },
+  paymentLabelSelected: {
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  help: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  submitBlock: {
+    gap: spacing.md,
+  },
+  success: {
+    ...type.helper,
+    color: colors.success,
+    textAlign: 'center',
   },
 });
