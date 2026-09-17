@@ -1,8 +1,11 @@
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
+import { AppSegment } from '@/components/app-segment';
 import { BookingCompactCard } from '@/components/booking-compact-card';
+import { InlineStatus } from '@/components/inline-status';
 import { SkillMatchTheme } from '@/constants/theme';
 import { BookingLoadError, loadErrorCopy } from '@/lib/bookings';
 import {
@@ -14,6 +17,8 @@ import {
   loadWorkerBookings,
 } from '@/lib/booking-records';
 import { useAccount } from '@/providers/account-provider';
+
+const { colors, type, spacing } = SkillMatchTheme.ui;
 
 const EMPTY_COPY: Record<BookingSegment, string> = {
   active: 'You have no active bookings.',
@@ -96,30 +101,39 @@ export default function MyBookingsList({ role }: { role: BookingRole }) {
   const visibleBookings = bookingsForSegment(bookings, segment);
 
   return (
-    <ScrollView contentContainerStyle={styles.container} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} />}>
-      <Text style={styles.heading}>Bookings</Text>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={refresh}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
+    >
       <Text style={styles.note}>{role === 'worker' ? 'Jobs booked to you.' : 'Workers booked to your jobs.'}</Text>
 
-      <View style={styles.segmentControl} accessibilityRole="tablist">
-        {(['active', 'history'] as const).map((value) => {
-          const selected = segment === value;
-          return (
-            <Pressable key={value} style={[styles.segmentButton, selected ? styles.segmentButtonSelected : null]} onPress={() => setSegment(value)} accessibilityRole="tab" accessibilityState={{ selected }}>
-              <Text style={[styles.segmentText, selected ? styles.segmentTextSelected : null]}>{value === 'active' ? 'Active' : 'History'}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <AppSegment
+        options={[
+          { value: 'active', label: 'Active' },
+          { value: 'history', label: 'History' },
+        ] as const}
+        value={segment}
+        onChange={setSegment}
+      />
 
       {isLoading ? (
-        <View style={styles.center}><ActivityIndicator color={SkillMatchTheme.brand.primary} /><Text style={styles.note}>Loading your bookings…</Text></View>
+        <InlineStatus variant="loading" message="Loading your bookings…" />
       ) : loadError ? (
-        <View style={styles.center}>
-          <Text style={styles.error}>{loadError}</Text>
-          <Pressable style={styles.retryButton} onPress={retry} accessibilityRole="button"><Text style={styles.retryText}>Retry</Text></Pressable>
-        </View>
+        <InlineStatus
+          variant="error"
+          message={loadError}
+          action={<AppButton label="Retry" variant="secondary" onPress={retry} />}
+        />
       ) : visibleBookings.length === 0 ? (
-        <View style={styles.emptyCard}><Text style={styles.note}>{EMPTY_COPY[segment]}</Text></View>
+        <InlineStatus variant="empty" message={EMPTY_COPY[segment]} />
       ) : (
         visibleBookings.map((booking) => (
           <BookingCompactCard
@@ -140,17 +154,19 @@ export default function MyBookingsList({ role }: { role: BookingRole }) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: SkillMatchTheme.spacing.screenGutter, gap: SkillMatchTheme.spacing.cardGap, paddingBottom: 48 },
-  heading: { color: SkillMatchTheme.text.primary, fontSize: 26, fontWeight: '800' },
-  note: { color: SkillMatchTheme.text.secondary, fontSize: 14 },
-  segmentControl: { flexDirection: 'row', backgroundColor: SkillMatchTheme.surface.subtle, borderRadius: SkillMatchTheme.radius.input, padding: 4, marginVertical: 4 },
-  segmentButton: { flex: 1, minHeight: 44, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  segmentButtonSelected: { backgroundColor: SkillMatchTheme.brand.primary },
-  segmentText: { color: SkillMatchTheme.text.secondary, fontSize: 15, fontWeight: '700' },
-  segmentTextSelected: { color: SkillMatchTheme.text.inverse },
-  center: { alignItems: 'center', gap: 10, paddingVertical: 28 },
-  emptyCard: { alignItems: 'center', backgroundColor: SkillMatchTheme.surface.default, borderWidth: 1, borderColor: SkillMatchTheme.border.default, borderRadius: SkillMatchTheme.radius.card, padding: 24 },
-  error: { color: SkillMatchTheme.feedback.danger, fontSize: 14, textAlign: 'center' },
-  retryButton: { borderWidth: 1, borderColor: SkillMatchTheme.brand.primary, borderRadius: SkillMatchTheme.radius.input, paddingHorizontal: 18, paddingVertical: 10 },
-  retryText: { color: SkillMatchTheme.brand.primary, fontWeight: '700' },
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.md,
+    paddingBottom: spacing.xxxl + spacing.sm,
+  },
+  note: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
 });

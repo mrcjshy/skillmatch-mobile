@@ -1,25 +1,21 @@
 import { Stack } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
+import { InlineStatus } from '@/components/inline-status';
+import { WorkerApproximateJobArea } from '@/components/job-location-map';
+import { SkillMatchTheme } from '@/constants/theme';
 import { formatCardDateTime } from '@/lib/date-time';
 import {
   formatOpportunityPaymentLine,
   parseJobPaymentMethod,
   type JobPaymentMethod,
 } from '@/lib/job-payment';
-import { WorkerApproximateJobArea } from '@/components/job-location-map';
-import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
+
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 /**
  * Worker "Job Opportunities" = read-only discovery of the jobs this Worker has
@@ -484,12 +480,17 @@ export default function WorkerOpportunities() {
     <>
       <Stack.Screen options={{ title: 'Job Opportunities' }} />
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.container}
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
         }
       >
-        <Text style={styles.heading}>Job Opportunities</Text>
         <Text style={styles.note}>
           Jobs you have been matched with, ranked by your match score.
         </Text>
@@ -499,54 +500,42 @@ export default function WorkerOpportunities() {
           survives whatever the follow-up server read does to the list below.
         */}
         {notice ? (
-          <View
-            style={[
-              styles.notice,
-              notice.tone === 'success'
-                ? styles.noticeSuccess
-                : notice.tone === 'info'
-                  ? styles.noticeInfo
-                  : styles.noticeWarning,
-            ]}
-          >
-            <Text style={styles.noticeHeadline}>{notice.headline}</Text>
-            {notice.detail ? <Text style={styles.noticeDetail}>{notice.detail}</Text> : null}
-            {notice.offerRefresh ? (
-              <Pressable
-                style={styles.secondaryButton}
-                onPress={handleRefresh}
-                disabled={isLoading || isRefreshing || acceptingJobId !== null}
-                accessibilityRole="button"
-              >
-                <Text style={styles.secondaryButtonText}>Refresh</Text>
-              </Pressable>
-            ) : null}
-          </View>
+          <InlineStatus
+            variant="note"
+            headline={notice.detail ? notice.headline : undefined}
+            message={notice.detail ?? notice.headline}
+            action={
+              notice.offerRefresh ? (
+                <AppButton
+                  label="Refresh"
+                  variant="secondary"
+                  onPress={handleRefresh}
+                  disabled={isLoading || isRefreshing || acceptingJobId !== null}
+                />
+              ) : undefined
+            }
+          />
         ) : null}
 
         {isLoading ? (
           // Rendered instead of, never before, the empty state.
-          <View style={styles.center}>
-            <ActivityIndicator />
-            <Text style={styles.note}>Loading your opportunities…</Text>
-          </View>
+          <InlineStatus variant="loading" message="Loading your opportunities…" />
         ) : loadError ? (
-          <View style={styles.center}>
-            <Text style={styles.error}>{loadError}</Text>
-            <Pressable
-              style={styles.secondaryButton}
-              onPress={handleRetry}
-              disabled={isLoading || isRefreshing}
-              accessibilityRole="button"
-            >
-              <Text style={styles.secondaryButtonText}>Retry</Text>
-            </Pressable>
-          </View>
+          <InlineStatus
+            variant="error"
+            message={loadError}
+            action={
+              <AppButton
+                label="Retry"
+                variant="secondary"
+                onPress={handleRetry}
+                disabled={isLoading || isRefreshing}
+              />
+            }
+          />
         ) : opportunities.length === 0 ? (
           // A successful call that matched nothing — not an error, not a block.
-          <View style={styles.center}>
-            <Text style={styles.note}>No matching job opportunities right now.</Text>
-          </View>
+          <InlineStatus variant="empty" message="No matching job opportunities right now." />
         ) : (
           opportunities.map((job) => {
             const location = formatLocation(job.barangay, job.city);
@@ -562,19 +551,18 @@ export default function WorkerOpportunities() {
             return (
               <View key={job.job_id} style={styles.card}>
                 <Text style={styles.cardTitle}>{job.title}</Text>
+                <Text style={styles.scoreTotal}>
+                  Match Score: {formatPoints(job.total_points)}/100
+                </Text>
 
                 {job.description ? (
                   <Text style={styles.cardLine}>{job.description}</Text>
                 ) : null}
                 {location ? <Text style={styles.cardLine}>{location}</Text> : null}
-                <WorkerApproximateJobArea jobId={job.job_id} />
-                {budget ? <Text style={styles.cardLine}>Budget: {budget}</Text> : null}
                 {schedule ? <Text style={styles.cardLine}>Schedule: {schedule}</Text> : null}
+                {budget ? <Text style={styles.cardLine}>Budget: {budget}</Text> : null}
                 <Text style={styles.cardLine}>{formatOpportunityPaymentLine(job.payment_method)}</Text>
 
-                <Text style={styles.scoreTotal}>
-                  Match Score: {formatPoints(job.total_points)}/100
-                </Text>
                 {/*
                   Score components exactly as returned. "Rating score" is a
                   computed match component out of 20 — it is NOT a star rating
@@ -592,29 +580,17 @@ export default function WorkerOpportunities() {
                   Rating score: {formatPoints(job.rating_points)}/20
                 </Text>
 
-                <Pressable
-                  style={[
-                    styles.acceptButton,
-                    isAcceptDisabled && styles.acceptButtonDisabled,
-                  ]}
-                  onPress={() => handleAccept(job.job_id)}
+                <WorkerApproximateJobArea jobId={job.job_id} />
+
+                <AppButton
+                  variant="primary"
+                  /* Reached only when the post-success re-read failed. */
+                  label={isSubmitted ? 'Acceptance submitted' : 'Accept'}
+                  loading={isAcceptingThis}
                   disabled={isAcceptDisabled}
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: isAcceptDisabled, busy: isAcceptingThis }}
+                  onPress={() => handleAccept(job.job_id)}
                   accessibilityLabel={`Accept ${job.title}`}
-                >
-                  {isAcceptingThis ? (
-                    <View style={styles.acceptBusy}>
-                      <ActivityIndicator color="#ffffff" />
-                      <Text style={styles.acceptButtonText}>Accepting…</Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.acceptButtonText}>
-                      {/* Reached only when the post-success re-read failed. */}
-                      {isSubmitted ? 'Acceptance submitted' : 'Accept'}
-                    </Text>
-                  )}
-                </Pressable>
+                />
               </View>
             );
           })
@@ -625,114 +601,44 @@ export default function WorkerOpportunities() {
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   container: {
-    padding: 24,
-    gap: 12,
-    paddingBottom: 48,
-  },
-  center: {
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 16,
-  },
-  heading: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.gutter,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xxxl + spacing.sm,
+    gap: spacing.md,
   },
   note: {
-    fontSize: 14,
-    opacity: 0.7,
+    ...type.helper,
+    color: colors.textSecondary,
   },
   card: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
-    gap: SkillMatchTheme.spacing.cardGap,
-    backgroundColor: SkillMatchTheme.surface.default,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    gap: spacing.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    ...type.cardTitle,
+    color: colors.textPrimary,
   },
   cardLine: {
-    fontSize: 14,
-    opacity: 0.8,
+    ...type.helper,
+    color: colors.textSecondary,
   },
   scoreTotal: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: SkillMatchTheme.brand.primary,
-    marginTop: 6,
+    ...type.sectionTitle,
+    color: colors.textPrimary,
   },
   scoreLine: {
-    fontSize: 14,
-    opacity: 0.8,
-  },
-  error: {
-    color: '#b91c1c',
-    fontSize: 14,
-  },
-  acceptButton: {
-    marginTop: 10,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  acceptButtonDisabled: {
-    opacity: 0.5,
-  },
-  acceptButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  acceptBusy: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  notice: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    gap: 4,
-  },
-  noticeSuccess: {
-    borderColor: '#15803d',
-    backgroundColor: '#f0fdf4',
-  },
-  noticeInfo: {
-    borderColor: SkillMatchTheme.brand.primary,
-    backgroundColor: '#eff6ff',
-  },
-  noticeWarning: {
-    borderColor: '#b45309',
-    backgroundColor: '#fffbeb',
-  },
-  noticeHeadline: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  noticeDetail: {
-    fontSize: 14,
-    opacity: 0.8,
-  },
-  secondaryButton: {
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 16,
-    fontWeight: '600',
+    ...type.helper,
+    color: colors.textSecondary,
   },
 });

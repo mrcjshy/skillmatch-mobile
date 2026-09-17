@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { AppChip } from '@/components/app-chip';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   formatBookingStatus,
@@ -14,6 +15,8 @@ import {
   isClientBooking,
   isWorkerBooking,
 } from '@/lib/booking-records';
+
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 function counterpartySummary(role: BookingRole, booking: RoleBooking): string | null {
   if (!isCounterpartyReleased(booking.booking_status)) return null;
@@ -51,7 +54,7 @@ export function BookingCompactCard({
     <Pressable
       style={({ pressed }) => [
         styles.card,
-        isHistory ? styles.historyCard : styles.activeCard,
+        isHistory ? styles.historyCard : null,
         pressed ? styles.pressed : null,
       ]}
       onPress={onPress}
@@ -60,11 +63,10 @@ export function BookingCompactCard({
     >
       <View style={styles.topRow}>
         <Text style={styles.title} numberOfLines={2}>{booking.job_title}</Text>
-        <View style={[styles.statusPill, isHistory ? styles.historyPill : styles.activePill]}>
-          <Text style={[styles.statusText, isHistory ? styles.historyStatusText : null]}>
-            {formatBookingStatus(booking.booking_status)}
-          </Text>
-        </View>
+        <AppChip
+          label={formatBookingStatus(booking.booking_status)}
+          variant={isHistory ? 'neutral' : 'positive'}
+        />
       </View>
 
       {timestamp ? <Text style={styles.primaryLine}>{timestamp}</Text> : null}
@@ -81,26 +83,38 @@ export function BookingCompactCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: SkillMatchTheme.surface.default,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
-    gap: 9,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    gap: spacing.sm,
   },
-  activeCard: { borderLeftWidth: 4, borderLeftColor: SkillMatchTheme.brand.primary },
-  historyCard: { backgroundColor: SkillMatchTheme.surface.subtle },
+  historyCard: {
+    backgroundColor: colors.surfaceSubtle,
+  },
   pressed: { opacity: 0.72 },
-  topRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  title: { flex: 1, color: SkillMatchTheme.text.primary, fontSize: 17, fontWeight: '700' },
-  statusPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
-  activePill: { backgroundColor: SkillMatchTheme.brand.primaryMuted },
-  historyPill: { backgroundColor: SkillMatchTheme.surface.default },
-  statusText: { color: SkillMatchTheme.brand.primary, fontSize: 12, fontWeight: '700' },
-  historyStatusText: { color: SkillMatchTheme.text.secondary },
-  primaryLine: { color: SkillMatchTheme.text.primary, fontSize: 14, fontWeight: '600' },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  meta: { color: SkillMatchTheme.text.secondary, fontSize: 13 },
-  counterparty: { color: SkillMatchTheme.text.secondary, fontSize: 13 },
-  affordance: { color: SkillMatchTheme.brand.primary, fontSize: 14, fontWeight: '700' },
+  topRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  title: {
+    flex: 1,
+    ...type.cardTitle,
+    color: colors.textPrimary,
+  },
+  primaryLine: {
+    ...type.bodyEmphasis,
+    color: colors.textPrimary,
+  },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  meta: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  counterparty: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  affordance: {
+    ...type.bodyEmphasis,
+    color: colors.primary,
+  },
 });
