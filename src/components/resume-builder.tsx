@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
+import { AppButton } from '@/components/app-button';
+import { AppCard } from '@/components/app-card';
+import { InlineStatus } from '@/components/inline-status';
+import { SectionHeader } from '@/components/section-header';
 import {
   buildResumeHtml,
   loadResume,
@@ -11,6 +15,8 @@ import {
 } from '@/lib/resume';
 import { SkillMatchTheme } from '@/constants/theme';
 import { useAccount } from '@/providers/account-provider';
+
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 /**
  * The Auto Resume Builder screen body (AI-02, deterministic core).
@@ -126,8 +132,7 @@ export default function ResumeBuilder() {
   if (state.kind === 'loading') {
     return (
       <View style={styles.center}>
-        <ActivityIndicator />
-        <Text style={styles.note}>{RESUME_COPY.loading}</Text>
+        <InlineStatus variant="loading" message={RESUME_COPY.loading} />
       </View>
     );
   }
@@ -135,10 +140,11 @@ export default function ResumeBuilder() {
   if (state.kind === 'error') {
     return (
       <View style={styles.center}>
-        <Text style={styles.error}>{RESUME_COPY.loadFailed}</Text>
-        <Pressable style={styles.button} onPress={retry} accessibilityRole="button">
-          <Text style={styles.buttonText}>{RESUME_COPY.retry}</Text>
-        </Pressable>
+        <InlineStatus
+          variant="error"
+          message={RESUME_COPY.loadFailed}
+          action={<AppButton label={RESUME_COPY.retry} variant="secondary" onPress={retry} />}
+        />
       </View>
     );
   }
@@ -146,7 +152,7 @@ export default function ResumeBuilder() {
   if (state.kind === 'no-profile') {
     return (
       <View style={styles.center}>
-        <Text style={styles.note}>{RESUME_COPY.noProfile}</Text>
+        <InlineStatus variant="empty" message={RESUME_COPY.noProfile} />
       </View>
     );
   }
@@ -154,83 +160,90 @@ export default function ResumeBuilder() {
   const { model } = state;
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.heading}>{RESUME_COPY.heading}</Text>
-      <Text style={styles.disclosure}>{RESUME_COPY.disclosure}</Text>
-
-      <Text style={styles.sectionTitle}>{RESUME_COPY.included}</Text>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>{RESUME_COPY.personal}</Text>
-        <Text style={styles.line}>{model.fullName}</Text>
-        <Text style={styles.line}>{model.email}</Text>
-        <Text style={styles.line}>{model.phone}</Text>
-        <Text style={styles.line}>
-          {model.barangay}, {model.city}
-        </Text>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
+      <View style={styles.intro}>
+        <Text style={styles.heading}>{RESUME_COPY.heading}</Text>
+        <Text style={styles.disclosure}>{RESUME_COPY.disclosure}</Text>
       </View>
 
-      <View style={styles.card}>
+      <SectionHeader title={RESUME_COPY.included} />
+
+      <AppCard style={styles.previewCard}>
+        <Text style={styles.cardTitle}>{RESUME_COPY.personal}</Text>
+        <View style={styles.stack}>
+          <Text style={styles.name}>{model.fullName}</Text>
+          <Text style={styles.line}>{model.email}</Text>
+          <Text style={styles.line}>{model.phone}</Text>
+          <Text style={styles.line}>
+            {model.barangay}, {model.city}
+          </Text>
+        </View>
+      </AppCard>
+
+      <AppCard style={styles.previewCard}>
         <Text style={styles.cardTitle}>{RESUME_COPY.summary}</Text>
         {model.summary === null ? (
           <Text style={styles.muted}>{RESUME_COPY.noSummary}</Text>
         ) : (
           <Text style={styles.line}>{model.summary}</Text>
         )}
-      </View>
+      </AppCard>
 
-      <View style={styles.card}>
+      <AppCard style={styles.previewCard}>
         <Text style={styles.cardTitle}>{RESUME_COPY.skills}</Text>
         {model.skills.length === 0 ? (
           <Text style={styles.muted}>{RESUME_COPY.noSkills}</Text>
         ) : (
-          model.skills.map((s) => (
-            <Text key={s.name} style={styles.line}>
-              {s.name}
-              {s.proficiency === null ? '' : ` — ${capitalize(s.proficiency)}`}
-            </Text>
-          ))
+          <View style={styles.stack}>
+            {model.skills.map((s) => (
+              <Text key={s.name} style={styles.line}>
+                {s.name}
+                {s.proficiency === null ? '' : ` — ${capitalize(s.proficiency)}`}
+              </Text>
+            ))}
+          </View>
         )}
-      </View>
+      </AppCard>
 
-      <View style={styles.card}>
+      <AppCard style={styles.previewCard}>
         <Text style={styles.cardTitle}>{RESUME_COPY.projects}</Text>
         {model.projects.length === 0 ? (
           <Text style={styles.muted}>{RESUME_COPY.noProjects}</Text>
         ) : (
-          model.projects.map((p, i) => (
-            <View key={`${p.title}-${i}`} style={styles.project}>
-              <Text style={styles.projectTitle}>{p.title}</Text>
-              {p.scale === null ? null : <Text style={styles.muted}>{capitalize(p.scale)} project</Text>}
-              {p.description === null ? null : <Text style={styles.line}>{p.description}</Text>}
-            </View>
-          ))
+          <View style={styles.stack}>
+            {model.projects.map((p, i) => (
+              <View key={`${p.title}-${i}`} style={styles.project}>
+                <Text style={styles.projectTitle}>{p.title}</Text>
+                {p.scale === null ? null : <Text style={styles.muted}>{capitalize(p.scale)} project</Text>}
+                {p.description === null ? null : <Text style={styles.line}>{p.description}</Text>}
+              </View>
+            ))}
+          </View>
         )}
-      </View>
+      </AppCard>
 
-      <View style={styles.card}>
+      <AppCard style={styles.previewCard}>
         <Text style={styles.cardTitle}>{RESUME_COPY.profile}</Text>
-        <Text style={styles.line}>
-          {model.isVerified ? RESUME_COPY.pdfVerified : RESUME_COPY.pdfUnverified}
-        </Text>
-        <Text style={styles.line}>
-          {RESUME_COPY.pdfRating}:{' '}
-          {model.ratingAvg === null ? RESUME_COPY.pdfNoRating : `${model.ratingAvg.toFixed(1)} / 5`}
-        </Text>
-      </View>
+        <View style={styles.stack}>
+          <Text style={styles.line}>
+            {model.isVerified ? RESUME_COPY.pdfVerified : RESUME_COPY.pdfUnverified}
+          </Text>
+          <Text style={styles.line}>
+            {RESUME_COPY.pdfRating}:{' '}
+            {model.ratingAvg === null ? RESUME_COPY.pdfNoRating : `${model.ratingAvg.toFixed(1)} / 5`}
+          </Text>
+        </View>
+      </AppCard>
 
-      <Pressable
-        style={[styles.primaryButton, isGenerating ? styles.buttonDisabled : null]}
+      <AppButton
+        variant="primary"
+        label={isGenerating ? RESUME_COPY.generating : RESUME_COPY.generate}
         onPress={() => void generateAndShare(model)}
         disabled={isGenerating}
-        accessibilityRole="button"
-      >
-        <Text style={styles.primaryButtonText}>
-          {isGenerating ? RESUME_COPY.generating : RESUME_COPY.generate}
-        </Text>
-      </Pressable>
+        loading={isGenerating}
+      />
 
-      {actionError ? <Text style={styles.error}>{actionError}</Text> : null}
+      {actionError ? <InlineStatus variant="error" message={actionError} /> : null}
     </ScrollView>
   );
 }
@@ -240,92 +253,63 @@ function capitalize(s: string): string {
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   container: {
-    padding: 16,
-    gap: 12,
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.lg,
+    paddingBottom: spacing.xxxl + spacing.sm,
   },
   center: {
     flex: 1,
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    gap: 12,
+    padding: spacing.gutter,
+  },
+  intro: {
+    gap: spacing.md,
   },
   heading: {
-    fontSize: 20,
-    fontWeight: '700',
+    ...type.sectionTitle,
+    color: colors.textPrimary,
   },
   disclosure: {
-    fontSize: 14,
-    opacity: 0.8,
-    lineHeight: 20,
+    ...type.helper,
+    color: colors.textSecondary,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  card: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    padding: 12,
-    gap: 4,
+  previewCard: {
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.md,
   },
   cardTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 2,
+    ...type.cardTitle,
+    color: colors.textPrimary,
+  },
+  name: {
+    ...type.bodyEmphasis,
+    color: colors.textPrimary,
+  },
+  stack: {
+    gap: spacing.sm,
   },
   line: {
-    fontSize: 14,
+    ...type.body,
+    color: colors.textPrimary,
   },
   muted: {
-    fontSize: 14,
-    opacity: 0.6,
-  },
-  note: {
-    fontSize: 14,
-    opacity: 0.8,
-    textAlign: 'center',
+    ...type.helper,
+    color: colors.textSecondary,
   },
   project: {
-    marginTop: 6,
-    gap: 2,
+    gap: spacing.xs,
   },
   projectTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  error: {
-    color: '#b91c1c',
-    fontSize: 14,
-  },
-  button: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  buttonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  primaryButton: {
-    marginTop: 8,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  buttonDisabled: {
-    opacity: 0.5,
+    ...type.bodyEmphasis,
+    color: colors.textPrimary,
   },
 });

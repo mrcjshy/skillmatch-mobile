@@ -1,6 +1,9 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
+import { AppChip } from '@/components/app-chip';
+import { AppField } from '@/components/app-field';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   entriesForCategories,
@@ -11,6 +14,11 @@ import {
   resolveFaq,
   suggestedEntries,
 } from '@/lib/faq';
+
+const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
+
+/** Expand the 28dp chip to a 44dp hit target without changing its look. */
+const TOPIC_HIT_SLOP = { top: 8, bottom: 8, left: 4, right: 4 } as const;
 
 /**
  * The FAQ / Help chatbot (AI-01), shared by the Worker and Client routes.
@@ -132,15 +140,14 @@ export default function FaqChatbot() {
                     <Text style={styles.choicesLabel}>{line.choicesLabel}</Text>
                   ) : null}
                   {line.choices.map((entry) => (
-                    <Pressable
+                    <AppButton
                       key={entry.id}
-                      style={styles.choice}
+                      label={entry.question}
+                      variant="ghost"
                       onPress={() => pick(entry)}
-                      accessibilityRole="button"
                       accessibilityLabel={entry.question}
-                    >
-                      <Text style={styles.choiceText}>{entry.question}</Text>
-                    </Pressable>
+                      style={styles.choice}
+                    />
                   ))}
                 </View>
               ) : null}
@@ -155,20 +162,22 @@ export default function FaqChatbot() {
           {QUICK_TOPICS.map((t) => (
             <Pressable
               key={t.label}
-              style={styles.topicChip}
               onPress={() => topic(t.label, entriesForCategories(t.categories))}
               accessibilityRole="button"
               accessibilityLabel={`${FAQ_COPY.quickTopics}: ${t.label}`}
+              hitSlop={TOPIC_HIT_SLOP}
+              style={({ pressed }) => [pressed ? styles.topicPressed : null]}
             >
-              <Text style={styles.topicChipText}>{t.label}</Text>
+              <AppChip label={t.label} />
             </Pressable>
           ))}
         </View>
       </View>
 
       <View style={styles.composer}>
-        <TextInput
-          style={styles.input}
+        <AppField
+          variant="search"
+          containerStyle={styles.composerField}
           value={input}
           onChangeText={setInput}
           placeholder={FAQ_COPY.placeholder}
@@ -180,15 +189,13 @@ export default function FaqChatbot() {
           autoCapitalize="sentences"
           autoCorrect={false}
         />
-        <Pressable
-          style={[styles.askButton, !canAsk ? styles.askButtonDisabled : null]}
+        <AppButton
+          label={FAQ_COPY.ask}
           onPress={() => ask(input)}
           disabled={!canAsk}
-          accessibilityRole="button"
           accessibilityLabel={FAQ_COPY.ask}
-        >
-          <Text style={styles.askButtonText}>{FAQ_COPY.ask}</Text>
-        </Pressable>
+          style={styles.askButton}
+        />
       </View>
     </View>
   );
@@ -197,114 +204,83 @@ export default function FaqChatbot() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+    backgroundColor: colors.background,
   },
   transcript: {
     flex: 1,
   },
   transcriptContent: {
-    padding: 16,
-    gap: 10,
+    padding: spacing.gutter,
+    gap: spacing.md,
   },
   bubble: {
-    borderRadius: 10,
-    padding: 12,
+    borderRadius: radius.lg,
+    padding: spacing.md,
     maxWidth: '92%',
+    borderCurve: 'continuous',
   },
   userBubble: {
     alignSelf: 'flex-end',
-    backgroundColor: '#dbeafe',
+    backgroundColor: colors.accentSoft,
   },
   botBubble: {
     alignSelf: 'flex-start',
-    backgroundColor: '#f1f5f9',
+    backgroundColor: colors.surfaceSubtle,
   },
   speaker: {
-    fontSize: 12,
-    fontWeight: '600',
-    opacity: 0.7,
-    marginBottom: 2,
+    ...type.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.xxs,
   },
   bubbleText: {
-    fontSize: 15,
-    lineHeight: 21,
+    ...type.body,
+    color: colors.textPrimary,
   },
   choices: {
-    marginTop: 8,
-    gap: 6,
+    marginTop: spacing.sm,
+    gap: spacing.sm,
   },
   choicesLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    opacity: 0.8,
+    ...type.caption,
+    color: colors.textSecondary,
   },
   choice: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
     alignSelf: 'flex-start',
-  },
-  choiceText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 14,
-    fontWeight: '600',
+    maxWidth: '100%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
   topics: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    gap: 6,
+    paddingHorizontal: spacing.gutter,
+    paddingTop: spacing.sm,
+    gap: spacing.sm,
   },
   topicsLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    opacity: 0.8,
+    ...type.caption,
+    color: colors.textSecondary,
   },
   topicRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.sm,
   },
-  topicChip: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 16,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  topicChipText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 14,
-    fontWeight: '600',
+  topicPressed: {
+    opacity: 0.72,
   },
   composer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    padding: 16,
+    gap: spacing.sm,
+    padding: spacing.gutter,
   },
-  input: {
+  composerField: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    fontSize: 15,
   },
   askButton: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  askButtonDisabled: {
-    opacity: 0.5,
-  },
-  askButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 15,
-    fontWeight: '600',
+    alignSelf: 'center',
+    height: size.searchHeight,
+    paddingHorizontal: spacing.lg,
   },
 });

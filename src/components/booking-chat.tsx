@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
+import { AppChip, type AppChipVariant } from '@/components/app-chip';
+import { AppField } from '@/components/app-field';
+import { AppNotice } from '@/components/app-notice';
+import { InlineStatus } from '@/components/inline-status';
 import { BookingLoadError, formatBookingStatus, isBookingChatAvailable } from '@/lib/bookings';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
@@ -37,6 +39,8 @@ import {
 } from '@/lib/realtime';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
+
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 /**
  * Booking chat, shared by the Worker and Client routes (BL-01C-UI).
@@ -105,6 +109,14 @@ const RPC_FOR_ROLE: Record<ChatRole, string> = {
   worker: 'list_my_worker_bookings',
   client: 'list_my_client_bookings',
 };
+
+function statusChipVariant(status: string): AppChipVariant {
+  if (status === 'confirmed') return 'positive';
+  if (status === 'completed') return 'positive';
+  if (status === 'pending') return 'warning';
+  if (status === 'cancelled' || status === 'no_show') return 'danger';
+  return 'neutral';
+}
 
 /**
  * Find this Booking in the caller's own list. Returns null when the Booking is
@@ -406,48 +418,55 @@ export default function BookingChat({
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
-        contentContainerStyle={styles.container}
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
       >
         {booking !== null ? (
           <>
             <Text style={styles.heading}>{booking.jobTitle}</Text>
-            <Text style={styles.status}>Status: {formatBookingStatus(booking.status)}</Text>
+            <AppChip
+              label={formatBookingStatus(booking.status)}
+              variant={statusChipVariant(booking.status)}
+              style={styles.statusChip}
+            />
           </>
         ) : null}
 
         {isLoading ? (
           // Rendered instead of, never before, the empty state.
           <View style={styles.center}>
-            <ActivityIndicator />
-            <Text style={styles.note}>{COPY.loading}</Text>
+            <InlineStatus variant="loading" message={COPY.loading} />
           </View>
         ) : loadError ? (
           <View style={styles.center}>
-            <Text style={styles.error}>{loadError}</Text>
-            <Pressable
-              style={styles.secondaryButton}
-              onPress={handleRetry}
-              disabled={isLoading || isRefreshing || isSending}
-              accessibilityRole="button"
-            >
-              <Text style={styles.secondaryButtonText}>Retry</Text>
-            </Pressable>
+            <InlineStatus
+              variant="error"
+              message={loadError}
+              action={
+                <AppButton
+                  label="Retry"
+                  variant="secondary"
+                  onPress={handleRetry}
+                  disabled={isLoading || isRefreshing || isSending}
+                />
+              }
+            />
           </View>
         ) : booking === null ? (
           // Not the caller's Booking, or no Booking id was supplied. Says
           // nothing about whether such a Booking exists.
           <View style={styles.center}>
-            <Text style={styles.note}>{COPY.notFound}</Text>
+            <InlineStatus variant="empty" message={COPY.notFound} />
           </View>
         ) : !chatAvailable ? (
           <View style={styles.center}>
-            <Text style={styles.note}>{CHAT_UNAVAILABLE}</Text>
+            <InlineStatus variant="note" message={CHAT_UNAVAILABLE} />
           </View>
         ) : messages.length === 0 ? (
           // A successful read that returned nothing — not an error.
           <View style={styles.center}>
-            <Text style={styles.note}>{COPY.empty}</Text>
+            <InlineStatus variant="empty" message={COPY.empty} />
           </View>
         ) : (
           messages.map((message) => {
@@ -479,15 +498,15 @@ export default function BookingChat({
       {!isLoading && !loadError && chatAvailable ? (
         canSend ? (
           <View style={styles.composer}>
-            {sendError ? <Text style={styles.error}>{sendError}</Text> : null}
-            <TextInput
-              style={styles.input}
+            <AppField
               value={draft}
               onChangeText={setDraft}
               placeholder={COPY.composerPlaceholder}
               multiline
               editable={!isSending}
               accessibilityLabel={COPY.composerPlaceholder}
+              errorText={sendError ?? undefined}
+              inputStyle={styles.composerInput}
             />
             <View style={styles.composerRow}>
               {/* Counts down against the same trimmed length the server
@@ -495,22 +514,18 @@ export default function BookingChat({
               <Text style={remaining < 0 ? styles.counterOver : styles.counter}>
                 {remaining} / {MESSAGE_MAX_LENGTH}
               </Text>
-              <Pressable
-                style={[
-                  styles.primaryButton,
-                  !isDraftSendable || isSending ? styles.primaryButtonDisabled : null,
-                ]}
+              <AppButton
+                variant="primary"
+                label={isSending ? 'Sending…' : 'Send'}
                 onPress={handleSend}
                 disabled={!isDraftSendable || isSending}
-                accessibilityRole="button"
-              >
-                <Text style={styles.primaryButtonText}>{isSending ? 'Sending…' : 'Send'}</Text>
-              </Pressable>
+                style={styles.sendButton}
+              />
             </View>
           </View>
         ) : (
           <View style={styles.composer}>
-            <Text style={styles.closed}>{COPY.closed}</Text>
+            <AppNotice message={COPY.closed} />
           </View>
         )
       ) : null}
@@ -521,126 +536,87 @@ export default function BookingChat({
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+    backgroundColor: colors.background,
   },
-  container: {
-    padding: 24,
-    gap: 12,
-    paddingBottom: 24,
+  scroll: {
+    backgroundColor: colors.background,
+  },
+  content: {
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.md,
+    paddingBottom: spacing.xl,
   },
   center: {
+    backgroundColor: colors.background,
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 16,
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
   },
   heading: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    ...type.sectionTitle,
+    color: colors.textPrimary,
   },
-  status: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: SkillMatchTheme.brand.primary,
-    marginBottom: 4,
-  },
-  note: {
-    fontSize: 14,
-    opacity: 0.7,
+  statusChip: {
+    alignSelf: 'flex-start',
   },
   bubble: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 10,
-    gap: 2,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.xxs,
     maxWidth: '90%',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   bubbleMine: {
     alignSelf: 'flex-end',
-    backgroundColor: '#eff6ff',
-    borderColor: '#bfdbfe',
+    backgroundColor: colors.accentSoft,
   },
   bubbleTheirs: {
     alignSelf: 'flex-start',
+    backgroundColor: colors.surfaceSubtle,
   },
   bubbleAuthor: {
-    fontSize: 12,
-    fontWeight: '600',
-    opacity: 0.7,
+    ...type.caption,
+    color: colors.textSecondary,
   },
   bubbleText: {
-    fontSize: 15,
+    ...type.body,
+    color: colors.textPrimary,
   },
   bubbleTime: {
-    fontSize: 11,
-    opacity: 0.6,
+    ...type.caption,
+    color: colors.textSecondary,
   },
   composer: {
-    borderTopWidth: 1,
-    borderTopColor: '#d1d5db',
-    padding: 12,
-    gap: 8,
+    backgroundColor: colors.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingHorizontal: spacing.gutter,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  composerInput: {
+    maxHeight: 120,
   },
   composerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 15,
-    minHeight: 44,
-    maxHeight: 120,
+    gap: spacing.md,
   },
   counter: {
-    fontSize: 12,
-    opacity: 0.6,
+    ...type.caption,
+    color: colors.textSecondary,
+    flex: 1,
   },
   counterOver: {
-    fontSize: 12,
-    color: '#b91c1c',
-    fontWeight: '600',
+    ...type.caption,
+    color: colors.danger,
+    flex: 1,
   },
-  closed: {
-    fontSize: 14,
-    fontStyle: 'italic',
-    opacity: 0.8,
-  },
-  error: {
-    color: '#b91c1c',
-    fontSize: 14,
-  },
-  primaryButton: {
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  primaryButtonDisabled: {
-    opacity: 0.5,
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 16,
-    fontWeight: '600',
+  sendButton: {
+    alignSelf: 'flex-end',
+    height: 44,
   },
 });

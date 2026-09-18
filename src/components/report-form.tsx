@@ -1,15 +1,13 @@
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
+import { AppChip } from '@/components/app-chip';
+import { AppField } from '@/components/app-field';
+import { AppNotice } from '@/components/app-notice';
+import { InlineStatus } from '@/components/inline-status';
+import { SectionHeader } from '@/components/section-header';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   BOOKING_REPORT_CATEGORIES,
@@ -25,6 +23,8 @@ import {
   submitBookingReport,
   validateReportDescription,
 } from '@/lib/reports';
+
+const { colors, type, spacing } = SkillMatchTheme.ui;
 
 type BookingProps = { variant: 'booking'; bookingId: string | null };
 type AppIssueProps = { variant: 'app_issue' };
@@ -95,161 +95,108 @@ export default function ReportForm(props: Props) {
   if (props.variant === 'booking' && !isReportId(props.bookingId)) {
     return (
       <View style={styles.center}>
-        <Text style={styles.error}>{COPY.unavailable}</Text>
+        <InlineStatus variant="error" message={COPY.unavailable} />
       </View>
     );
   }
 
+  const submitLabel = isSubmitting
+    ? COPY.submitting
+    : props.variant === 'booking'
+      ? COPY.submitBooking
+      : COPY.submitAppIssue;
+
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled"
+    >
       {props.variant === 'booking' ? (
-        <>
-          <Text style={styles.label}>{COPY.categoryLabel}</Text>
+        <View style={styles.section}>
+          <SectionHeader title={COPY.categoryLabel} />
           <View style={styles.chipWrap}>
             {BOOKING_REPORT_CATEGORIES.map((value) => {
               const selected = category === value;
               return (
                 <Pressable
                   key={value}
-                  style={[styles.chip, selected ? styles.chipSelected : null]}
                   onPress={() => setCategory(value)}
                   disabled={isSubmitting}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
                 >
-                  <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]}>
-                    {formatReportCategory(value)}
-                  </Text>
+                  <AppChip
+                    label={formatReportCategory(value)}
+                    variant={selected ? 'selected' : 'neutral'}
+                  />
                 </Pressable>
               );
             })}
           </View>
-        </>
+        </View>
       ) : null}
 
-      <Text style={styles.label}>{COPY.descriptionLabel}</Text>
-      <TextInput
-        style={styles.input}
+      <AppField
+        label={COPY.descriptionLabel}
         value={description}
         onChangeText={setDescription}
         placeholder={COPY.descriptionPlaceholder}
         multiline
         editable={!isSubmitting}
         accessibilityLabel={COPY.descriptionLabel}
+        errorText={remaining < 0 ? COPY.tooLongDescription : undefined}
       />
       <Text style={remaining < 0 ? styles.counterOver : styles.counter}>
         {remaining} / {REPORT_DESCRIPTION_MAX}
       </Text>
-      {remaining < 0 ? <Text style={styles.hint}>{COPY.tooLongDescription}</Text> : null}
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <AppNotice variant="danger" message={error} /> : null}
 
-      <Pressable
-        style={[styles.submitButton, !canSubmit ? styles.submitButtonDisabled : null]}
+      <AppButton
+        label={submitLabel}
         onPress={handleSubmit}
         disabled={!canSubmit}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: !canSubmit, busy: isSubmitting }}
-      >
-        <Text style={styles.submitButtonText}>
-          {isSubmitting
-            ? COPY.submitting
-            : props.variant === 'booking'
-              ? COPY.submitBooking
-              : COPY.submitAppIssue}
-        </Text>
-      </Pressable>
+        loading={isSubmitting}
+      />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   container: {
-    padding: SkillMatchTheme.spacing.screenGutter,
-    gap: SkillMatchTheme.spacing.cardGap,
-    paddingBottom: 48,
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.md,
+    paddingBottom: spacing.xxxl + spacing.sm,
   },
   center: {
     flex: 1,
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: spacing.gutter,
   },
-  label: {
-    color: SkillMatchTheme.text.secondary,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
+  section: {
+    gap: spacing.sm,
   },
   chipWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-  },
-  chip: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    minHeight: SkillMatchTheme.size.iconTarget,
-    justifyContent: 'center',
-  },
-  chipSelected: {
-    borderColor: SkillMatchTheme.brand.primary,
-    backgroundColor: SkillMatchTheme.brand.primaryMuted,
-  },
-  chipText: {
-    color: SkillMatchTheme.text.primary,
-    fontSize: 14,
-  },
-  chipTextSelected: {
-    color: SkillMatchTheme.brand.primary,
-    fontWeight: '700',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    backgroundColor: SkillMatchTheme.surface.default,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    minHeight: 120,
-    color: SkillMatchTheme.text.primary,
+    gap: spacing.sm,
   },
   counter: {
-    fontSize: 12,
-    color: SkillMatchTheme.text.secondary,
+    ...type.caption,
+    color: colors.textSecondary,
   },
   counterOver: {
-    fontSize: 12,
-    color: SkillMatchTheme.feedback.danger,
+    ...type.caption,
+    color: colors.danger,
     fontWeight: '600',
-  },
-  hint: {
-    fontSize: 14,
-    color: SkillMatchTheme.text.secondary,
-  },
-  error: {
-    color: SkillMatchTheme.feedback.danger,
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  submitButton: {
-    minHeight: SkillMatchTheme.size.primaryCtaHeight,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: SkillMatchTheme.radius.input,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-  },
-  submitButtonDisabled: {
-    opacity: 0.5,
-  },
-  submitButtonText: {
-    color: SkillMatchTheme.text.inverse,
-    fontSize: 16,
-    fontWeight: '700',
   },
 });

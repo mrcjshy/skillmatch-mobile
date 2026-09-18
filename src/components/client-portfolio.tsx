@@ -1,16 +1,12 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 
+import { AppButton } from '@/components/app-button';
+import { AppCard } from '@/components/app-card';
+import { InlineStatus } from '@/components/inline-status';
+import { SectionHeader } from '@/components/section-header';
 import { SkillMatchTheme } from '@/constants/theme';
 import { loadClientBookings } from '@/lib/booking-records';
 import {
@@ -19,6 +15,8 @@ import {
   type ClientPortfolioLoad,
 } from '@/lib/client-portfolio';
 import { projectScaleLabel, type PortfolioItem, type PortfolioItemImage } from '@/lib/portfolio';
+
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 function coverImage(images: PortfolioItemImage[]): PortfolioItemImage | null {
   return images.find((image) => image.position === 1) ?? null;
@@ -49,7 +47,7 @@ export default function ClientPortfolio({ bookingId }: { bookingId: string | nul
       setState(null);
       setLoadError(CLIENT_PORTFOLIO_COPY.loadFailed);
     }
-  }, [])
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -100,8 +98,7 @@ export default function ClientPortfolio({ bookingId }: { bookingId: string | nul
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator />
-        <Text style={styles.muted}>{CLIENT_PORTFOLIO_COPY.loading}</Text>
+        <InlineStatus variant="loading" message={CLIENT_PORTFOLIO_COPY.loading} />
       </View>
     );
   }
@@ -109,17 +106,20 @@ export default function ClientPortfolio({ bookingId }: { bookingId: string | nul
   if (loadError) {
     return (
       <View style={styles.center}>
-        <Text style={styles.error}>{loadError}</Text>
-        <Pressable
-          style={styles.secondaryButton}
-          onPress={() => {
-            void retry();
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={CLIENT_PORTFOLIO_COPY.retry}
-        >
-          <Text style={styles.secondaryButtonText}>{CLIENT_PORTFOLIO_COPY.retry}</Text>
-        </Pressable>
+        <InlineStatus
+          variant="error"
+          message={loadError}
+          action={
+            <AppButton
+              label={CLIENT_PORTFOLIO_COPY.retry}
+              variant="secondary"
+              onPress={() => {
+                void retry();
+              }}
+              accessibilityLabel={CLIENT_PORTFOLIO_COPY.retry}
+            />
+          }
+        />
       </View>
     );
   }
@@ -127,20 +127,27 @@ export default function ClientPortfolio({ bookingId }: { bookingId: string | nul
   if (state === null || state.kind === 'unavailable' || state.kind === 'revoked') {
     return (
       <View style={styles.center}>
-        <Text style={styles.muted}>{CLIENT_PORTFOLIO_COPY.unavailable}</Text>
+        <InlineStatus variant="empty" message={CLIENT_PORTFOLIO_COPY.unavailable} />
       </View>
     );
   }
 
   return (
     <ScrollView
-      contentContainerStyle={styles.container}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void refresh()} />}
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={() => void refresh()}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
     >
-      {state.workerName ? <Text style={styles.heading}>{state.workerName}</Text> : null}
-      <Text style={styles.heading}>{CLIENT_PORTFOLIO_COPY.title}</Text>
+      {state.workerName ? <SectionHeader title={state.workerName} /> : null}
       {state.items.length === 0 ? (
-        <Text style={styles.muted}>{CLIENT_PORTFOLIO_COPY.empty}</Text>
+        <InlineStatus variant="empty" message={CLIENT_PORTFOLIO_COPY.empty} />
       ) : (
         state.items.map((item) => <PortfolioReadCard key={item.id} item={item} />)
       )}
@@ -152,7 +159,7 @@ function PortfolioReadCard({ item }: { item: PortfolioItem }) {
   const cover = coverImage(item.images);
   const rest = galleryImages(item.images);
   return (
-    <View style={styles.card}>
+    <AppCard>
       {cover ? <SavedCover image={cover} /> : null}
       {rest.length > 0 ? (
         <View style={styles.galleryRow}>
@@ -162,15 +169,19 @@ function PortfolioReadCard({ item }: { item: PortfolioItem }) {
         </View>
       ) : null}
       <Text style={styles.itemTitle}>{item.title}</Text>
-      <Text style={styles.muted}>{projectScaleLabel(item.projectScale)}</Text>
-      {item.description ? <Text style={styles.line}>{item.description}</Text> : null}
-    </View>
+      <Text style={styles.meta}>{projectScaleLabel(item.projectScale)}</Text>
+      {item.description ? <Text style={styles.body}>{item.description}</Text> : null}
+    </AppCard>
   );
 }
 
 function SavedCover({ image }: { image: PortfolioItemImage }) {
   if (image.signedUrl === null) {
-    return <Text style={styles.muted}>{CLIENT_PORTFOLIO_COPY.imageUnavailable}</Text>;
+    return (
+      <View style={styles.coverFallback}>
+        <Text style={styles.meta}>{CLIENT_PORTFOLIO_COPY.imageUnavailable}</Text>
+      </View>
+    );
   }
   return <Image source={{ uri: image.signedUrl }} style={styles.cover} contentFit="cover" />;
 }
@@ -179,7 +190,7 @@ function SavedThumb({ image }: { image: PortfolioItemImage }) {
   if (image.signedUrl === null) {
     return (
       <View style={styles.savedThumbFallback}>
-        <Text style={styles.muted}>{CLIENT_PORTFOLIO_COPY.imageUnavailable}</Text>
+        <Text style={styles.fallbackText}>{CLIENT_PORTFOLIO_COPY.imageUnavailable}</Text>
       </View>
     );
   }
@@ -187,90 +198,78 @@ function SavedThumb({ image }: { image: PortfolioItemImage }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: SkillMatchTheme.spacing.screenGutter,
-    gap: SkillMatchTheme.spacing.cardGap,
-    paddingBottom: 48,
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.lg,
+    paddingBottom: spacing.xxxl + spacing.sm,
   },
   center: {
     flex: 1,
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    gap: 12,
-    backgroundColor: SkillMatchTheme.brand.background,
-  },
-  heading: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: SkillMatchTheme.text.primary,
-  },
-  card: {
-    backgroundColor: SkillMatchTheme.surface.default,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
-    gap: 8,
+    padding: spacing.gutter,
   },
   itemTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: SkillMatchTheme.text.primary,
+    ...type.cardTitle,
+    color: colors.textPrimary,
   },
-  line: {
-    fontSize: 15,
-    lineHeight: 21,
-    color: SkillMatchTheme.text.primary,
+  body: {
+    ...type.body,
+    color: colors.textPrimary,
   },
-  muted: {
-    fontSize: 14,
-    color: SkillMatchTheme.text.secondary,
-  },
-  error: {
-    color: SkillMatchTheme.feedback.danger,
-    fontSize: 14,
-    textAlign: 'center',
+  meta: {
+    ...type.helper,
+    color: colors.textSecondary,
   },
   galleryRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: spacing.sm,
     flexWrap: 'wrap',
   },
   cover: {
     width: '100%',
     height: 180,
-    borderRadius: SkillMatchTheme.radius.input,
-    backgroundColor: SkillMatchTheme.surface.subtle,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSubtle,
+    borderCurve: 'continuous',
+  },
+  coverFallback: {
+    width: '100%',
+    height: 180,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.md,
+    borderCurve: 'continuous',
   },
   savedThumb: {
     width: 64,
     height: 64,
-    borderRadius: SkillMatchTheme.radius.input,
-    backgroundColor: SkillMatchTheme.surface.subtle,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSubtle,
+    borderCurve: 'continuous',
   },
   savedThumbFallback: {
     width: 64,
     height: 64,
-    borderRadius: SkillMatchTheme.radius.input,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: SkillMatchTheme.surface.subtle,
-    padding: 4,
+    backgroundColor: colors.surfaceSubtle,
+    padding: spacing.xs,
+    borderCurve: 'continuous',
   },
-  secondaryButton: {
-    minHeight: SkillMatchTheme.size.iconTarget,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 16,
-    fontWeight: '600',
+  fallbackText: {
+    ...type.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 });

@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 
+import { AppButton } from '@/components/app-button';
+import { AppCard } from '@/components/app-card';
+import { AppChip } from '@/components/app-chip';
+import { AppField } from '@/components/app-field';
+import { AppNotice } from '@/components/app-notice';
+import { InlineStatus } from '@/components/inline-status';
+import { SectionHeader } from '@/components/section-header';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   PORTFOLIO_COPY,
@@ -34,6 +32,8 @@ import {
   remainingPortfolioImageSlots,
 } from '@/lib/portfolio-images';
 import { useAccount } from '@/providers/account-provider';
+
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 type ScreenState =
   | { kind: 'loading' }
@@ -241,8 +241,7 @@ export default function WorkerPortfolio() {
   if (state.kind === 'loading') {
     return (
       <View style={styles.center}>
-        <ActivityIndicator />
-        <Text style={styles.muted}>{PORTFOLIO_COPY.loading}</Text>
+        <InlineStatus variant="loading" message={PORTFOLIO_COPY.loading} />
       </View>
     );
   }
@@ -250,15 +249,18 @@ export default function WorkerPortfolio() {
   if (state.kind === 'error') {
     return (
       <View style={styles.center}>
-        <Text style={styles.error}>{PORTFOLIO_COPY.loadFailed}</Text>
-        <Pressable
-          style={styles.secondaryButton}
-          onPress={retry}
-          accessibilityRole="button"
-          accessibilityLabel={PORTFOLIO_COPY.retry}
-        >
-          <Text style={styles.secondaryButtonText}>{PORTFOLIO_COPY.retry}</Text>
-        </Pressable>
+        <InlineStatus
+          variant="error"
+          message={PORTFOLIO_COPY.loadFailed}
+          action={
+            <AppButton
+              label={PORTFOLIO_COPY.retry}
+              variant="secondary"
+              onPress={retry}
+              accessibilityLabel={PORTFOLIO_COPY.retry}
+            />
+          }
+        />
       </View>
     );
   }
@@ -266,24 +268,27 @@ export default function WorkerPortfolio() {
   if (state.kind === 'no-profile') {
     return (
       <View style={styles.center}>
-        <Text style={styles.muted}>{PORTFOLIO_COPY.noProfile}</Text>
+        <InlineStatus variant="empty" message={PORTFOLIO_COPY.noProfile} />
       </View>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <Text style={styles.heading}>{PORTFOLIO_COPY.heading}</Text>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.helper}>{PORTFOLIO_COPY.helper}</Text>
 
       {state.items.length === 0 ? (
-        <Text style={styles.muted}>{PORTFOLIO_COPY.empty}</Text>
+        <InlineStatus variant="empty" message={PORTFOLIO_COPY.empty} />
       ) : (
         state.items.map((item) => {
           const cover = coverImage(item.images);
           const rest = galleryImages(item.images);
           return (
-            <View key={item.id} style={styles.card}>
+            <AppCard key={item.id}>
               {cover ? <SavedCover image={cover} /> : null}
               {rest.length > 0 ? (
                 <View style={styles.galleryRow}>
@@ -293,132 +298,120 @@ export default function WorkerPortfolio() {
                 </View>
               ) : null}
               <Text style={styles.itemTitle}>{item.title}</Text>
-              <Text style={styles.muted}>{projectScaleLabel(item.projectScale)}</Text>
-              {item.description ? <Text style={styles.line}>{item.description}</Text> : null}
-              <Pressable
-                style={[styles.deleteButton, busy && styles.buttonDisabled]}
+              <Text style={styles.meta}>{projectScaleLabel(item.projectScale)}</Text>
+              {item.description ? <Text style={styles.body}>{item.description}</Text> : null}
+              <AppButton
+                label={PORTFOLIO_COPY.delete}
+                variant="destructive"
                 onPress={() => promptDelete(state.workerProfileId, item)}
                 disabled={busy}
-                accessibilityRole="button"
+                loading={deletingId === item.id}
                 accessibilityLabel={`${PORTFOLIO_COPY.delete} ${item.title}`}
-              >
-                {deletingId === item.id ? (
-                  <ActivityIndicator />
-                ) : (
-                  <Text style={styles.deleteButtonText}>{PORTFOLIO_COPY.delete}</Text>
-                )}
-              </Pressable>
-            </View>
+              />
+            </AppCard>
           );
         })
       )}
 
-      <Text style={styles.sectionTitle}>{PORTFOLIO_COPY.add}</Text>
-      <Text style={styles.label}>{PORTFOLIO_COPY.titleLabel}</Text>
-      <TextInput
-        style={styles.input}
-        value={title}
-        onChangeText={setTitle}
-        editable={!busy}
-        maxLength={PORTFOLIO_TITLE_MAX}
-        accessibilityLabel={PORTFOLIO_COPY.titleLabel}
-      />
+      <View style={styles.section}>
+        <SectionHeader title={PORTFOLIO_COPY.add} />
+        <AppField
+          label={PORTFOLIO_COPY.titleLabel}
+          value={title}
+          onChangeText={setTitle}
+          disabled={busy}
+          maxLength={PORTFOLIO_TITLE_MAX}
+          accessibilityLabel={PORTFOLIO_COPY.titleLabel}
+        />
+        <AppField
+          label={PORTFOLIO_COPY.descriptionLabel}
+          value={description}
+          onChangeText={setDescription}
+          disabled={busy}
+          multiline
+          accessibilityLabel={PORTFOLIO_COPY.descriptionLabel}
+        />
 
-      <Text style={styles.label}>{PORTFOLIO_COPY.descriptionLabel}</Text>
-      <TextInput
-        style={[styles.input, styles.textArea]}
-        value={description}
-        onChangeText={setDescription}
-        editable={!busy}
-        multiline
-        textAlignVertical="top"
-        accessibilityLabel={PORTFOLIO_COPY.descriptionLabel}
-      />
-
-      <Text style={styles.label}>{PORTFOLIO_COPY.scaleLabel}</Text>
-      <View style={styles.row} accessibilityRole="radiogroup">
-        {PROJECT_SCALE_OPTIONS.map((option) => {
-          const selected = projectScale === option.value;
-          return (
-            <Pressable
-              key={option.value}
-              style={[styles.chip, selected && styles.chipSelected, busy && styles.buttonDisabled]}
-              onPress={() => setProjectScale(option.value)}
-              disabled={busy}
-              accessibilityRole="radio"
-              accessibilityState={{ selected, disabled: busy }}
-              accessibilityLabel={option.label}
-            >
-              <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                {option.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <Text style={styles.label}>
-        {PORTFOLIO_COPY.photosLabel} · {portfolioPhotoCountLabel(draftImages.length)}
-      </Text>
-      <Pressable
-        style={[
-          styles.secondaryButton,
-          (busy || remainingSlots <= 0) && styles.buttonDisabled,
-        ]}
-        onPress={() => void handleAddPhotos()}
-        disabled={busy || remainingSlots <= 0}
-        accessibilityRole="button"
-        accessibilityLabel={PORTFOLIO_COPY.addPhotos}
-      >
-        <Text style={styles.secondaryButtonText}>{PORTFOLIO_COPY.addPhotos}</Text>
-      </Pressable>
-      {draftImages.length > 0 ? (
-        <View style={styles.galleryRow}>
-          {draftImages.map((image, index) => (
-            <View key={`${image.uri}-${index}`} style={styles.draftThumbWrap}>
-              <Image source={{ uri: image.uri }} style={styles.draftThumb} contentFit="cover" />
-              {index === 0 ? <Text style={styles.coverBadge}>{PORTFOLIO_COPY.cover}</Text> : null}
+        <Text style={styles.label}>{PORTFOLIO_COPY.scaleLabel}</Text>
+        <View style={styles.row} accessibilityRole="radiogroup">
+          {PROJECT_SCALE_OPTIONS.map((option) => {
+            const selected = projectScale === option.value;
+            return (
               <Pressable
-                style={styles.removeThumb}
-                onPress={() => removeDraftImage(index)}
+                key={option.value}
+                onPress={() => setProjectScale(option.value)}
                 disabled={busy}
-                accessibilityRole="button"
-                accessibilityLabel={`${PORTFOLIO_COPY.removePhoto} ${index + 1}`}
+                accessibilityRole="radio"
+                accessibilityState={{ selected, disabled: busy }}
+                accessibilityLabel={option.label}
+                style={busy ? styles.chipDisabled : undefined}
               >
-                <Text style={styles.removeThumbText}>{PORTFOLIO_COPY.removePhoto}</Text>
+                <AppChip label={option.label} variant={selected ? 'selected' : 'neutral'} />
               </Pressable>
-            </View>
-          ))}
+            );
+          })}
         </View>
-      ) : null}
 
-      {formError ? <Text style={styles.error}>{formError}</Text> : null}
-      {success ? <Text style={styles.success}>{success}</Text> : null}
+        <Text style={styles.label}>
+          {PORTFOLIO_COPY.photosLabel} · {portfolioPhotoCountLabel(draftImages.length)}
+        </Text>
+        <AppButton
+          label={PORTFOLIO_COPY.addPhotos}
+          variant="secondary"
+          onPress={() => void handleAddPhotos()}
+          disabled={busy || remainingSlots <= 0}
+          accessibilityLabel={PORTFOLIO_COPY.addPhotos}
+        />
+        {draftImages.length > 0 ? (
+          <View style={styles.galleryRow}>
+            {draftImages.map((image, index) => (
+              <View key={`${image.uri}-${index}`} style={styles.draftThumbWrap}>
+                <Image source={{ uri: image.uri }} style={styles.draftThumb} contentFit="cover" />
+                {index === 0 ? (
+                  <AppChip label={PORTFOLIO_COPY.cover} variant="selected" style={styles.coverChip} />
+                ) : null}
+                <Pressable
+                  style={styles.removeThumb}
+                  onPress={() => removeDraftImage(index)}
+                  disabled={busy}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${PORTFOLIO_COPY.removePhoto} ${index + 1}`}
+                >
+                  <Text style={styles.removeThumbText}>{PORTFOLIO_COPY.removePhoto}</Text>
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
-      <Pressable
-        style={[styles.button, busy && styles.buttonDisabled]}
-        onPress={() => void handleSave(state.workerProfileId)}
-        disabled={busy}
-        accessibilityRole="button"
-      >
-        {isSaving ? (
-          <ActivityIndicator color={SkillMatchTheme.text.inverse} />
-        ) : (
-          <Text style={styles.buttonText}>{PORTFOLIO_COPY.save}</Text>
-        )}
-      </Pressable>
+        {formError ? <AppNotice variant="danger" message={formError} /> : null}
+        {success ? <AppNotice variant="success" message={success} /> : null}
+
+        <AppButton
+          label={PORTFOLIO_COPY.save}
+          variant="primary"
+          onPress={() => void handleSave(state.workerProfileId)}
+          disabled={busy}
+          loading={isSaving}
+          accessibilityLabel={PORTFOLIO_COPY.save}
+        />
+      </View>
     </ScrollView>
   );
 }
 
 function SavedCover({ image }: { image: PortfolioItemImage }) {
   if (image.signedUrl === null) {
-    return <Text style={styles.muted}>{PORTFOLIO_COPY.imageUnavailable}</Text>;
+    return (
+      <View style={styles.coverFallback}>
+        <Text style={styles.meta}>{PORTFOLIO_COPY.imageUnavailable}</Text>
+      </View>
+    );
   }
   return (
-    <View>
+    <View style={styles.coverBlock}>
       <Image source={{ uri: image.signedUrl }} style={styles.cover} contentFit="cover" />
-      <Text style={styles.coverBadge}>{PORTFOLIO_COPY.cover}</Text>
+      <AppChip label={PORTFOLIO_COPY.cover} variant="selected" style={styles.coverChip} />
     </View>
   );
 }
@@ -427,7 +420,7 @@ function SavedThumb({ image }: { image: PortfolioItemImage }) {
   if (image.signedUrl === null) {
     return (
       <View style={styles.savedThumbFallback}>
-        <Text style={styles.muted}>{PORTFOLIO_COPY.imageUnavailable}</Text>
+        <Text style={styles.fallbackText}>{PORTFOLIO_COPY.imageUnavailable}</Text>
       </View>
     );
   }
@@ -435,186 +428,126 @@ function SavedThumb({ image }: { image: PortfolioItemImage }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: SkillMatchTheme.spacing.screenGutter,
-    gap: SkillMatchTheme.spacing.cardGap,
-    paddingBottom: 48,
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.lg,
+    paddingBottom: spacing.xxxl + spacing.sm,
   },
   center: {
     flex: 1,
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    gap: 12,
-  },
-  heading: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: SkillMatchTheme.text.primary,
+    padding: spacing.gutter,
   },
   helper: {
-    fontSize: 14,
-    color: SkillMatchTheme.text.secondary,
-    lineHeight: 20,
+    ...type.helper,
+    color: colors.textSecondary,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 8,
-    color: SkillMatchTheme.text.primary,
-  },
-  card: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.card,
-    padding: SkillMatchTheme.spacing.cardPadding,
-    gap: SkillMatchTheme.spacing.cardGap,
-    backgroundColor: SkillMatchTheme.surface.default,
+  section: {
+    gap: spacing.md,
   },
   itemTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: SkillMatchTheme.text.primary,
+    ...type.cardTitle,
+    color: colors.textPrimary,
   },
-  line: {
-    fontSize: 14,
-    color: SkillMatchTheme.text.primary,
+  body: {
+    ...type.body,
+    color: colors.textPrimary,
   },
-  muted: {
-    fontSize: 14,
-    color: SkillMatchTheme.text.secondary,
+  meta: {
+    ...type.helper,
+    color: colors.textSecondary,
   },
   label: {
     fontSize: 13,
     fontWeight: '600',
-    color: SkillMatchTheme.text.secondary,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    minHeight: SkillMatchTheme.size.iconTarget,
-    backgroundColor: SkillMatchTheme.surface.default,
-    color: SkillMatchTheme.text.primary,
-  },
-  textArea: {
-    minHeight: 96,
+    lineHeight: 18,
+    color: colors.primary,
   },
   row: {
     flexDirection: 'row',
-    gap: 8,
+    gap: spacing.sm,
     flexWrap: 'wrap',
   },
   galleryRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: spacing.sm,
     flexWrap: 'wrap',
+  },
+  coverBlock: {
+    gap: spacing.xs,
   },
   cover: {
     width: '100%',
     height: 180,
-    borderRadius: SkillMatchTheme.radius.input,
-    backgroundColor: SkillMatchTheme.surface.subtle,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSubtle,
+    borderCurve: 'continuous',
   },
-  coverBadge: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '600',
-    color: SkillMatchTheme.brand.primary,
+  coverFallback: {
+    width: '100%',
+    height: 180,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSubtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.md,
+    borderCurve: 'continuous',
+  },
+  coverChip: {
+    alignSelf: 'flex-start',
   },
   savedThumb: {
     width: 64,
     height: 64,
-    borderRadius: SkillMatchTheme.radius.input,
-    backgroundColor: SkillMatchTheme.surface.subtle,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSubtle,
+    borderCurve: 'continuous',
   },
   savedThumbFallback: {
     width: 64,
     height: 64,
-    borderRadius: SkillMatchTheme.radius.input,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: SkillMatchTheme.surface.subtle,
-    padding: 4,
+    backgroundColor: colors.surfaceSubtle,
+    padding: spacing.xs,
+    borderCurve: 'continuous',
+  },
+  fallbackText: {
+    ...type.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   draftThumbWrap: {
     width: 96,
-    gap: 4,
+    gap: spacing.xs,
   },
   draftThumb: {
     width: 96,
     height: 96,
-    borderRadius: SkillMatchTheme.radius.input,
-    backgroundColor: SkillMatchTheme.surface.subtle,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSubtle,
+    borderCurve: 'continuous',
   },
   removeThumb: {
-    minHeight: SkillMatchTheme.size.iconTarget,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   removeThumbText: {
-    color: SkillMatchTheme.feedback.danger,
-    fontSize: 13,
+    ...type.helper,
     fontWeight: '600',
+    color: colors.danger,
   },
-  chip: {
-    flex: 1,
-    minHeight: SkillMatchTheme.size.iconTarget,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+  chipDisabled: {
+    opacity: 0.6,
   },
-  chipSelected: {
-    borderColor: SkillMatchTheme.brand.primary,
-    backgroundColor: SkillMatchTheme.brand.primaryMuted,
-  },
-  chipText: { fontSize: 16, color: SkillMatchTheme.text.primary },
-  chipTextSelected: { color: SkillMatchTheme.brand.primary, fontWeight: '600' },
-  error: { color: SkillMatchTheme.feedback.danger, fontSize: 14 },
-  success: { color: SkillMatchTheme.feedback.success, fontSize: 14 },
-  button: {
-    minHeight: SkillMatchTheme.size.primaryCtaHeight,
-    backgroundColor: SkillMatchTheme.brand.primary,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButton: {
-    minHeight: SkillMatchTheme.size.iconTarget,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButtonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  deleteButton: {
-    minHeight: SkillMatchTheme.size.iconTarget,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.feedback.danger,
-    borderRadius: SkillMatchTheme.radius.input,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteButtonText: {
-    color: SkillMatchTheme.feedback.danger,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: SkillMatchTheme.text.inverse, fontSize: 16, fontWeight: '600' },
 });

@@ -23,7 +23,7 @@ import {
   selectErrorCopy,
 } from '@/lib/payments';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 /**
  * The payment section of one completed Booking card (BL-01D-UI, extended by
@@ -264,13 +264,14 @@ export default function BookingPayment({
             ) : isAwaitingCash(payment) ? (
               <Text style={styles.line}>{COPY.awaitingClient}</Text>
             ) : isAwaitingQrph(payment) ? (
-              <>
+              <View style={styles.qrIsland}>
                 {/*
                   TEST MODE is stated for the WHOLE pending QR Ph state, not
                   only when a QR image happens to be loaded. It sits above the
                   code so it is read before anyone lifts a phone to scan, and
                   it cannot be scrolled past on the way to the QR. The copy
-                  itself is unchanged.
+                  itself is unchanged. AppNotice is single-message only, so
+                  this stays a two-text warningTint panel.
                 */}
                 <View style={styles.testBanner}>
                   <Text style={styles.testTitle}>{COPY.testModeTitle}</Text>
@@ -315,7 +316,7 @@ export default function BookingPayment({
                   onPress={refreshStatus}
                   disabled={isBusy}
                 />
-              </>
+              </View>
             ) : null}
           </>
         )}
@@ -401,37 +402,38 @@ const styles = StyleSheet.create({
     ...type.helper,
     color: colors.danger,
   },
+  qrIsland: {
+    gap: spacing.md,
+  },
   qrPlate: {
-    marginTop: 8,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 12,
-    padding: 12,
-    alignSelf: 'flex-start',
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    borderCurve: 'continuous',
+    padding: spacing.md,
+    alignSelf: 'center',
+    overflow: 'hidden',
   },
   qr: {
     width: 248,
     height: 248,
+    borderRadius: radius.sm,
   },
   testBanner: {
-    marginTop: 8,
-    backgroundColor: '#fffbeb',
-    borderWidth: 1,
-    borderColor: '#f59e0b',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 2,
+    backgroundColor: colors.warningTint,
+    borderRadius: radius.md,
+    borderCurve: 'continuous',
+    padding: spacing.md,
+    gap: spacing.xxs,
   },
   testTitle: {
-    fontSize: 13,
+    ...type.caption,
     fontWeight: '700',
-    letterSpacing: 0.6,
-    color: '#b45309',
+    color: colors.warning,
   },
   testBody: {
-    fontSize: 13,
-    color: '#b45309',
+    ...type.helper,
+    color: colors.warning,
   },
 });

@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { AppButton } from '@/components/app-button';
+import { AppCard } from '@/components/app-card';
+import { AppNotice } from '@/components/app-notice';
+import { InlineStatus } from '@/components/inline-status';
+import { SectionHeader } from '@/components/section-header';
+import { SkillMatchTheme } from '@/constants/theme';
+import { formatCardDateTime } from '@/lib/date-time';
 import {
   computeSkillGap,
   GapOpportunity,
@@ -18,9 +25,9 @@ import {
   GuidanceState,
   SKILL_GAP_GUIDANCE_COPY,
 } from '@/lib/skill-gap-guidance';
-import { formatCardDateTime } from '@/lib/date-time';
-import { SkillMatchTheme } from '@/constants/theme';
 import { useAccount } from '@/providers/account-provider';
+
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 /**
  * The Skill Gap screen body (AI-03, deterministic core).
@@ -204,8 +211,7 @@ export default function SkillGap() {
   if (currentBase === null || currentBase.kind === 'loading') {
     return (
       <View style={styles.center}>
-        <ActivityIndicator />
-        <Text style={styles.note}>{SKILL_GAP_COPY.loading}</Text>
+        <InlineStatus variant="loading" message={SKILL_GAP_COPY.loading} />
       </View>
     );
   }
@@ -213,10 +219,11 @@ export default function SkillGap() {
   if (currentBase.kind === 'error') {
     return (
       <View style={styles.center}>
-        <Text style={styles.error}>{SKILL_GAP_COPY.loadFailed}</Text>
-        <Pressable style={styles.button} onPress={retryBase} accessibilityRole="button">
-          <Text style={styles.buttonText}>{SKILL_GAP_COPY.retry}</Text>
-        </Pressable>
+        <InlineStatus
+          variant="error"
+          message={SKILL_GAP_COPY.loadFailed}
+          action={<AppButton label={SKILL_GAP_COPY.retry} variant="secondary" onPress={retryBase} />}
+        />
       </View>
     );
   }
@@ -224,7 +231,7 @@ export default function SkillGap() {
   if (currentBase.kind === 'no-profile') {
     return (
       <View style={styles.center}>
-        <Text style={styles.note}>{SKILL_GAP_COPY.noProfile}</Text>
+        <InlineStatus variant="empty" message={SKILL_GAP_COPY.noProfile} />
       </View>
     );
   }
@@ -232,7 +239,7 @@ export default function SkillGap() {
   if (selectedJob === null) {
     return (
       <View style={styles.center}>
-        <Text style={styles.note}>{SKILL_GAP_COPY.noOpportunities}</Text>
+        <InlineStatus variant="empty" message={SKILL_GAP_COPY.noOpportunities} />
       </View>
     );
   }
@@ -241,9 +248,9 @@ export default function SkillGap() {
   const current = requirements.kind !== 'idle' && requirements.jobId === selectedJob.jobId ? requirements : null;
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.sectionLabel}>{SKILL_GAP_COPY.compareWith}</Text>
-      <View style={styles.picker}>
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
+      <SectionHeader title={SKILL_GAP_COPY.compareWith} />
+      <View style={styles.picker} accessibilityRole="radiogroup">
         {opportunities.map((o) => {
           const selected = o.jobId === selectedJob.jobId;
           return (
@@ -264,17 +271,15 @@ export default function SkillGap() {
       </View>
 
       {current === null || current.kind === 'loading' ? (
-        <View style={styles.centerInline}>
-          <ActivityIndicator />
-          <Text style={styles.note}>{SKILL_GAP_COPY.loadingRequirements}</Text>
-        </View>
+        <InlineStatus variant="loading" message={SKILL_GAP_COPY.loadingRequirements} />
       ) : current.kind === 'error' ? (
-        <View style={styles.centerInline}>
-          <Text style={styles.error}>{SKILL_GAP_COPY.requirementsFailed}</Text>
-          <Pressable style={styles.button} onPress={retryRequirements} accessibilityRole="button">
-            <Text style={styles.buttonText}>{SKILL_GAP_COPY.retry}</Text>
-          </Pressable>
-        </View>
+        <InlineStatus
+          variant="error"
+          message={SKILL_GAP_COPY.requirementsFailed}
+          action={
+            <AppButton label={SKILL_GAP_COPY.retry} variant="secondary" onPress={retryRequirements} />
+          }
+        />
       ) : (
         <GapEquation
           required={current.required}
@@ -304,6 +309,25 @@ function describeOpportunity(o: GapOpportunity): string | null {
 }
 
 /**
+ * Wrapping skill pill. AppChip is height-locked at 28 and clips the Worker
+ * `✓ ` prefix plus proficiency suffix, so these match AppChip fills/type
+ * with wrap allowed.
+ */
+function SkillPill({
+  label,
+  variant = 'neutral',
+}: {
+  label: string;
+  variant?: 'neutral' | 'positive' | 'warning';
+}) {
+  return (
+    <View style={[styles.chip, chipFills[variant]]}>
+      <Text style={[styles.chipText, chipLabels[variant]]}>{label}</Text>
+    </View>
+  );
+}
+
+/**
  * The equation. `computeSkillGap` normalizes both sides, so this component
  * renders exactly what the pure function returns and adds nothing.
  */
@@ -322,30 +346,29 @@ function GapEquation({
 
   if (gap.requiredSkills.length === 0) {
     return (
-      <View style={styles.card}>
+      <AppCard>
         <Text style={styles.muted}>{SKILL_GAP_COPY.noRequirements}</Text>
-      </View>
+      </AppCard>
     );
   }
 
   const matchedIds = new Set(gap.matchedSkills.map((s) => s.id));
+  const hasMissing = gap.missingSkills.length > 0;
 
   return (
     <>
-      <View style={styles.card}>
+      <AppCard>
         <Text style={styles.cardTitle}>{SKILL_GAP_COPY.required}</Text>
         <View style={styles.chips}>
           {gap.requiredSkills.map((s) => (
-            <View key={s.id} style={styles.chip}>
-              <Text style={styles.chipText}>{s.name}</Text>
-            </View>
+            <SkillPill key={s.id} label={s.name} />
           ))}
         </View>
-      </View>
+      </AppCard>
 
       <Text style={styles.operator}>{SKILL_GAP_COPY.minus}</Text>
 
-      <View style={styles.card}>
+      <AppCard>
         <Text style={styles.cardTitle}>{SKILL_GAP_COPY.yours}</Text>
         {gap.workerSkills.length === 0 ? (
           <Text style={styles.muted}>{SKILL_GAP_COPY.noWorkerSkills}</Text>
@@ -354,40 +377,38 @@ function GapEquation({
             {gap.workerSkills.map((s) => {
               const matched = matchedIds.has(s.id);
               return (
-                <View key={s.id} style={[styles.chip, matched && styles.chipMatched]}>
-                  <Text style={[styles.chipText, matched && styles.chipTextMatched]}>
-                    {matched ? '✓ ' : ''}
-                    {s.name}
-                    {s.proficiency === null ? '' : ` · ${PROFICIENCY_LABEL[s.proficiency]}`}
-                  </Text>
-                </View>
+                <SkillPill
+                  key={s.id}
+                  variant={matched ? 'positive' : 'neutral'}
+                  label={`${matched ? '✓ ' : ''}${s.name}${
+                    s.proficiency === null ? '' : ` · ${PROFICIENCY_LABEL[s.proficiency]}`
+                  }`}
+                />
               );
             })}
           </View>
         )}
-      </View>
+      </AppCard>
 
       <Text style={styles.operator}>{SKILL_GAP_COPY.equals}</Text>
 
-      <View style={[styles.card, gap.missingSkills.length > 0 && styles.cardMissing]}>
+      <AppCard variant="status" tone={hasMissing ? 'warning' : 'success'}>
         <Text style={styles.cardTitle}>
           {SKILL_GAP_COPY.missing} · {gap.missingSkills.length}
         </Text>
-        {gap.missingSkills.length === 0 ? (
-          <Text style={styles.zeroGap}>{SKILL_GAP_COPY.zeroGap}</Text>
-        ) : (
+        {hasMissing ? (
           <>
             <View style={styles.chips}>
               {gap.missingSkills.map((s) => (
-                <View key={s.id} style={[styles.chip, styles.chipMissing]}>
-                  <Text style={[styles.chipText, styles.chipTextMissing]}>− {s.name}</Text>
-                </View>
+                <SkillPill key={s.id} variant="warning" label={`− ${s.name}`} />
               ))}
             </View>
-            <Text style={styles.muted}>{SKILL_GAP_COPY.missingHint}</Text>
+            <AppNotice variant="warning" message={SKILL_GAP_COPY.missingHint} />
           </>
+        ) : (
+          <Text style={styles.zeroGap}>{SKILL_GAP_COPY.zeroGap}</Text>
         )}
-      </View>
+      </AppCard>
 
       <GuidanceSection
         key={guidanceKey}
@@ -431,25 +452,29 @@ function GuidanceSection({
   const requestGuidance = useCallback(() => runner.request(setState), [runner]);
 
   return (
-    <View style={[styles.card, styles.guidanceCard]}>
+    <AppCard variant="status">
       <Text style={styles.cardTitle}>{SKILL_GAP_GUIDANCE_COPY.title}</Text>
 
       {state.kind === 'idle' ? (
-        <Pressable style={styles.button} onPress={requestGuidance} accessibilityRole="button">
-          <Text style={styles.buttonText}>{SKILL_GAP_GUIDANCE_COPY.get}</Text>
-        </Pressable>
+        <AppButton
+          label={SKILL_GAP_GUIDANCE_COPY.get}
+          variant="primary"
+          onPress={requestGuidance}
+        />
       ) : state.kind === 'loading' ? (
-        <View style={styles.guidanceLoading}>
-          <ActivityIndicator />
-          <Text style={styles.note}>{SKILL_GAP_GUIDANCE_COPY.loading}</Text>
-        </View>
+        <InlineStatus variant="loading" message={SKILL_GAP_GUIDANCE_COPY.loading} />
       ) : state.kind === 'error' ? (
-        <>
-          <Text style={styles.error}>{SKILL_GAP_GUIDANCE_COPY.unavailable}</Text>
-          <Pressable style={styles.button} onPress={requestGuidance} accessibilityRole="button">
-            <Text style={styles.buttonText}>{SKILL_GAP_GUIDANCE_COPY.retry}</Text>
-          </Pressable>
-        </>
+        <InlineStatus
+          variant="error"
+          message={SKILL_GAP_GUIDANCE_COPY.unavailable}
+          action={
+            <AppButton
+              label={SKILL_GAP_GUIDANCE_COPY.retry}
+              variant="secondary"
+              onPress={requestGuidance}
+            />
+          }
+        />
       ) : (
         <>
           <Text style={styles.guidanceText}>{state.guidance}</Text>
@@ -460,151 +485,99 @@ function GuidanceSection({
           </Text>
         </>
       )}
-    </View>
+    </AppCard>
   );
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   container: {
-    padding: 16,
-    gap: 12,
+    flexGrow: 1,
+    backgroundColor: colors.background,
+    padding: spacing.gutter,
+    gap: spacing.md,
+    paddingBottom: spacing.xxxl,
   },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    gap: 12,
-  },
-  centerInline: {
-    alignItems: 'center',
-    padding: 24,
-    gap: 12,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    opacity: 0.7,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    padding: spacing.gutter,
+    backgroundColor: colors.background,
   },
   picker: {
-    gap: 8,
+    gap: spacing.sm,
   },
   pickerRow: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    padding: 12,
-    gap: 2,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.xxs,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderCurve: 'continuous',
   },
   pickerRowSelected: {
-    borderColor: SkillMatchTheme.feedback.info,
-    backgroundColor: '#eff6ff',
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.selected,
   },
   pickerTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+    ...type.bodyEmphasis,
+    color: colors.textPrimary,
   },
   pickerTitleSelected: {
-    color: SkillMatchTheme.feedback.info,
-  },
-  card: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    padding: 12,
-    gap: 8,
-  },
-  cardMissing: {
-    borderColor: '#f59e0b',
-    backgroundColor: '#fffbeb',
-  },
-  guidanceCard: {
-    marginTop: 4,
-    backgroundColor: '#f8fafc',
-  },
-  guidanceLoading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  guidanceText: {
-    fontSize: 14,
-    lineHeight: 20,
+    color: colors.primary,
   },
   cardTitle: {
-    fontSize: 13,
+    ...type.caption,
     fontWeight: '700',
     letterSpacing: 0.5,
+    color: colors.textPrimary,
   },
   operator: {
+    ...type.bodyEmphasis,
+    color: colors.textSecondary,
     textAlign: 'center',
-    fontSize: 14,
-    fontWeight: '600',
-    opacity: 0.6,
   },
   chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.sm,
   },
   chip: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 999,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: '#ffffff',
-  },
-  chipMatched: {
-    borderColor: '#16a34a',
-    backgroundColor: '#f0fdf4',
-  },
-  chipMissing: {
-    borderColor: '#f59e0b',
-    backgroundColor: '#ffffff',
+    borderRadius: radius.pill,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    maxWidth: '100%',
   },
   chipText: {
-    fontSize: 14,
-  },
-  chipTextMatched: {
-    color: '#166534',
-    fontWeight: '600',
-  },
-  chipTextMissing: {
-    color: '#92400e',
-    fontWeight: '600',
+    ...type.badge,
   },
   zeroGap: {
-    fontSize: 14,
-    color: '#166534',
-    fontWeight: '600',
+    ...type.bodyEmphasis,
+    color: colors.success,
   },
   muted: {
-    fontSize: 13,
-    opacity: 0.6,
+    ...type.helper,
+    color: colors.textSecondary,
   },
-  note: {
-    fontSize: 14,
-    opacity: 0.8,
-    textAlign: 'center',
+  guidanceText: {
+    ...type.body,
+    color: colors.textPrimary,
   },
-  error: {
-    color: '#b91c1c',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  button: {
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.brand.primary,
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  buttonText: {
-    color: SkillMatchTheme.brand.primary,
-    fontSize: 15,
-    fontWeight: '600',
-  },
+});
+
+const chipFills = StyleSheet.create({
+  neutral: { backgroundColor: colors.surfaceSubtle },
+  positive: { backgroundColor: colors.accentSoft },
+  warning: { backgroundColor: colors.warningTint },
+});
+
+const chipLabels = StyleSheet.create({
+  neutral: { color: colors.primary },
+  positive: { color: colors.primary },
+  warning: { color: colors.warning },
 });
