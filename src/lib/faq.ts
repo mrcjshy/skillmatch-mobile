@@ -79,8 +79,8 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'account',
     question: 'Paano mag-register sa SkillMatch?',
     answer:
-      'Buksan ang app at piliin ang Register. I-fill up ang Full Name, Phone, Email, Password, at Confirm Password, tapos piliin kung Worker ka o Client. Kapag successful ang registration, diretso ka na sa app at hindi na kailangang mag-log in ulit. Ang barangay at city ay naka-set na sa Santa Ana, Pateros, kaya hindi na ito hinihingi sa registration.',
-    keywords: ['register', 'sign up', 'signup', 'gumawa', 'account', 'bago', 'paano magsimula', 'magparehistro'],
+      'Buksan ang app at piliin ang Register. I-fill up ang Full Name, Phone, Email, Password, at Confirm Password, tapos piliin kung Worker ka o Client. I-check ang dalawang checkbox — Terms and Conditions at Privacy Policy — dahil naka-record ang consent bago ka makapasok sa app. Worker pa: kailangan mag-submit ng valid ID bago ang Worker app. Client: after consent, pasok na sa Client app. Hindi na kailangang mag-log in ulit. Ang service area ay Santa Ana, Pateros lang, kaya hindi na hinihingi ang barangay at city sa registration.',
+    keywords: ['register', 'sign up', 'signup', 'gumawa', 'account', 'bago', 'paano magsimula', 'magparehistro', 'consent', 'checkbox', 'terms', 'privacy'],
   },
   {
     id: 'acc-roles',
@@ -98,6 +98,14 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
       'Siguraduhing tama ang email at password na ginamit mo sa registration. Kung bago ang account, kumpletuhin muna ang registration. Kung tuloy-tuloy ang problema, isara at buksan ulit ang app at subukan muli.',
     keywords: ['login', 'log in', 'password', 'hindi makapasok', 'error', 'sign in', 'pumasok'],
   },
+  {
+    id: 'acc-terms',
+    category: 'account',
+    question: 'Saan ang Terms and Conditions at Privacy Policy?',
+    answer:
+      'Sa registration, i-check ang dalawang checkbox: Terms and Conditions at Privacy Policy. Naka-record ang consent bago ka makapasok sa app. Pwede mong buksan at basahin ang buong Terms at Privacy sa registration at sa Profile.',
+    keywords: ['terms', 'conditions', 'privacy', 'policy', 'consent', 'checkbox', 'legal', 'terms of service'],
+  },
 
   /* ---------------- 2. Worker Verification ---------------- */
   {
@@ -105,16 +113,16 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'verification',
     question: 'Ano ang Worker verification?',
     answer:
-      'Ang Administrator ang nagve-verify ng Worker account. Kapag verified ka na, saka ka lang isasama sa job matching at makakatanggap ng job opportunities. Hindi ito ginagawa ng Client.',
-    keywords: ['verify', 'verified', 'verification', 'admin', 'administrator', 'approve', 'aprubado', 'legit'],
+      'Mandatory mag-submit ang Worker ng valid ID: PhilSys, LTO, Passport, UMID, o Postal. Ang Administrator ang nagre-review at nagve-verify. Kapag verified ka na, saka ka lang isasama sa job matching. Hindi ito ginagawa ng Client. Ang review ay pwedeng umabot ng hanggang 24 hours — informational lang iyon, hindi forced wait — pero matching pa rin ang nangangailangan ng verified.',
+    keywords: ['verify', 'verified', 'verification', 'admin', 'administrator', 'approve', 'aprubado', 'legit', 'valid id', 'philsys', 'lto', 'passport', 'umid', 'postal', '24 hours', 'pending'],
   },
   {
     id: 'ver-no-jobs',
     category: 'verification',
     question: 'Bakit wala akong nakikitang job opportunities?',
     answer:
-      'Para makakita ng opportunities, kailangan verified, active at available ang Worker, at may kahit isang skill na tumutugma sa kailangan ng trabaho. I-check ang availability at skills mo sa dashboard, o hintayin ang verification ng Administrator.',
-    keywords: ['walang trabaho', 'wala', 'empty', 'no jobs', 'hindi lumalabas', 'bakit', 'opportunities'],
+      'Para makakita ng opportunities sa Home, kailangan verified, active, at Available ang Worker, at may kahit isang skill na tumutugma sa kailangan ng trabaho. I-check ang Available o Busy at skills mo sa Home. Kung Verification pending pa, hindi ka isasama sa matching hanggang i-verify ng Administrator.',
+    keywords: ['walang trabaho', 'wala', 'empty', 'no jobs', 'hindi lumalabas', 'bakit', 'opportunities', 'home', 'pending'],
   },
 
   /* ---------------- 3. Worker Profile / Skills ---------------- */
@@ -131,8 +139,8 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'profile',
     question: 'Ano ang availability status?',
     answer:
-      'Ipinapakita nito kung available ka para tumanggap ng trabaho. Kapag hindi ka available, hindi ka isasama sa matching kahit verified ka. Pwede mo itong baguhin sa Worker dashboard.',
-    keywords: ['availability', 'available', 'unavailable', 'status', 'busy', 'libre'],
+      'Available o Busy lang ang status sa app. Kapag Available ka at verified, pwedeng isama ka sa matching. Kapag Busy, hindi ka isasama kahit verified ka. Pwede mo itong baguhin sa Home.',
+    keywords: ['availability', 'available', 'unavailable', 'status', 'busy', 'libre', 'home'],
   },
   {
     id: 'prof-rating',
@@ -149,8 +157,8 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'job-posting',
     question: 'Paano mag-post ng trabaho?',
     answer:
-      'Sa Client dashboard, gamitin ang Post a Job form: ilagay ang title, description, address, date at time, budget, at piliin ang kailangang skills. Pagka-post, magiging open ito para sa mga qualified Worker.',
-    keywords: ['post', 'mag-post', 'trabaho', 'job', 'gumawa ng trabaho', 'client', 'budget', 'hire'],
+      'Sa Client Home, piliin ang primary skill para sa Post a Job — hindi na magta-type ng title ang Client; ang backend ang magge-generate nito — tapos ilagay ang description, address, date at time, budget, at iba pang kailangang skills. Santa Ana, Pateros lang ang service area. Kung nasa loob ka ng area, i-tap ang Use Current Location para ma-autofill ang address. Pagka-post, magiging open ito para sa mga qualified Worker.',
+    keywords: ['post', 'mag-post', 'trabaho', 'job', 'gumawa ng trabaho', 'client', 'budget', 'hire', 'primary skill', 'title', 'current location', 'santa ana', 'pateros', 'autofill'],
   },
   {
     id: 'job-choose',
@@ -167,16 +175,16 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'opportunities',
     question: 'Paano gumagana ang job matching?',
     answer:
-      'Ipinapakita ang trabaho sa mga Worker na verified, active, available, at may kahit isang tumutugmang skill. May match score: Skill 50%, Location 30%, Rating 20%. Ang Worker ang pumipili at tumatanggap ng trabaho, hindi ang system.',
-    keywords: ['matching', 'match', 'paano', 'how', 'score', 'skill', 'location', 'rating', 'algorithm'],
+      'Ipinapakita ang trabaho sa Home ng mga Worker na verified, active, Available, at may kahit isang tumutugmang skill. May match score: Skill 50%, Location 30%, Rating 20%. Ang Worker ang pumipili at tumatanggap ng trabaho, hindi ang system.',
+    keywords: ['matching', 'match', 'paano', 'how', 'score', 'skill', 'location', 'rating', 'algorithm', 'home'],
   },
   {
     id: 'opp-accept',
     category: 'opportunities',
     question: 'Paano tumanggap ng job opportunity?',
     answer:
-      'Sa Job Opportunities, buksan ang trabaho at i-tap ang Accept. Isang Worker lang ang makakatanggap ng bawat trabaho; kapag natanggap na ito ng iba, hindi na ito lalabas sa listahan mo.',
-    keywords: ['accept', 'tanggap', 'tumanggap', 'kunin', 'opportunity', 'apply', 'mag-apply'],
+      'Sa Home, buksan ang trabaho at i-tap ang Accept. Isang Worker lang ang makakatanggap ng bawat trabaho; kapag natanggap na ito ng iba, hindi na ito lalabas sa listahan mo.',
+    keywords: ['accept', 'tanggap', 'tumanggap', 'kunin', 'opportunity', 'apply', 'mag-apply', 'home'],
   },
   {
     id: 'opp-nearest',
@@ -317,8 +325,8 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'general',
     question: 'Ano ang SkillMatch?',
     answer:
-      'Ang SkillMatch ay livelihood matching platform na nag-uugnay ng local Workers at Clients. Ang app na ito ang ginagamit ng Worker, Client, at Administrator. Ang website ay information page lang.',
-    keywords: ['skillmatch', 'ano', 'what is', 'about', 'tungkol', 'platform', 'app', 'website'],
+      'Ang SkillMatch ay livelihood matching platform na nag-uugnay ng local Workers at Clients sa Santa Ana, Pateros. Ang app na ito ang ginagamit ng Worker, Client, at Administrator. Ang website ay information page lang.',
+    keywords: ['skillmatch', 'ano', 'what is', 'about', 'tungkol', 'platform', 'app', 'website', 'santa ana', 'pateros'],
   },
   {
     id: 'gen-help',

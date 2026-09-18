@@ -1,86 +1,35 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { AppButton } from '@/components/app-button';
-import { AppChip } from '@/components/app-chip';
+import { ActiveBookingHomeCard } from '@/components/active-booking-home-card';
+import { AppCard } from '@/components/app-card';
 import { AppListRow } from '@/components/app-list-row';
-import { AppSegment } from '@/components/app-segment';
+import { AvailabilityControl } from '@/components/availability-control';
 import { HomeHeader } from '@/components/home-header';
 import { InlineStatus } from '@/components/inline-status';
+import { JobOpportunityCompactCard } from '@/components/job-opportunity-compact-card';
 import { SectionHeader } from '@/components/section-header';
 import { SkillMatchTheme } from '@/constants/theme';
-import { formatCardDateTime } from '@/lib/date-time';
+import { loadWorkerBookings, type WorkerBooking } from '@/lib/booking-records';
 import { homeGreeting } from '@/lib/home-greeting';
 import { firstNameFromFullName } from '@/lib/initials';
-import { supabase } from '@/lib/supabase';
-import { workerVerificationLabel } from '@/lib/worker-profile';
+import {
+  JOB_OPPORTUNITY_COPY,
+  loadMyJobOpportunities,
+  type JobOpportunity,
+} from '@/lib/job-opportunities';
+import {
+  IDENTITY_COPY,
+  getMyIdentitySubmission,
+  workerHomeIdentityNotice,
+  type IdentityDocumentStatus,
+} from '@/lib/worker-identity';
 import { useAccount } from '@/providers/account-provider';
-import { AVAILABILITY_OPTIONS, useWorkerProfile } from '@/providers/worker-profile-provider';
+import { useWorkerProfile } from '@/providers/worker-profile-provider';
 
 const { colors, type, spacing, size } = SkillMatchTheme.ui;
-const PREVIEW_LIMIT = 3;
-
-type OpportunityPreview = {
-  job_id: string;
-  title: string;
-  barangay: string | null;
-  city: string | null;
-  scheduled_at: string | null;
-  total_points: number;
-};
-
-function toNumber(v: unknown): number | null {
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  if (typeof v === 'string' && v.trim() !== '') {
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
-  }
-  return null;
-}
-
-function toNullableText(v: unknown): string | null {
-  return typeof v === 'string' && v.trim() !== '' ? v : null;
-}
-
-function toPreview(row: unknown): OpportunityPreview | null {
-  if (typeof row !== 'object' || row === null) return null;
-  const r = row as Record<string, unknown>;
-  const jobId = typeof r.job_id === 'string' ? r.job_id : null;
-  const title = typeof r.title === 'string' ? r.title : null;
-  const total = toNumber(r.total_points);
-  if (jobId === null || title === null || total === null) return null;
-  return {
-    job_id: jobId,
-    title,
-    barangay: toNullableText(r.barangay),
-    city: toNullableText(r.city),
-    scheduled_at: toNullableText(r.scheduled_at),
-    total_points: total,
-  };
-}
-
-function formatLocation(barangay: string | null, city: string | null): string | null {
-  const parts = [barangay, city].filter((part): part is string => part !== null);
-  return parts.length > 0 ? parts.join(', ') : null;
-}
-
-function formatPoints(value: number): string {
-  return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
-}
-
-async function loadOpportunityPreview(): Promise<OpportunityPreview[]> {
-  const res = await supabase.rpc('list_my_job_opportunities');
-  if (res.error) {
-    throw new Error(res.error.message || 'The request failed.');
-  }
-  const rows = Array.isArray(res.data) ? res.data : [];
-  return rows
-    .map(toPreview)
-    .filter((row): row is OpportunityPreview => row !== null)
-    .slice(0, PREVIEW_LIMIT);
-}
 
 export default function WorkerHome() {
   const { account } = useAccount();
@@ -99,16 +48,34 @@ export default function WorkerHome() {
 
   const [oppLoading, setOppLoading] = useState(false);
   const [oppError, setOppError] = useState<string | null>(null);
-  const [opportunities, setOpportunities] = useState<OpportunityPreview[]>([]);
+  const [opportunities, setOpportunities] = useState<JobOpportunity[]>([]);
+  const [bookings, setBookings] = useState<WorkerBooking[]>([]);
+  const [identityStatus, setIdentityStatus] = useState<IdentityDocumentStatus | null>(null);
+  const [identityReady, setIdentityReady] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       void refreshPersistedAvailability();
+      void loadWorkerBookings()
+        .then(setBookings)
+        .catch(() => {
+          setBookings([]);
+        });
+      void getMyIdentitySubmission()
+        .then((row) => {
+          setIdentityStatus(row?.status ?? null);
+        })
+        .catch(() => {
+          setIdentityStatus(null);
+        })
+        .finally(() => {
+          setIdentityReady(true);
+        });
     }, [refreshPersistedAvailability])
   );
 
-  const loadPreview = useCallback(async () => {
-    const rows = await loadOpportunityPreview();
+  const loadOpportunities = useCallback(async () => {
+    const rows = await loadMyJobOpportunities();
     setOpportunities(rows);
     setOppError(null);
   }, []);
@@ -120,13 +87,13 @@ export default function WorkerHome() {
     void (async () => {
       setOppLoading(true);
       try {
-        await loadPreview();
+        await loadOpportunities();
       } catch (error: unknown) {
         if (cancelled) return;
         if (error instanceof Error && error.message) {
           console.warn('[V2-A] list_my_job_opportunities failed:', error.message);
         }
-        setOppError('Unable to load job opportunities. Please try again.');
+        setOppError(JOB_OPPORTUNITY_COPY.loadFailed);
       } finally {
         if (!cancelled) setOppLoading(false);
       }
@@ -135,10 +102,11 @@ export default function WorkerHome() {
     return () => {
       cancelled = true;
     };
-  }, [availability, isLoading, loadError, loadPreview]);
+  }, [availability, isLoading, loadError, loadOpportunities]);
 
   const fullName = account?.full_name ?? '—';
   const firstName = firstNameFromFullName(account?.full_name ?? '');
+  const identityNotice = workerHomeIdentityNotice(isVerified, identityStatus);
 
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
@@ -156,10 +124,33 @@ export default function WorkerHome() {
         </Text>
       </View>
 
+      {!isLoading && !loadError && identityReady && identityNotice !== 'none' ? (
+        <View style={styles.pendingPad}>
+          <AppCard variant="status" tone="warning">
+            {identityNotice === 'rejected' ? (
+              <>
+                <Text style={styles.pendingHeadline}>{IDENTITY_COPY.homeRejectedHeadline}</Text>
+                {IDENTITY_COPY.homeRejectedBody.map((line) => (
+                  <Text key={line} style={styles.pendingBody}>
+                    {line}
+                  </Text>
+                ))}
+              </>
+            ) : (
+              <>
+                <Text style={styles.pendingHeadline}>{IDENTITY_COPY.homePendingHeadline}</Text>
+                {IDENTITY_COPY.homePendingBody.map((line) => (
+                  <Text key={line} style={styles.pendingBody}>
+                    {line}
+                  </Text>
+                ))}
+              </>
+            )}
+          </AppCard>
+        </View>
+      ) : null}
+
       <View style={styles.availabilityBlock}>
-        {!isLoading && !loadError && !isVerified ? (
-          <AppChip variant="warning" label={workerVerificationLabel(false)} />
-        ) : null}
         <Text style={styles.sectionTitle}>Availability</Text>
         <Text style={styles.help}>This is the status used for matching.</Text>
         {isLoading ? (
@@ -167,15 +158,12 @@ export default function WorkerHome() {
         ) : loadError ? (
           <InlineStatus variant="error" message={loadError} />
         ) : (
-          <AppSegment
-            options={AVAILABILITY_OPTIONS}
+          <AvailabilityControl
             value={availability}
             onChange={(status) => {
               void persistAvailability(status);
             }}
             disabled={isPersistingAvailability}
-            accessibilityLabel="Availability"
-            style={styles.availabilitySegment}
           />
         )}
         {isPersistingAvailability ? <ActivityIndicator color={colors.primary} /> : null}
@@ -187,25 +175,26 @@ export default function WorkerHome() {
         ) : null}
       </View>
 
-      <View style={styles.jobsBlock}>
-        <SectionHeader
-          title="Job opportunities"
-          style={styles.sectionHeader}
-          trailing={
-            availability === 'available' ? (
-              <AppButton
-                variant="ghost"
-                label="View all"
-                onPress={() => router.push('/worker/opportunities')}
-                accessibilityLabel="View all job opportunities"
-              />
-            ) : undefined
+      <View style={styles.bookingBlock}>
+        <ActiveBookingHomeCard
+          role="worker"
+          bookings={bookings}
+          onPressPrimary={(booking) =>
+            router.push({
+              pathname: '/worker/booking-details',
+              params: { bookingId: booking.booking_id },
+            } as unknown as Href)
           }
+          onPressViewAll={() => router.push('/worker/bookings' as Href)}
         />
+      </View>
+
+      <View style={styles.jobsBlock}>
+        <SectionHeader title="Job opportunities" style={styles.sectionHeader} />
         {availability !== 'available' ? (
           <InlineStatus
             variant="note"
-            message="Set your status to Available to receive matching job opportunities. Busy and Offline workers are not included in matching."
+            message="Set your status to Available to receive matching job opportunities. Busy workers are not included in matching."
             style={styles.statusPad}
           />
         ) : oppLoading ? (
@@ -223,23 +212,19 @@ export default function WorkerHome() {
             style={styles.statusPad}
           />
         ) : (
-          opportunities.map((job, index) => {
-            const location = formatLocation(job.barangay, job.city);
-            const schedule = formatCardDateTime(job.scheduled_at);
-            const subtitle = [location, schedule].filter((part): part is string => part !== null).join(
-              ' · '
-            );
-            return (
-              <AppListRow
-                key={job.job_id}
-                title={job.title}
-                subtitle={subtitle.length > 0 ? subtitle : undefined}
-                trailing={`Match Score: ${formatPoints(job.total_points)}/100`}
-                showDivider={index < opportunities.length - 1}
-                style={styles.listRow}
+          opportunities.map((job) => (
+            <View key={job.job_id} style={styles.cardPad}>
+              <JobOpportunityCompactCard
+                opportunity={job}
+                onPress={() =>
+                  router.push({
+                    pathname: '/worker/opportunity-details',
+                    params: { jobId: job.job_id },
+                  } as unknown as Href)
+                }
               />
-            );
-          })
+            </View>
+          ))
         )}
       </View>
 
@@ -284,6 +269,18 @@ const styles = StyleSheet.create({
     ...type.display,
     color: colors.textPrimary,
   },
+  pendingPad: {
+    paddingHorizontal: spacing.gutter,
+    marginBottom: spacing.xxl,
+  },
+  pendingHeadline: {
+    ...type.sectionTitle,
+    color: colors.warning,
+  },
+  pendingBody: {
+    ...type.body,
+    color: colors.textPrimary,
+  },
   availabilityBlock: {
     paddingHorizontal: spacing.gutter,
     gap: spacing.sm,
@@ -297,17 +294,20 @@ const styles = StyleSheet.create({
     ...type.helper,
     color: colors.textSecondary,
   },
-  availabilitySegment: {
-    height: 44,
-  },
   jobsBlock: {
     gap: spacing.md,
+    marginBottom: spacing.xxl,
+  },
+  bookingBlock: {
     marginBottom: spacing.xxl,
   },
   sectionHeader: {
     paddingHorizontal: spacing.gutter,
   },
   statusPad: {
+    paddingHorizontal: spacing.gutter,
+  },
+  cardPad: {
     paddingHorizontal: spacing.gutter,
   },
   listRow: {

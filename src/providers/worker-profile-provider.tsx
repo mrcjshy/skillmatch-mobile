@@ -9,12 +9,15 @@ import {
 
 import { supabase } from '@/lib/supabase';
 import {
+  AVAILABILITY_CONTROL_OPTIONS,
   WORKER_PROFILE_AVAILABILITY_READ_COLUMNS,
   buildWorkerProfileAvailabilityUpdateRow,
   buildWorkerProfileInsertRow,
   buildWorkerProfileUpdateRow,
   isWorkerVerified,
   parseWorkerProfileAvailabilityStatus,
+  presentAvailabilityControlValue,
+  shouldPersistAvailabilityChange,
 } from '@/lib/worker-profile';
 import { useAccount } from '@/providers/account-provider';
 
@@ -24,9 +27,7 @@ export type MasterSkill = { id: string; skill_name: string };
 export type SkillSelection = Record<string, Proficiency>;
 
 export const AVAILABILITY_OPTIONS: { value: AvailabilityStatus; label: string }[] = [
-  { value: 'available', label: 'Available' },
-  { value: 'busy', label: 'Busy' },
-  { value: 'offline', label: 'Offline' },
+  ...AVAILABILITY_CONTROL_OPTIONS,
 ];
 
 export const PROFICIENCY_OPTIONS: { value: Proficiency; label: string }[] = [
@@ -215,7 +216,8 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
   async function persistAvailability(status: AvailabilityStatus) {
     if (isPersistingAvailability || isSaving || !userId) return;
     if (!isAvailability(status)) return;
-    if (status === availability) return;
+    const presentedChosen = presentAvailabilityControlValue(status);
+    if (!shouldPersistAvailabilityChange(availability, presentedChosen)) return;
     if (!profileId) {
       setPersistAvailabilityError(COPY.persistAvailability);
       return;

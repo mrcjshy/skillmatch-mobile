@@ -24,6 +24,7 @@ import { InlineStatus } from '@/components/inline-status';
 import { SectionHeader } from '@/components/section-header';
 import { SelectedSkillChips } from '@/components/selected-skill-chips';
 import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
+import { WorkerIdentitySection } from '@/components/worker-identity-section';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   copySkillSelection,
@@ -177,6 +178,8 @@ export default function WorkerProfile() {
           <Text style={styles.fieldLabel}>Availability</Text>
           <AvailabilityControl value={availability} onChange={setAvailability} disabled={busy} />
 
+          <WorkerIdentitySection disabled={busy} surface="profile" />
+
           <SectionHeader title="Skills" />
           <SelectedSkillChips
             skills={selectedSkills}
@@ -297,8 +300,20 @@ export default function WorkerProfile() {
           label="Report an app issue"
           hint="Send an app issue report"
           disabled={busy}
-          last
           onPress={() => router.push('/worker/report-app' as unknown as Href)}
+        />
+        <NavRow
+          label="Terms and Conditions"
+          hint="Draft — not final legal text"
+          disabled={busy}
+          onPress={() => router.push('/worker/terms' as Href)}
+        />
+        <NavRow
+          label="Privacy Policy"
+          hint="Draft — not final legal text"
+          disabled={busy}
+          last
+          onPress={() => router.push('/worker/privacy' as Href)}
         />
       </AppCard>
 

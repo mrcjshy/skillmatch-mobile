@@ -15,6 +15,10 @@ export default function AdminLayout() {
         name="admin/report-details"
         options={{ title: 'Report Details', headerShown: true }}
       />
+      <Stack.Screen
+        name="admin/verification-details"
+        options={{ title: 'Verification Details', headerShown: true }}
+      />
     </Stack>
   );
 }

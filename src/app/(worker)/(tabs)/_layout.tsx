@@ -68,13 +68,8 @@ export default function WorkerTabsLayout() {
         <Tabs.Screen
           name="worker/opportunities"
           options={{
-            title: 'Jobs',
-            tabBarIcon: ({ color }) => (
-              <TabIcon name={{ android: 'work', ios: 'briefcase.fill' }} color={color} size={24} />
-            ),
-            tabBarLabel: ({ focused, color }) => (
-              <TabLabel focused={focused} color={color}>Jobs</TabLabel>
-            ),
+            href: null,
+            headerShown: false,
           }}
         />
         <Tabs.Screen

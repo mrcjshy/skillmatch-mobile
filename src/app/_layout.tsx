@@ -34,6 +34,8 @@ export type AccessState =
   | 'password-recovery'
   | 'account-pending'
   | 'blocked'
+  | 'needs-consent'
+  | 'worker-identity'
   | 'worker'
   | 'client'
   | 'administrator'
@@ -50,10 +52,14 @@ export function deriveAccessState(
     SessionContextValue,
     'session' | 'isSessionLoading' | 'sessionError' | 'recoveryStatus'
   >,
-  accountValue: Pick<AccountContextValue, 'account' | 'status'>
+  accountValue: Pick<
+    AccountContextValue,
+    'account' | 'status' | 'hasCurrentConsent' | 'identitySubmission' | 'workerIsVerified'
+  >
 ): AccessState {
   const { session, isSessionLoading, sessionError, recoveryStatus } = sessionValue;
-  const { account, status } = accountValue;
+  const { account, status, hasCurrentConsent, identitySubmission, workerIsVerified } =
+    accountValue;
 
   if (isSessionLoading) return 'session-restoring';
   if (isRecoverySurfaceActive(recoveryStatus)) return 'password-recovery';
@@ -64,10 +70,20 @@ export function deriveAccessState(
 
   const resolved = status === 'resolved' && account !== null;
   if (resolved && account.is_active === false) return 'blocked';
-  if (resolved && account.is_active === true && account.role === 'worker') return 'worker';
-  if (resolved && account.is_active === true && account.role === 'client') return 'client';
+  // Administrators are provisioned, not self-registered — never lock them
+  // behind consent or Worker ID onboarding.
   if (resolved && account.is_active === true && account.role === 'administrator') {
     return 'administrator';
+  }
+  if (resolved && account.is_active === true && account.role === 'worker') {
+    if (hasCurrentConsent !== true) return 'needs-consent';
+    const submitted = identitySubmission !== null;
+    if (!submitted && workerIsVerified !== true) return 'worker-identity';
+    return 'worker';
+  }
+  if (resolved && account.is_active === true && account.role === 'client') {
+    if (hasCurrentConsent !== true) return 'needs-consent';
+    return 'client';
   }
 
   // status === 'error', resolved with null account, invalid role, invalid
@@ -80,6 +96,8 @@ export const ACCESS_ROUTE: Partial<Record<AccessState, Href>> = {
   'signed-out': '/login',
   'password-recovery': '/update-password',
   blocked: '/blocked',
+  'needs-consent': '/legal-consent',
+  'worker-identity': '/verify-identity',
   worker: '/worker',
   client: '/client',
   administrator: '/admin',
@@ -127,7 +145,13 @@ function RootNavigator() {
           guard flips and purges the current screen from history. */}
       <Stack.Screen name="index" />
       <Stack.Screen name="+not-found" />
-      <Stack.Protected guard={access === 'signed-out'}>
+      <Stack.Protected
+        guard={
+          access === 'signed-out' ||
+          access === 'needs-consent' ||
+          access === 'worker-identity'
+        }
+      >
         <Stack.Screen name="(auth)" />
       </Stack.Protected>
       <Stack.Protected guard={access === 'password-recovery'}>

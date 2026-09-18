@@ -14,6 +14,30 @@ export const WORKER_PROFILE_PROTECTED_WRITE_FIELDS = [
 ] as const;
 
 export type WorkerProfileWriteAvailability = 'available' | 'busy' | 'offline';
+export type AvailabilityControlPresentedValue = 'available' | 'busy';
+/** Profile/Home control options. Offline remains a readable DB value until BE-5. */
+export const AVAILABILITY_CONTROL_OPTIONS: {
+  value: AvailabilityControlPresentedValue;
+  label: string;
+}[] = [
+  { value: 'available', label: 'Available' },
+  { value: 'busy', label: 'Busy' },
+];
+
+/** Control display only. Historical `offline` is shown as Busy; DB CHECK stays tri-state. */
+export function presentAvailabilityControlValue(
+  status: WorkerProfileWriteAvailability
+): AvailabilityControlPresentedValue {
+  return status === 'available' ? 'available' : 'busy';
+}
+
+/** Persist only when the presented choice differs from the presented stored value. */
+export function shouldPersistAvailabilityChange(
+  stored: WorkerProfileWriteAvailability,
+  chosen: AvailabilityControlPresentedValue
+): boolean {
+  return presentAvailabilityControlValue(stored) !== chosen;
+}
 
 /** Authoritative verification is the boolean true only. */
 export function isWorkerVerified(value: unknown): boolean {
@@ -21,7 +45,7 @@ export function isWorkerVerified(value: unknown): boolean {
 }
 
 export function workerVerificationLabel(isVerified: boolean): string {
-  return isVerified ? 'Verified' : 'Verification pending';
+  return isVerified ? 'Verified' : 'Not yet verified';
 }
 
 export function buildWorkerProfileInsertRow(input: {

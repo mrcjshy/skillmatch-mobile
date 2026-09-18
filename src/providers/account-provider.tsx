@@ -8,6 +8,8 @@ import {
 } from 'react';
 
 import { supabase } from '@/lib/supabase';
+import { getMyConsent, isCurrentLegalConsent, type UserConsent } from '@/lib/user-consent';
+import { getMyIdentitySubmission, type WorkerIdentitySubmission } from '@/lib/worker-identity';
 import { useSession } from '@/providers/session-provider';
 
 /**
@@ -77,6 +79,13 @@ export type AccountContextValue = {
   isAccountLoading: boolean;
   accountError: AccountBootstrapError | null;
   retryAccountBootstrap: () => void;
+  consent: UserConsent | null;
+  hasCurrentConsent: boolean;
+  refreshConsent: () => Promise<void>;
+  identitySubmission: WorkerIdentitySubmission | null;
+  hasIdentitySubmission: boolean;
+  workerIsVerified: boolean;
+  refreshIdentity: () => Promise<void>;
 };
 
 const AccountContext = createContext<AccountContextValue | undefined>(undefined);
@@ -255,12 +264,50 @@ async function bootstrapAccount(
   return resolveFromRow(second.row, userId);
 }
 
+/**
+ * Own-row identity gate inputs. Fail closed on load errors: missing
+ * submission and unverified. Never writes worker_profiles.
+ */
+async function loadWorkerIdentityGate(userId: string): Promise<{
+  identitySubmission: WorkerIdentitySubmission | null;
+  workerIsVerified: boolean;
+}> {
+  let identitySubmission: WorkerIdentitySubmission | null = null;
+  let workerIsVerified = false;
+
+  try {
+    identitySubmission = await getMyIdentitySubmission();
+  } catch {
+    identitySubmission = null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('worker_profiles')
+      .select('is_verified')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (!error && data?.is_verified === true) {
+      workerIsVerified = true;
+    }
+  } catch {
+    workerIsVerified = false;
+  }
+
+  return { identitySubmission, workerIsVerified };
+}
+
 export function AccountProvider({ children }: { children: ReactNode }) {
   const { session, isSessionLoading, sessionError } = useSession();
 
   const [account, setAccount] = useState<AccountRecord | null>(null);
   const [status, setStatus] = useState<AccountStatus>('idle');
   const [accountError, setAccountError] = useState<AccountBootstrapError | null>(null);
+  const [consent, setConsent] = useState<UserConsent | null>(null);
+  const [identitySubmission, setIdentitySubmission] = useState<WorkerIdentitySubmission | null>(
+    null
+  );
+  const [workerIsVerified, setWorkerIsVerified] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
 
   const userId = session?.user.id;
@@ -272,6 +319,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     if (isSessionLoading || sessionError || !session || !userId) {
       setAccount(null);
       setAccountError(null);
+      setConsent(null);
+      setIdentitySubmission(null);
+      setWorkerIsVerified(false);
       setStatus('idle');
       return;
     }
@@ -281,17 +331,47 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
     setAccount(null);
     setAccountError(null);
+    setConsent(null);
+    setIdentitySubmission(null);
+    setWorkerIsVerified(false);
     setStatus('pending');
 
     bootstrapAccount(userId, userEmail, userMetadata)
-      .then((result) => {
+      .then(async (result) => {
         if (cancelled) return;
         if (result.ok) {
+          let consentRow: UserConsent | null = null;
+          let nextIdentity: WorkerIdentitySubmission | null = null;
+          let nextVerified = false;
+
+          // Administrators skip consent and identity. Self-registered
+          // Worker/Client load consent (fail closed) without changing
+          // account status if that load fails.
+          if (result.account.role !== 'administrator') {
+            try {
+              consentRow = await getMyConsent();
+            } catch {
+              consentRow = null;
+            }
+            if (result.account.role === 'worker' && isCurrentLegalConsent(consentRow)) {
+              const identity = await loadWorkerIdentityGate(result.account.id);
+              nextIdentity = identity.identitySubmission;
+              nextVerified = identity.workerIsVerified;
+            }
+          }
+
+          if (cancelled) return;
           setAccount(result.account);
+          setConsent(consentRow);
+          setIdentitySubmission(nextIdentity);
+          setWorkerIsVerified(nextVerified);
           setAccountError(null);
           setStatus('resolved');
         } else {
           setAccount(null);
+          setConsent(null);
+          setIdentitySubmission(null);
+          setWorkerIsVerified(false);
           setAccountError(result.error);
           setStatus('error');
         }
@@ -299,6 +379,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       .catch(() => {
         if (cancelled) return;
         setAccount(null);
+        setConsent(null);
+        setIdentitySubmission(null);
+        setWorkerIsVerified(false);
         setAccountError({
           code: 'account_fetch_failed',
           message: 'Could not load your account. Please try again.',
@@ -319,6 +402,32 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     setRetryToken((token) => token + 1);
   }, []);
 
+  const refreshConsent = useCallback(async () => {
+    if (!account || account.role === 'administrator') {
+      return;
+    }
+    try {
+      const row = await getMyConsent();
+      if (account.role === 'worker' && isCurrentLegalConsent(row)) {
+        const identity = await loadWorkerIdentityGate(account.id);
+        setIdentitySubmission(identity.identitySubmission);
+        setWorkerIsVerified(identity.workerIsVerified);
+      }
+      setConsent(row);
+    } catch {
+      setConsent(null);
+    }
+  }, [account]);
+
+  const refreshIdentity = useCallback(async () => {
+    if (!account || account.role !== 'worker') {
+      return;
+    }
+    const identity = await loadWorkerIdentityGate(account.id);
+    setIdentitySubmission(identity.identitySubmission);
+    setWorkerIsVerified(identity.workerIsVerified);
+  }, [account]);
+
   return (
     <AccountContext.Provider
       value={{
@@ -327,6 +436,13 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         isAccountLoading: status === 'pending',
         accountError,
         retryAccountBootstrap,
+        consent,
+        hasCurrentConsent: isCurrentLegalConsent(consent),
+        refreshConsent,
+        identitySubmission,
+        hasIdentitySubmission: identitySubmission !== null,
+        workerIsVerified,
+        refreshIdentity,
       }}
     >
       {children}

@@ -71,8 +71,20 @@ export default function ClientProfile() {
               label="Report an app issue"
               hint="Send an app issue report"
               disabled={isSigningOut}
-              last
               onPress={() => router.push('/client/report-app' as unknown as Href)}
+            />
+            <NavRow
+              label="Terms and Conditions"
+              hint="Draft — not final legal text"
+              disabled={isSigningOut}
+              onPress={() => router.push('/client/terms' as Href)}
+            />
+            <NavRow
+              label="Privacy Policy"
+              hint="Draft — not final legal text"
+              disabled={isSigningOut}
+              last
+              onPress={() => router.push('/client/privacy' as Href)}
             />
           </View>
         </AppCard>

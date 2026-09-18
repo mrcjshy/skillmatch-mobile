@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AVAILABILITY_CONTROL_OPTIONS,
   WORKER_PROFILE_AVAILABILITY_READ_COLUMNS,
   WORKER_PROFILE_PROTECTED_WRITE_FIELDS,
   buildWorkerProfileAvailabilityUpdateRow,
@@ -8,6 +9,8 @@ import {
   buildWorkerProfileUpdateRow,
   isWorkerVerified,
   parseWorkerProfileAvailabilityStatus,
+  presentAvailabilityControlValue,
+  shouldPersistAvailabilityChange,
   workerVerificationLabel,
 } from './worker-profile';
 
@@ -29,13 +32,41 @@ describe('isWorkerVerified', () => {
   });
 });
 
+describe('presentAvailabilityControlValue', () => {
+  it('maps offline to busy for the control display', () => {
+    expect(presentAvailabilityControlValue('offline')).toBe('busy');
+  });
+
+  it('does not map available to busy', () => {
+    expect(presentAvailabilityControlValue('available')).toBe('available');
+  });
+});
+
 describe('workerVerificationLabel', () => {
   it('labels a verified Worker as Verified', () => {
     expect(workerVerificationLabel(true)).toBe('Verified');
   });
 
-  it('labels any other state as Verification pending', () => {
-    expect(workerVerificationLabel(false)).toBe('Verification pending');
+  it('labels an unverified Worker as Not yet verified', () => {
+    expect(workerVerificationLabel(false)).toBe('Not yet verified');
+  });
+});
+
+describe('shouldPersistAvailabilityChange', () => {
+  it('does not persist busy when stored offline is already presented as Busy', () => {
+    expect(shouldPersistAvailabilityChange('offline', 'busy')).toBe(false);
+  });
+
+  it('persists available when stored offline is chosen as Available', () => {
+    expect(shouldPersistAvailabilityChange('offline', 'available')).toBe(true);
+  });
+
+  it('persists busy when stored available is chosen as Busy', () => {
+    expect(shouldPersistAvailabilityChange('available', 'busy')).toBe(true);
+  });
+
+  it('does not persist busy when stored busy is chosen as Busy', () => {
+    expect(shouldPersistAvailabilityChange('busy', 'busy')).toBe(false);
   });
 });
 
@@ -111,6 +142,23 @@ describe('worker profile write payloads', () => {
     expect(parseWorkerProfileAvailabilityStatus('available')).toBe('available');
     expect(parseWorkerProfileAvailabilityStatus('busy')).toBe('busy');
     expect(parseWorkerProfileAvailabilityStatus('offline')).toBe('offline');
+  });
+
+  it('offers Available and Busy on the control without narrowing the DB CHECK', () => {
+    expect(AVAILABILITY_CONTROL_OPTIONS).toEqual([
+      { value: 'available', label: 'Available' },
+      { value: 'busy', label: 'Busy' },
+    ]);
+    expect(AVAILABILITY_CONTROL_OPTIONS.map((option) => option.value)).not.toContain('offline');
+  });
+
+  it('AVAILABILITY_CONTROL_OPTIONS has no offline choice', () => {
+    const values: string[] = AVAILABILITY_CONTROL_OPTIONS.map((option) => option.value);
+    expect(values).not.toContain('offline');
+    expect(AVAILABILITY_CONTROL_OPTIONS.map((option) => option.label)).toEqual([
+      'Available',
+      'Busy',
+    ]);
   });
 
   it('does not invent availability from invalid or extra payload fields', () => {

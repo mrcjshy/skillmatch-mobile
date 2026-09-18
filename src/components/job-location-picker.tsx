@@ -6,11 +6,14 @@ import {
   COPY,
   SANTA_ANA_PATEROS_DISPLAY_REGION,
   classifyMapAvailability,
+  formatReverseGeocodeAddress,
   isValidJobCoordinate,
   postingPinState,
   resolveCurrentLocationPin,
+  reviewJobPinPlacement,
   type ForegroundLocationLike,
   type JobPin,
+  type ReverseGeocodeLike,
 } from '@/lib/job-location';
 
 const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
@@ -59,6 +62,7 @@ type JobLocationPickerProps = {
   onNote: (note: string | null) => void;
   disabled?: boolean;
   onMapGesture?: (active: boolean) => void;
+  onAutofillAddress?: (address: string) => void;
 };
 
 class MapErrorBoundary extends Component<
@@ -88,6 +92,7 @@ export function JobLocationPicker({
   onNote,
   disabled = false,
   onMapGesture,
+  onAutofillAddress,
 }: JobLocationPickerProps) {
   const mapRef = useRef<MapHandle>(null);
   const [mapReady, setMapReady] = useState(mapsRuntime !== null);
@@ -97,9 +102,16 @@ export function JobLocationPicker({
   const MapView = mapsRuntime?.MapView;
   const Marker = mapsRuntime?.Marker;
 
-  function applyCoordinate(latitude: number, longitude: number): void {
+  async function applyCoordinate(latitude: number, longitude: number): Promise<void> {
     if (!isValidJobCoordinate(latitude, longitude)) return;
-    onChangePin({ latitude, longitude });
+    const nextPin = { latitude, longitude };
+    const result = await reviewJobPinPlacement(nextPin);
+    if (!result.ok) {
+      onNote(result.reason === 'invalid' ? COPY.invalidPin : COPY.outsideServiceArea);
+      onMapGesture?.(false);
+      return;
+    }
+    onChangePin(nextPin);
     onNote(null);
     onMapGesture?.(false);
   }
@@ -107,13 +119,13 @@ export function JobLocationPicker({
   function handleMapPress(event: MapCoordinateEvent): void {
     if (busy) return;
     const { latitude, longitude } = event.nativeEvent.coordinate;
-    applyCoordinate(latitude, longitude);
+    void applyCoordinate(latitude, longitude);
   }
 
   function handleMarkerDragEnd(event: MapCoordinateEvent): void {
     if (disabled) return;
     const { latitude, longitude } = event.nativeEvent.coordinate;
-    applyCoordinate(latitude, longitude);
+    void applyCoordinate(latitude, longitude);
   }
 
   async function handleUseCurrentLocation(): Promise<void> {
@@ -136,14 +148,38 @@ export function JobLocationPicker({
         onNote(COPY.locationUnavailable);
         return;
       }
+      const placement = await reviewJobPinPlacement(result.pin);
+      if (!placement.ok) {
+        onNote(placement.reason === 'invalid' ? COPY.invalidPin : COPY.outsideServiceArea);
+        return;
+      }
       onChangePin(result.pin);
-      onNote(null);
       mapRef.current?.animateToRegion({
         latitude: result.pin.latitude,
         longitude: result.pin.longitude,
         latitudeDelta: SANTA_ANA_PATEROS_DISPLAY_REGION.latitudeDelta,
         longitudeDelta: SANTA_ANA_PATEROS_DISPLAY_REGION.longitudeDelta,
       });
+      const geocoder = location as ForegroundLocationLike & ReverseGeocodeLike;
+      try {
+        if (typeof geocoder.reverseGeocodeAsync !== 'function') {
+          onNote(COPY.geocodeUnavailable);
+          return;
+        }
+        const rows = await geocoder.reverseGeocodeAsync({
+          latitude: result.pin.latitude,
+          longitude: result.pin.longitude,
+        });
+        const address = formatReverseGeocodeAddress(rows);
+        if (address) {
+          onAutofillAddress?.(address);
+          onNote(null);
+        } else {
+          onNote(COPY.geocodeUnavailable);
+        }
+      } catch {
+        onNote(COPY.geocodeUnavailable);
+      }
     } finally {
       setLocating(false);
       onMapGesture?.(false);

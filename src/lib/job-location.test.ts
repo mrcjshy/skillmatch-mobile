@@ -1,10 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
+import {
+  SANTA_ANA_PATEROS_INTERIOR_TEST_PIN,
+  SANTA_ANA_PATEROS_OUTSIDE_LEGACY_PIN,
+} from './santa-ana-service-area';
 import { supabase } from './supabase';
 import {
+  COPY,
   JobLocationError,
   SANTA_ANA_PATEROS_DISPLAY_REGION,
   authorizedMapsNavigationUrl,
+  formatReverseGeocodeAddress,
   classifyForegroundPermission,
   classifyMapAvailability,
   createJobLocationErrorCopy,
@@ -16,8 +22,10 @@ import {
   initialJobPin,
   isValidJobCoordinate,
   mapRegionForApproximateArea,
+  postingDescriptionError,
   postingLocationError,
   postingPinState,
+  reviewJobPinPlacement,
   projectAssignedWorkerLocation,
   projectPreAcceptWorkerLocation,
   resolveCurrentLocationPin,
@@ -72,10 +80,10 @@ describe('coordinate validation', () => {
 
 describe('posting location validation', () => {
   it('requires both a manual address and a selected exact pin', () => {
-    expect(postingLocationError('', { latitude: 14.5470774, longitude: 121.0716472 })).toBe(
+    expect(postingLocationError('', SANTA_ANA_PATEROS_INTERIOR_TEST_PIN)).toBe(
       'Please enter a house, street, or landmark.'
     );
-    expect(postingLocationError('   ', { latitude: 14.5470774, longitude: 121.0716472 })).toBe(
+    expect(postingLocationError('   ', SANTA_ANA_PATEROS_INTERIOR_TEST_PIN)).toBe(
       'Please enter a house, street, or landmark.'
     );
     expect(postingLocationError('123 Test Street', null)).toBe(
@@ -84,7 +92,101 @@ describe('posting location validation', () => {
     expect(postingLocationError('123 Test Street', { latitude: Number.NaN, longitude: 121.07 })).toBe(
       'Please select a valid location on the map.'
     );
-    expect(postingLocationError('123 Test Street', { latitude: 14.5470774, longitude: 121.0716472 })).toBeNull();
+    expect(postingLocationError('123 Test Street', SANTA_ANA_PATEROS_INTERIOR_TEST_PIN)).toBeNull();
+  });
+
+  it('rejects a pin outside the official Santa Ana, Pateros polygon', () => {
+    expect(postingLocationError('123 Test Street', SANTA_ANA_PATEROS_OUTSIDE_LEGACY_PIN)).toBe(
+      COPY.outsideServiceArea
+    );
+    expect(COPY.outsideServiceArea).toBe(
+      [
+        'Outside service area',
+        '',
+        'SkillMatch currently accepts jobs only within',
+        'Barangay Santa Ana, Pateros.',
+        '',
+        'Please choose a location inside the supported area.',
+      ].join('\n')
+    );
+  });
+});
+
+describe('posting description validation', () => {
+  it('requires a non-blank job description', () => {
+    expect(postingDescriptionError('')).toBe('Please describe the work needed.');
+    expect(postingDescriptionError('   ')).toBe('Please describe the work needed.');
+    expect(postingDescriptionError('Fix leaking kitchen faucet.')).toBeNull();
+  });
+});
+
+describe('reviewJobPinPlacement', () => {
+  it('uses the official polygon, not reverse geocode, to accept or reject a pin', async () => {
+    const location = {
+      reverseGeocodeAsync: vi.fn(async () => [{ city: 'Pateros', district: 'Santa Ana' }]),
+    };
+    await expect(reviewJobPinPlacement(SANTA_ANA_PATEROS_INTERIOR_TEST_PIN, location)).resolves.toEqual({
+      ok: true,
+    });
+    await expect(reviewJobPinPlacement(SANTA_ANA_PATEROS_OUTSIDE_LEGACY_PIN, location)).resolves.toEqual({
+      ok: false,
+      reason: 'outside',
+    });
+  });
+
+  it('keeps an interior pin accepted when reverse geocode names a neighboring city', async () => {
+    const location = {
+      reverseGeocodeAsync: vi.fn(async () => [{ city: 'Makati' }]),
+    };
+    await expect(reviewJobPinPlacement(SANTA_ANA_PATEROS_INTERIOR_TEST_PIN, location)).resolves.toEqual({
+      ok: true,
+    });
+  });
+});
+
+describe('formatReverseGeocodeAddress', () => {
+  it('prefers a non-blank formatted address', () => {
+    expect(
+      formatReverseGeocodeAddress([
+        {
+          formattedAddress: '123 M. Almeda Street, Santa Ana, Pateros',
+          street: 'Other Street',
+          city: 'Makati',
+        },
+      ])
+    ).toBe('123 M. Almeda Street, Santa Ana, Pateros');
+  });
+
+  it('joins street number, street, district, and city when formatted address is missing', () => {
+    expect(
+      formatReverseGeocodeAddress([
+        {
+          streetNumber: '123',
+          street: 'M. Almeda Street',
+          district: 'Santa Ana',
+          city: 'Pateros',
+        },
+      ])
+    ).toBe('123 M. Almeda Street, Santa Ana, Pateros');
+  });
+
+  it('uses the first usable row and returns null when nothing can be shown', () => {
+    expect(formatReverseGeocodeAddress(undefined)).toBeNull();
+    expect(formatReverseGeocodeAddress([])).toBeNull();
+    expect(formatReverseGeocodeAddress([{}])).toBeNull();
+    expect(formatReverseGeocodeAddress([{ formattedAddress: '   ' }])).toBeNull();
+    expect(
+      formatReverseGeocodeAddress([
+        { city: '  ' },
+        { streetNumber: '45', street: 'B. Morcilla Street', city: 'Pateros' },
+      ])
+    ).toBe('45 B. Morcilla Street, Pateros');
+  });
+
+  it('keeps Current Location autofill recoverable when reverse geocode is empty', () => {
+    expect(COPY.geocodeUnavailable).toBe(
+      "Couldn't fill the address automatically. You can still enter it manually."
+    );
   });
 });
 

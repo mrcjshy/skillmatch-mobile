@@ -15,6 +15,13 @@ import { AppButton } from '@/components/app-button';
 import { AppField } from '@/components/app-field';
 import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import {
+  CONSENT_COPY,
+  consentErrorCopy,
+  hasRequiredLegalAcceptance,
+  persistCurrentLegalConsentAfterSignup,
+} from '@/lib/user-consent';
+import { useAccount } from '@/providers/account-provider';
 
 const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
@@ -37,6 +44,7 @@ const ROLE_OPTIONS: { value: RegistrationRoleIntent; label: string }[] = [
 
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
+  const { retryAccountBootstrap } = useAccount();
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -45,6 +53,8 @@ export default function RegisterScreen() {
   const [selectedRole, setSelectedRole] = useState<RegistrationRoleIntent | null>(
     null
   );
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acknowledgedPrivacy, setAcknowledgedPrivacy] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -86,6 +96,10 @@ export default function RegisterScreen() {
       setErrorMessage('Please choose whether you are registering as a Worker or a Client.');
       return;
     }
+    if (!hasRequiredLegalAcceptance(acceptedTerms, acknowledgedPrivacy)) {
+      setErrorMessage(CONSENT_COPY.required);
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -106,17 +120,27 @@ export default function RegisterScreen() {
         return;
       }
 
-      // No navigation in either branch: account authorization and role
-      // routing are not active yet.
-      if (data.session) {
-        setSuccessMessage(
-          'Account created and authenticated. Account authorization setup comes next.'
-        );
-      } else {
+      if (!data.session) {
         setSuccessMessage(
           'Account created. Check your email if confirmation is required.'
         );
+        return;
       }
+
+      try {
+        await persistCurrentLegalConsentAfterSignup();
+      } catch (consentError: unknown) {
+        const code =
+          typeof consentError === 'object' &&
+          consentError !== null &&
+          'code' in consentError &&
+          typeof (consentError as { code?: unknown }).code === 'string'
+            ? (consentError as { code: string }).code
+            : 'unclassified';
+        console.warn('[V3-W1] registration consent persist failed:', code);
+        setErrorMessage(consentErrorCopy(consentError));
+      }
+      retryAccountBootstrap();
     } catch {
       setErrorMessage(
         'Registration failed. Please check your connection and try again.'
@@ -233,6 +257,50 @@ export default function RegisterScreen() {
             })}
           </View>
 
+          <View style={styles.consentRow}>
+            <Pressable
+              style={styles.checkboxHit}
+              onPress={() => setAcceptedTerms((current) => !current)}
+              disabled={isSubmitting}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: acceptedTerms, disabled: isSubmitting }}
+              accessibilityLabel="I agree to the Terms and Conditions"
+            >
+              <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
+                {acceptedTerms ? <Text style={styles.checkboxMark}>✓</Text> : null}
+              </View>
+            </Pressable>
+            <Text style={styles.consentText}>
+              I agree to the{' '}
+              <Link href="/terms" style={styles.inlineLink}>
+                Terms and Conditions
+              </Link>
+            </Text>
+          </View>
+
+          <View style={styles.consentRow}>
+            <Pressable
+              style={styles.checkboxHit}
+              onPress={() => setAcknowledgedPrivacy((current) => !current)}
+              disabled={isSubmitting}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: acknowledgedPrivacy, disabled: isSubmitting }}
+              accessibilityLabel="I acknowledge the Privacy Policy"
+            >
+              <View
+                style={[styles.checkbox, acknowledgedPrivacy && styles.checkboxChecked]}
+              >
+                {acknowledgedPrivacy ? <Text style={styles.checkboxMark}>✓</Text> : null}
+              </View>
+            </Pressable>
+            <Text style={styles.consentText}>
+              I acknowledge the{' '}
+              <Link href="/privacy" style={styles.inlineLink}>
+                Privacy Policy
+              </Link>
+            </Text>
+          </View>
+
           {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
           {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
 
@@ -313,6 +381,45 @@ const styles = StyleSheet.create({
   roleOptionTextSelected: {
     fontWeight: '700',
     color: colors.primary,
+  },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  checkboxHit: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.primary,
+  },
+  checkboxMark: {
+    color: colors.surface,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+  consentText: {
+    flex: 1,
+    ...type.helper,
+    color: colors.textPrimary,
+  },
+  inlineLink: {
+    color: colors.primary,
+    fontWeight: '700',
   },
   error: {
     ...type.helper,

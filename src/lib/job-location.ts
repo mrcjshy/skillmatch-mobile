@@ -10,6 +10,11 @@
 
 import { supabase } from './supabase';
 import type { JobPaymentMethod } from './job-payment';
+import {
+  evaluateSantaAnaJobPin,
+  isPinInSantaAnaServiceArea,
+  type ReverseGeocodeAddress,
+} from './santa-ana-service-area';
 
 /**
  * OSM relation 5347085 — Santa Ana, Pateros, Metro Manila.
@@ -52,11 +57,21 @@ const INVALID_INPUT = '22023';
 
 export const COPY = {
   missingAddress: 'Please enter a house, street, or landmark.',
+  missingDescription: 'Please describe the work needed.',
   missingPin: 'Please select a location on the map.',
   invalidPin: 'Please select a valid location on the map.',
+  outsideServiceArea: [
+    'Outside service area',
+    '',
+    'SkillMatch currently accepts jobs only within',
+    'Barangay Santa Ana, Pateros.',
+    '',
+    'Please choose a location inside the supported area.',
+  ].join('\n'),
   permissionDenied:
     'Location permission is off. You can still tap the map to place the Job pin.',
   locationUnavailable: "Couldn't read your current location. Place the pin on the map instead.",
+  geocodeUnavailable: "Couldn't fill the address automatically. You can still enter it manually.",
   mapUnavailable: 'Map is unavailable. You can still enter the address, but posting needs a selected pin.',
   forbidden: "You don't have permission to post a job.",
   invalid: 'Check the job details and selected location, then try again.',
@@ -157,11 +172,72 @@ export function isValidJobCoordinate(latitude: unknown, longitude: unknown): boo
   return true;
 }
 
+export function postingDescriptionError(description: string): string | null {
+  return description.trim().length === 0 ? COPY.missingDescription : null;
+}
+
 export function postingLocationError(address: string, pin: JobPin | null): string | null {
   if (address.trim().length === 0) return COPY.missingAddress;
   if (pin === null) return COPY.missingPin;
   if (!isValidJobCoordinate(pin.latitude, pin.longitude)) return COPY.invalidPin;
+  if (!isPinInSantaAnaServiceArea(pin.latitude, pin.longitude)) return COPY.outsideServiceArea;
   return null;
+}
+
+export type ReverseGeocodeAddressRow = ReverseGeocodeAddress & {
+  streetNumber?: string | null;
+};
+
+export type ReverseGeocodeLike = {
+  reverseGeocodeAsync: (coords: {
+    latitude: number;
+    longitude: number;
+  }) => Promise<ReverseGeocodeAddressRow[]>;
+};
+
+function cleanAddressPart(value: string | null | undefined): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
+ * Formats expo-location reverse-geocode rows for the Job address field.
+ * Prefers formattedAddress; otherwise joins street, district, and city.
+ */
+export function formatReverseGeocodeAddress(
+  rows: ReverseGeocodeAddressRow[] | null | undefined
+): string | null {
+  if (!Array.isArray(rows)) return null;
+  for (const row of rows) {
+    if (row == null) continue;
+    const formatted = cleanAddressPart(row.formattedAddress);
+    if (formatted.length > 0) return formatted;
+
+    const streetNumber = cleanAddressPart(row.streetNumber);
+    const street = cleanAddressPart(row.street);
+    const name = cleanAddressPart(row.name);
+    const streetLine =
+      [streetNumber, street].filter((part) => part.length > 0).join(' ') || name;
+    const parts: string[] = [];
+    const seen = new Set<string>();
+    for (const part of [streetLine, cleanAddressPart(row.district), cleanAddressPart(row.city)]) {
+      const key = part.toLowerCase();
+      if (part.length === 0 || seen.has(key)) continue;
+      seen.add(key);
+      parts.push(part);
+    }
+    if (parts.length > 0) return parts.join(', ');
+  }
+  return null;
+}
+
+export async function reviewJobPinPlacement(
+  pin: JobPin,
+  _location?: ReverseGeocodeLike
+): Promise<{ ok: true } | { ok: false; reason: 'outside' | 'invalid' }> {
+  if (!isValidJobCoordinate(pin.latitude, pin.longitude)) {
+    return { ok: false, reason: 'invalid' };
+  }
+  return evaluateSantaAnaJobPin(pin);
 }
 
 export function classifyForegroundPermission(status: string): ForegroundPermissionStatus {

@@ -30,8 +30,10 @@ export default function RootIndex() {
   });
 
   // A pending inbox intent must win over the ordinary role-home redirect so
-  // the dispatcher cannot overwrite a captured cold-start tap.
-  if (inbox.kind === 'replace') {
+  // the dispatcher cannot overwrite a captured cold-start tap. Consent and
+  // Worker ID gates still fail closed: do not enter a role inbox until the
+  // matching access state is the role app.
+  if (inbox.kind === 'replace' && (access === 'worker' || access === 'client')) {
     return <Redirect href={inbox.href} />;
   }
 

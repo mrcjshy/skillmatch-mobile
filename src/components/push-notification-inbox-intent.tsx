@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
 
+import { deriveAccessState } from '@/app/_layout';
 import {
   captureNotificationResponse,
   consumeReadyInboxNavigation,
@@ -17,8 +18,11 @@ import { useSession } from '@/providers/session-provider';
  */
 export function PushNotificationInboxIntent() {
   const router = useRouter();
-  const { session, isSessionLoading } = useSession();
-  const { account, status } = useAccount();
+  const sessionValue = useSession();
+  const accountValue = useAccount();
+  const { session, isSessionLoading } = sessionValue;
+  const { account, status } = accountValue;
+  const access = deriveAccessState(sessionValue, accountValue);
   const [, setCaptureGeneration] = useState(0);
 
   useEffect(() => {
@@ -42,6 +46,7 @@ export function PushNotificationInboxIntent() {
   }, []);
 
   useEffect(() => {
+    if (access !== 'worker' && access !== 'client') return;
     const href = consumeReadyInboxNavigation({
       hasPendingInboxIntent: hasPendingNotificationsInboxIntent(),
       isSessionLoading,
@@ -53,7 +58,7 @@ export function PushNotificationInboxIntent() {
     if (!href) return;
     router.replace(href as Href);
     void Notifications.clearLastNotificationResponseAsync();
-  }, [account, isSessionLoading, session, status, router]);
+  }, [access, account, isSessionLoading, session, status, router]);
 
   return null;
 }
