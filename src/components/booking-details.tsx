@@ -1,5 +1,5 @@
-import { type Href, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { type Href, useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   RefreshControl,
   ScrollView,
@@ -59,6 +59,18 @@ import {
   projectAssignedWorkerLocation,
   type AuthorizedJobLocation,
 } from '@/lib/job-location';
+import {
+  createLoadGenerationTracker,
+  isBookingStatusChangedListenStatus,
+  isProtectedProjectionReleased,
+  shouldSuppressProtectedBeforeRefresh,
+  stripProtectedBookingFields,
+} from '@/lib/booking-details-freshness';
+import {
+  BOOKING_STATUS_CHANGED,
+  bookingMessagesTopic,
+  subscribeInvalidation,
+} from '@/lib/realtime';
 
 const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
@@ -93,21 +105,44 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mapsNote, setMapsNote] = useState<string | null>(null);
+  const [suppressProtected, setSuppressProtected] = useState(false);
+  const loadGate = useRef(createLoadGenerationTracker());
+  const hasLoaded = useRef(false);
+  const displayedStatusRef = useRef<string | null>(null);
+  const visibleDetail =
+    detail !== null && bookingId !== null && detail.booking.booking_id === bookingId ? detail : null;
+
+  useEffect(() => {
+    const gate = createLoadGenerationTracker();
+    loadGate.current = gate;
+    hasLoaded.current = false;
+    displayedStatusRef.current = null;
+    return () => {
+      gate.cancel();
+    };
+  }, [bookingId, role]);
 
   const load = useCallback(async () => {
+    const token = loadGate.current.start();
     if (bookingId === null || !UUID_PATTERN.test(bookingId)) {
+      if (!loadGate.current.isCurrent(token)) return;
+      displayedStatusRef.current = null;
       setDetail(null);
       setLoadError(UNAVAILABLE);
       setMapsNote(null);
+      setSuppressProtected(false);
       return;
     }
 
     const rows = role === 'worker' ? await loadWorkerBookings() : await loadClientBookings();
+    if (!loadGate.current.isCurrent(token)) return;
     const booking = rows.find((row) => row.booking_id === bookingId) ?? null;
     if (booking === null) {
+      displayedStatusRef.current = null;
       setDetail(null);
       setLoadError(UNAVAILABLE);
       setMapsNote(null);
+      setSuppressProtected(false);
       return;
     }
 
@@ -142,6 +177,8 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
       }
     }
 
+    if (!loadGate.current.isCurrent(token)) return;
+    displayedStatusRef.current = booking.booking_status;
     setDetail({
       booking,
       payment: payments.get(booking.booking_id),
@@ -152,6 +189,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     });
     setLoadError(null);
     setMapsNote(null);
+    setSuppressProtected(false);
   }, [bookingId, role]);
 
   const applyError = useCallback((error: unknown) => {
@@ -163,19 +201,90 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     setLoadError(loadErrorCopy(error));
   }, [role]);
 
-  /* eslint-disable react-hooks/set-state-in-effect -- established fetch-on-mount convention */
+  function hideProtectedProjection() {
+    setSuppressProtected(true);
+    setDetail((current) => {
+      if (current === null) return current;
+      return {
+        ...current,
+        booking: stripProtectedBookingFields(current.booking),
+        exactLocation: { status: 'skipped' },
+      };
+    });
+    setMapsNote(null);
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      const run = { cancelled: false };
+      if (
+        shouldSuppressProtectedBeforeRefresh({
+          reason: 'focus',
+          displayedStatus: displayedStatusRef.current,
+        })
+      ) {
+        hideProtectedProjection();
+      }
+      if (!hasLoaded.current) setIsLoading(true);
+      load()
+        .catch((error: unknown) => {
+          if (run.cancelled) return;
+          if (!hasLoaded.current) applyError(error);
+          else console.warn('[R6-8D-FIX] booking detail focus refresh failed:', error);
+        })
+        .finally(() => {
+          if (!run.cancelled) {
+            hasLoaded.current = true;
+            setIsLoading(false);
+          }
+        });
+      return () => {
+        run.cancelled = true;
+      };
+    }, [load, applyError])
+  );
+
+  const listenStatus = visibleDetail?.booking.booking_status;
+
   useEffect(() => {
-    const run = { cancelled: false };
-    load()
-      .catch((error: unknown) => {
-        if (!run.cancelled) applyError(error);
-      })
-      .finally(() => {
-        if (!run.cancelled) setIsLoading(false);
-      });
-    return () => { run.cancelled = true; };
-  }, [load, applyError]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+    if (bookingId === null || !UUID_PATTERN.test(bookingId)) return;
+    if (!isBookingStatusChangedListenStatus(listenStatus)) return;
+
+    const run = { cancelled: false, inFlight: false, pending: false };
+    const revalidate = () => {
+      if (run.cancelled) return;
+      if (run.inFlight) {
+        run.pending = true;
+        return;
+      }
+      run.inFlight = true;
+      load()
+        .catch((error: unknown) => {
+          if (error instanceof Error && error.message) {
+            console.warn('[R6-8D-FIX] booking detail revalidate failed:', error.message);
+          }
+        })
+        .finally(() => {
+          run.inFlight = false;
+          if (run.pending && !run.cancelled) {
+            run.pending = false;
+            revalidate();
+          }
+        });
+    };
+
+    const cleanup = subscribeInvalidation({
+      topic: bookingMessagesTopic(bookingId),
+      events: [BOOKING_STATUS_CHANGED],
+      onBroadcastEvent: hideProtectedProjection,
+      onInvalidate: revalidate,
+    });
+
+    return () => {
+      run.cancelled = true;
+      cleanup();
+    };
+  }, [bookingId, listenStatus, load]);
 
   async function retry() {
     setIsLoading(true);
@@ -200,7 +309,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     }
   }
 
-  if (isLoading) {
+  if (isLoading && visibleDetail === null) {
     return (
       <View style={styles.center}>
         <InlineStatus variant="loading" message="Loading booking…" />
@@ -208,7 +317,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     );
   }
 
-  if (loadError || detail === null) {
+  if (loadError || visibleDetail === null) {
     return (
       <View style={styles.center}>
         <InlineStatus
@@ -220,27 +329,33 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     );
   }
 
-  const { booking, payment, jobPaymentMethod, jobPaymentReady, isRated, exactLocation } = detail;
+  const { booking, payment, jobPaymentMethod, jobPaymentReady, isRated, exactLocation } = visibleDetail;
   const schedule = formatDetailDateTime(booking.job_scheduled_at);
   const bookedAt = formatDetailDateTime(booking.booked_at);
   const completedAt = formatDetailDateTime(booking.completed_at);
   const budget = formatBudget(booking.job_budget);
-  const location = formatLocation(booking.job_address, booking.job_barangay, booking.job_city);
-  const released = isCounterpartyReleased(booking.booking_status);
-  const chatAvailable = isBookingChatAvailable(booking.booking_status);
+  const protectedReleased = isProtectedProjectionReleased(booking.booking_status, suppressProtected);
+  const location = formatLocation(
+    protectedReleased ? booking.job_address : null,
+    booking.job_barangay,
+    booking.job_city
+  );
+  const released = protectedReleased && isCounterpartyReleased(booking.booking_status);
+  const chatAvailable = protectedReleased && isBookingChatAvailable(booking.booking_status);
   const workerLocationSurface =
-    role === 'worker'
+    role === 'worker' && protectedReleased
       ? projectAssignedWorkerLocation({
           bookingStatus: booking.booking_status,
           exact: exactLocation.status === 'ready' ? exactLocation.location : null,
           mapAvailable: classifyMapAvailability(nativeJobMapsLoaded()),
         })
       : null;
-  const showLifecycle = isLifecycleActionableStatus(booking.booking_status);
+  const showLifecycle = protectedReleased && isLifecycleActionableStatus(booking.booking_status);
   const showPayment = isPayableStatus(booking.booking_status);
   const showRate = role === 'client' && isRateableStatus(booking.booking_status);
   const showReport = isBookingReportableStatus(booking.booking_status);
-  const showPortfolio = role === 'client' && isClientPortfolioVisible(booking.booking_status);
+  const showPortfolio =
+    protectedReleased && role === 'client' && isClientPortfolioVisible(booking.booking_status);
   const showActions = showLifecycle || showPayment || showRate || chatAvailable || showReport || showPortfolio;
 
   return (
@@ -263,7 +378,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
           <DetailLine label="Schedule" value={schedule} />
           <DetailLine label="Budget" value={budget} />
           <DetailLine label="Location" value={location} />
-          {role === 'worker' && booking.booking_status === 'confirmed' && exactLocation.status === 'error' ? (
+          {role === 'worker' && protectedReleased && exactLocation.status === 'error' ? (
             <Text style={styles.note}>{JOB_LOCATION_COPY.workerLocationGeneric}</Text>
           ) : workerLocationSurface ? (
             <WorkerAssignedJobLocation

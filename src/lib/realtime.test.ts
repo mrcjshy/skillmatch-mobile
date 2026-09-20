@@ -117,15 +117,36 @@ describe('subscribeInvalidation', () => {
   it('re-reads when the Booking leaves confirmed', () => {
     const f = fakeClient();
     const onInvalidate = vi.fn();
+    const onBroadcastEvent = vi.fn();
     subscribeInvalidation({
       topic: 'booking:abc:messages',
       events: [MESSAGE_INSERTED, BOOKING_STATUS_CHANGED],
       onInvalidate,
+      onBroadcastEvent,
       client: f.client,
     });
 
     f.emit(BOOKING_STATUS_CHANGED);
 
+    expect(onBroadcastEvent).toHaveBeenCalledTimes(1);
+    expect(onInvalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not treat SUBSCRIBED as a Broadcast event', () => {
+    const f = fakeClient();
+    const onInvalidate = vi.fn();
+    const onBroadcastEvent = vi.fn();
+    subscribeInvalidation({
+      topic: 'booking:abc:messages',
+      events: [BOOKING_STATUS_CHANGED],
+      onInvalidate,
+      onBroadcastEvent,
+      client: f.client,
+    });
+
+    f.reportStatus('SUBSCRIBED');
+
+    expect(onBroadcastEvent).not.toHaveBeenCalled();
     expect(onInvalidate).toHaveBeenCalledTimes(1);
   });
 

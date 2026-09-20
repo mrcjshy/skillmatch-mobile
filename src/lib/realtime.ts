@@ -45,8 +45,9 @@ export const MESSAGE_INSERTED = 'message_inserted';
 /**
  * Emitted AFTER UPDATE OF status on `public.bookings` when the Booking LEAVES
  * `confirmed`. It shares the Booking message topic rather than opening a third
- * topic family, because its only consumer is an open chat that must discover
- * the counterpart ended the Booking without sending another message.
+ * topic family. Chat uses it to close the composer; a mounted Booking Details
+ * screen uses it to drop confirmed-only contact, address, map, and actions
+ * and re-read the participant RPC. The payload is still never a row.
  */
 export const BOOKING_STATUS_CHANGED = 'booking_status_changed';
 
@@ -97,6 +98,12 @@ export type SubscribeInvalidationOptions = {
   events: readonly string[];
   /** Called with nothing — see "the payload is structurally unreachable". */
   onInvalidate: () => void;
+  /**
+   * Listed Broadcast events only — never SUBSCRIBED. Booking Details uses
+   * this to hide confirmed-only fields before the re-read. Chat omits it
+   * so a reconnect cannot blank a conversation.
+   */
+  onBroadcastEvent?: () => void;
   client?: BroadcastClientLike;
 };
 
@@ -128,7 +135,7 @@ const FAILED_STATUSES = ['CHANNEL_ERROR', 'TIMED_OUT'];
  * change) removes the channel once.
  */
 export function subscribeInvalidation(options: SubscribeInvalidationOptions): () => void {
-  const { topic, events, onInvalidate } = options;
+  const { topic, events, onInvalidate, onBroadcastEvent } = options;
   // Annotated, not cast: this is what checks that the real client still
   // satisfies the narrow contract above.
   const client: BroadcastClientLike = options.client ?? supabase;
@@ -141,6 +148,7 @@ export function subscribeInvalidation(options: SubscribeInvalidationOptions): ()
   for (const event of events) {
     // The payload argument is accepted by the transport and discarded here.
     channel.on('broadcast', { event }, () => {
+      onBroadcastEvent?.();
       onInvalidate();
     });
   }
