@@ -54,6 +54,14 @@ export const BOOKING_STATUS_CHANGED = 'booking_status_changed';
 /** Emitted AFTER INSERT on `public.notifications`, on the own-user topic. */
 export const NOTIFICATION_INSERTED = 'notification_inserted';
 
+/** Generic invalidation after Job or required-skill changes; no Job data. */
+export const JOB_OPPORTUNITIES_CHANGED = 'job_opportunities_changed';
+
+/** Receive-only private topic authorized by the active-Worker predicate. */
+export function workerOpportunitiesTopic(): string {
+  return 'worker:opportunities';
+}
+
 /**
  * The Booking chat topic, matching the `realtime.messages` SELECT policy
  * exactly: `'booking:' || b.id::text || ':messages'`. The policy authorizes
@@ -107,6 +115,55 @@ export type SubscribeInvalidationOptions = {
   client?: BroadcastClientLike;
 };
 
+export type CoalescedInvalidation = {
+  invalidate: () => void;
+  cancel: () => void;
+};
+
+/**
+ * Serializes authoritative rereads while preserving one follow-up reread for
+ * invalidations that arrive during an in-flight request. No event payload is
+ * accepted, retained, or used for a decision.
+ */
+export function createCoalescedInvalidation(load: () => Promise<void>): CoalescedInvalidation {
+  let cancelled = false;
+  let inFlight = false;
+  let pending = false;
+
+  const run = async (): Promise<void> => {
+    if (cancelled) return;
+    if (inFlight) {
+      pending = true;
+      return;
+    }
+
+    inFlight = true;
+    try {
+      await load();
+    } catch {
+      // Both the initial run and queued follow-up are fire-and-forget. Keep a
+      // rejected loader contained without inventing another retry or exposing data.
+      console.warn('[R5-UI] coalesced invalidation load failed');
+    } finally {
+      inFlight = false;
+      if (pending && !cancelled) {
+        pending = false;
+        void run();
+      }
+    }
+  };
+
+  return {
+    invalidate: () => {
+      void run();
+    },
+    cancel: () => {
+      cancelled = true;
+      pending = false;
+    },
+  };
+}
+
 /** Status reported once the channel is live and receiving. */
 const SUBSCRIBED = 'SUBSCRIBED';
 
@@ -124,15 +181,155 @@ const SUBSCRIBED = 'SUBSCRIBED';
  */
 const FAILED_STATUSES = ['CHANNEL_ERROR', 'TIMED_OUT'];
 
+type InvalidationSubscriber = {
+  events: Set<string>;
+  onInvalidate: () => void;
+  onBroadcastEvent?: () => void;
+  lastSubscribed: number;
+};
+
+type TopicEntry = {
+  client: BroadcastClientLike;
+  topic: string;
+  channel: BroadcastChannelLike | null;
+  phase: 'idle' | 'opening' | 'active' | 'closing' | 'failed';
+  generation: number;
+  subscribers: Set<InvalidationSubscriber>;
+  boundEvents: Set<string>;
+  subscribed: boolean;
+  subscribedVersion: number;
+};
+
+const subscriptions = new WeakMap<BroadcastClientLike, Map<string, TopicEntry>>();
+
+function isCurrent(entry: TopicEntry, generation: number): boolean {
+  return subscriptions.get(entry.client)?.get(entry.topic) === entry &&
+    entry.phase === 'active' && entry.generation === generation;
+}
+
+function deliver(entry: TopicEntry, callback: () => void): void {
+  try {
+    callback();
+  } catch {
+    // Consumers are independent owners; one failure cannot silence the others.
+    console.warn('[R5-UI] invalidation callback failed:', entry.topic);
+  }
+}
+
+function bindEvents(entry: TopicEntry, events: Set<string>): void {
+  const generation = entry.generation;
+  for (const event of events) {
+    if (entry.boundEvents.has(event)) continue;
+    // Some adapters attach before throwing. A handler is usable only after its
+    // own .on call succeeds; a failed binding stays inert even after a retry.
+    let bound = false;
+    // Broadcast late binding is supported by the installed SDK. Payloads are
+    // discarded at this boundary; the event name comes only from this binding.
+    entry.channel!.on('broadcast', { event }, () => {
+      if (!bound || !isCurrent(entry, generation)) return;
+      for (const listener of [...entry.subscribers]) {
+        if (!isCurrent(entry, generation) || !entry.subscribers.has(listener) ||
+            !listener.events.has(event)) continue;
+        if (listener.onBroadcastEvent) deliver(entry, listener.onBroadcastEvent);
+        if (isCurrent(entry, generation) && entry.subscribers.has(listener)) deliver(entry, listener.onInvalidate);
+      }
+    });
+    bound = true;
+    entry.boundEvents.add(event);
+  }
+}
+
+function openChannel(entry: TopicEntry): void {
+  entry.phase = 'opening';
+  entry.generation += 1;
+  entry.subscribed = false;
+  entry.boundEvents.clear();
+  entry.channel = entry.client.channel(entry.topic, { config: { private: true } });
+  for (const listener of entry.subscribers) bindEvents(entry, listener.events);
+  const generation = entry.generation;
+  const openingStatuses: string[] = [];
+  const reportStatus = (status: string) => {
+    if (!isCurrent(entry, generation)) return;
+    if (status === SUBSCRIBED) {
+      entry.subscribed = true;
+      entry.subscribedVersion += 1;
+      for (const listener of [...entry.subscribers]) {
+        if (!isCurrent(entry, generation) || !entry.subscribers.has(listener)) continue;
+        listener.lastSubscribed = entry.subscribedVersion;
+        deliver(entry, listener.onInvalidate);
+      }
+      return;
+    }
+    entry.subscribed = false;
+    if (FAILED_STATUSES.includes(status)) {
+      console.warn('[R5-UI] broadcast channel not delivering:', entry.topic, status);
+    }
+  };
+  entry.channel.subscribe((status: string) => {
+    if (entry.generation !== generation) return;
+    // A synchronous SUBSCRIBED does not prove setup succeeded until subscribe
+    // returns. Failed attempts must never reach consumer callbacks.
+    if (entry.phase === 'opening') openingStatuses.push(status);
+    else reportStatus(status);
+  });
+  entry.phase = 'active';
+  for (const status of openingStatuses) reportStatus(status);
+}
+
+function closeChannel(entry: TopicEntry, reopen = true): void {
+  entry.phase = 'closing';
+  entry.subscribed = false;
+  const generation = ++entry.generation;
+  const topics = subscriptions.get(entry.client)!;
+  const isClosing = () => topics.get(entry.topic) === entry &&
+    entry.generation === generation && entry.phase === 'closing';
+  const fail = () => {
+    if (!isClosing()) return;
+    // Removal is unconfirmed: reopening could reuse this very channel. Keep an
+    // inert entry, without retries; callers' authoritative/manual reads still work.
+    entry.phase = 'failed';
+    console.warn('[R5-UI] broadcast channel removal failed:', entry.topic);
+  };
+  // The SDK caches by topic and its old close removes by topic. Retain this
+  // entry until removal completes, so new listeners cannot reuse a retiring channel.
+  try {
+    void Promise.resolve(entry.client.removeChannel(entry.channel!)).then((result) => {
+      if (!isClosing()) return;
+      if (result !== 'ok') {
+        fail();
+        return;
+      }
+      entry.channel = null;
+      entry.phase = 'idle';
+      if (entry.subscribers.size === 0) topics.delete(entry.topic);
+      else if (reopen) {
+        try {
+          openChannel(entry);
+        } catch {
+          // Waiting callers already hold cleanup handles. Keep their ownership,
+          // but never retry a failed replacement from this promise chain.
+          recoverSetupFailure(entry);
+        }
+      }
+    }).catch(fail);
+  } catch {
+    fail();
+  }
+}
+
+function recoverSetupFailure(entry: TopicEntry): void {
+  if (entry.phase === 'opening' && entry.channel) closeChannel(entry, false);
+  else if (!entry.channel) {
+    entry.phase = 'idle';
+    entry.generation += 1;
+    if (entry.subscribers.size === 0) subscriptions.get(entry.client)!.delete(entry.topic);
+  }
+  console.warn('[R5-UI] broadcast channel setup failed:', entry.topic);
+}
+
 /**
- * Open one private channel and re-read on every listed event.
- *
- * Returns the cleanup function. Callers must invoke it when the subscription
- * stops being appropriate — unmount, a change of Booking or account, or the
- * loss of eligibility to listen at all — which is what keeps a superseded
- * channel from lingering beside its replacement. It is idempotent, so a double
- * cleanup (React's development remount, or an unmount racing a dependency
- * change) removes the channel once.
+ * Share one private channel per client/topic. Each caller owns an independent
+ * event set and cleanup; only the final owner removes the physical channel.
  */
 export function subscribeInvalidation(options: SubscribeInvalidationOptions): () => void {
   const { topic, events, onInvalidate, onBroadcastEvent } = options;
@@ -140,33 +337,53 @@ export function subscribeInvalidation(options: SubscribeInvalidationOptions): ()
   // satisfies the narrow contract above.
   const client: BroadcastClientLike = options.client ?? supabase;
 
-  // `private: true` is required: these topics are authorized by RLS on
-  // `realtime.messages`, and a public channel would not present the caller's
-  // JWT for that check.
-  const channel = client.channel(topic, { config: { private: true } });
-
-  for (const event of events) {
-    // The payload argument is accepted by the transport and discarded here.
-    channel.on('broadcast', { event }, () => {
-      onBroadcastEvent?.();
-      onInvalidate();
-    });
+  let topics = subscriptions.get(client);
+  if (!topics) {
+    topics = new Map();
+    subscriptions.set(client, topics);
   }
+  let entry = topics.get(topic);
+  if (!entry) {
+    entry = {
+      client, topic, channel: null, phase: 'idle', generation: 0,
+      subscribers: new Set(), boundEvents: new Set(),
+      subscribed: false, subscribedVersion: 0,
+    };
+    topics.set(topic, entry);
+  }
+  const shared = entry;
+  const subscriber = { events: new Set(events), onInvalidate, onBroadcastEvent, lastSubscribed: 0 };
+  shared.subscribers.add(subscriber);
 
-  channel.subscribe((status: string) => {
-    if (status === SUBSCRIBED) {
-      onInvalidate();
-      return;
+  try {
+    if (shared.phase === 'idle') openChannel(shared);
+    else if (shared.phase === 'active') {
+      bindEvents(shared, subscriber.events);
+      if (shared.subscribed) {
+        const version = shared.subscribedVersion;
+        const generation = shared.generation;
+        // Let the caller receive its cleanup handle before this catch-up can run.
+        queueMicrotask(() => {
+          if (!isCurrent(shared, generation) || !shared.subscribers.has(subscriber) ||
+              !shared.subscribed || shared.subscribedVersion !== version ||
+              subscriber.lastSubscribed >= version) return;
+          subscriber.lastSubscribed = version;
+          deliver(shared, subscriber.onInvalidate);
+        });
+      }
     }
-    if (FAILED_STATUSES.includes(status)) {
-      console.warn('[R5-UI] broadcast channel not delivering:', topic, status);
-    }
-  });
+  } catch (error) {
+    shared.subscribers.delete(subscriber);
+    recoverSetupFailure(shared);
+    throw error;
+  }
 
   let removed = false;
   return () => {
     if (removed) return;
     removed = true;
-    client.removeChannel(channel);
+    shared.subscribers.delete(subscriber);
+    if (shared.subscribers.size === 0 && shared.phase === 'active') closeChannel(shared);
+    else if (shared.subscribers.size === 0 && shared.phase === 'idle' && topics.get(topic) === shared) topics.delete(topic);
   };
 }

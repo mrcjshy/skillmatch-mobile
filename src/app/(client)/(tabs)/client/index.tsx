@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -25,6 +25,7 @@ import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { SkillListSummary } from '@/components/skill-list-summary';
 import { SkillMatchTheme } from '@/constants/theme';
 import { loadClientBookings, type ClientBooking } from '@/lib/booking-records';
+import { createClientHomeBookingFocus, type ClientHomeBookingFocus } from '@/lib/client-home-booking-focus';
 import { homeGreeting } from '@/lib/home-greeting';
 import { firstNameFromFullName } from '@/lib/initials';
 import {
@@ -139,15 +140,28 @@ export default function ClientHome() {
   const [postError, setPostError] = useState<string | null>(null);
   const [postSuccess, setPostSuccess] = useState<string | null>(null);
   const [bookings, setBookings] = useState<ClientBooking[]>([]);
+  const bookingFocusRef = useRef<ClientHomeBookingFocus | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      void loadClientBookings()
-        .then(setBookings)
-        .catch(() => {
-          setBookings([]);
-        });
-    }, [])
+      if (!clientId) return;
+      const focus = createClientHomeBookingFocus({
+        clientId,
+        loadBookings: loadClientBookings,
+        onBookings: setBookings,
+        onNavigate: (bookingId) => router.replace({
+          pathname: '/client/booking-details',
+          params: { bookingId },
+        } as unknown as Href),
+      });
+      bookingFocusRef.current = focus;
+      focus.refresh();
+      return () => {
+        // Tabs remain mounted on blur. Revoke this run, including pending reads.
+        focus.cancel();
+        if (bookingFocusRef.current === focus) bookingFocusRef.current = null;
+      };
+    }, [clientId, router])
   );
 
   const knownSkillIds = new Set(skills.map((skill) => skill.id));
@@ -212,7 +226,9 @@ export default function ClientHome() {
   }
 
   async function handlePost() {
-    if (isPosting || !clientId) return;
+    // Capture before the mutation: a late Post must not arm a newer focus run.
+    const postingFocus = bookingFocusRef.current;
+    if (isPosting || !clientId || !postingFocus) return;
     setPostError(null);
     setPostSuccess(null);
 
@@ -266,7 +282,7 @@ export default function ClientHome() {
     setIsPosting(true);
     let created = false;
     try {
-      await createMyJobWithLocation({
+      const createdJobId = await createMyJobWithLocation({
         title: primarySkillName,
         description: description.trim(),
         address: trimmedAddress,
@@ -278,8 +294,9 @@ export default function ClientHome() {
         longitude: pin.longitude,
       });
       created = true;
+      postingFocus.waitForJob(createdJobId);
       await refresh(clientId);
-      setPostSuccess('Job posted.');
+      setPostSuccess('Job posted. Waiting for a worker to accept.');
       setDescription('');
       setAddress('');
       setPin(initialJobPin());

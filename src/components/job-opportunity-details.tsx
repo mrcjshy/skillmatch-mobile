@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
@@ -8,6 +9,11 @@ import { WorkerApproximateJobArea } from '@/components/job-location-map';
 import { SectionHeader } from '@/components/section-header';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatOpportunityPaymentLine } from '@/lib/job-payment';
+import { loadWorkerBookings } from '@/lib/booking-records';
+import {
+  createWorkerAcceptHandoff,
+  type WorkerAcceptFocus,
+} from '@/lib/worker-accept-handoff-focus';
 import {
   ACCEPT_JOB_COPY,
   JOB_OPPORTUNITY_COPY,
@@ -28,6 +34,7 @@ import {
   type SkillRef,
 } from '@/lib/job-opportunities';
 import { useAccount } from '@/providers/account-provider';
+import { useSession } from '@/providers/session-provider';
 
 const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
@@ -40,7 +47,11 @@ type RequirementsState =
 
 export default function JobOpportunityDetails({ jobId }: { jobId: string | null }) {
   const { account } = useAccount();
+  const { session } = useSession();
+  const router = useRouter();
   const workerId = account?.id;
+  const sessionUserId = session?.user.id;
+  const activeWorker = account?.role === 'worker' && account.is_active;
 
   const [opportunity, setOpportunity] = useState<JobOpportunity | null>(null);
   const [requirements, setRequirements] = useState<RequirementsState>({ status: 'loading' });
@@ -50,8 +61,62 @@ export default function JobOpportunityDetails({ jobId }: { jobId: string | null 
   const [isAccepting, setIsAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [notice, setNotice] = useState<AcceptJobNotice | null>(null);
+  const [handoff] = useState(createWorkerAcceptHandoff);
+  const acceptanceFocus = useRef<WorkerAcceptFocus | null>(null);
+  const currentIdentity = useRef<{
+    workerId: string | undefined;
+    sessionUserId: string | undefined;
+    jobId: string | null;
+    activeWorker: boolean;
+  } | null>(null);
 
-  const load = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
+  // Layout timing closes the gap before passive focus-dependency cleanup.
+  // Use the session's user id: token refresh must not restart a handoff.
+  useLayoutEffect(() => {
+    currentIdentity.current = { workerId, sessionUserId, jobId, activeWorker };
+    return () => { currentIdentity.current = null; };
+  }, [workerId, sessionUserId, jobId, activeWorker]);
+
+  useFocusEffect(useCallback(() => {
+    if (!activeWorker || !workerId || sessionUserId !== workerId ||
+        jobId === null || !UUID_PATTERN.test(jobId)) return;
+    const focus = handoff.focus({
+      workerId,
+      sessionUserId,
+      jobId,
+      isIdentityCurrent: () => {
+        const current = currentIdentity.current;
+        return current?.activeWorker === true && current.workerId === workerId &&
+          current.sessionUserId === sessionUserId && current.jobId === jobId;
+      },
+      acceptJob: acceptJobOpportunity,
+      readBookings: loadWorkerBookings,
+      onState: ({ pending, result, handoffFailed }) => {
+        setIsAccepting(pending);
+        setAccepted(result?.status === 'accepted');
+        setNotice(handoffFailed ? {
+          tone: 'success',
+          headline: ACCEPT_JOB_COPY.accepted,
+          detail: ACCEPT_JOB_COPY.bookingHandoffFailed,
+        } : result ? acceptJobNotice(result) : null);
+      },
+      onNavigate: (bookingId) => router.replace({
+        pathname: '/worker/booking-details',
+        params: { bookingId },
+      } as unknown as Href),
+    });
+    acceptanceFocus.current = focus;
+    return () => {
+      focus.cancel();
+      if (acceptanceFocus.current === focus) acceptanceFocus.current = null;
+    };
+  }, [activeWorker, workerId, sessionUserId, jobId, handoff, router]));
+
+  const load = useCallback(async (
+    mode: 'initial' | 'refresh' = 'initial',
+    isCurrent: () => boolean = () => true
+  ) => {
+    if (!isCurrent()) return;
     if (jobId === null || !UUID_PATTERN.test(jobId)) {
       setOpportunity(null);
       setLoadError(JOB_OPPORTUNITY_COPY.unavailable);
@@ -59,6 +124,7 @@ export default function JobOpportunityDetails({ jobId }: { jobId: string | null 
     }
 
     const rows = await loadMyJobOpportunities();
+    if (!isCurrent()) return;
     const next = findOpportunityById(rows, jobId);
     if (next === null) {
       // After Accept the Job leaves the opportunity list. Keep the last
@@ -151,45 +217,17 @@ export default function JobOpportunityDetails({ jobId }: { jobId: string | null 
   }
 
   async function handleAccept() {
-    if (opportunity === null || isAccepting || accepted || isLoading || isRefreshing) return;
-
-    setIsAccepting(true);
-    setNotice(null);
-    try {
-      const result = await acceptJobOpportunity(opportunity.job_id, workerId ?? null);
-      setNotice(acceptJobNotice(result));
-
-      if (result.status === 'accepted') {
-        setAccepted(true);
-        try {
-          await load('refresh');
-        } catch (error: unknown) {
-          if (error instanceof Error && error.message) {
-            console.warn('[V3-1 P3] post-acceptance refresh failed:', error.message);
-          }
-          setNotice({
-            tone: 'warning',
-            headline: ACCEPT_JOB_COPY.refreshFailed,
-            detail: null,
-          });
-        }
-        return;
+    const focus = acceptanceFocus.current;
+    if (!focus?.isCurrent() || opportunity === null || opportunity.job_id !== jobId ||
+        isAccepting || accepted || isLoading || isRefreshing) return;
+    const result = await focus.accept();
+    if (!focus.isCurrent() || result === null) return;
+    if (result.status === 'unavailable' || result.status === 'ineligible') {
+      try {
+        await load('refresh', focus.isCurrent);
+      } catch (error: unknown) {
+        if (focus.isCurrent()) applyError(error);
       }
-
-      if (result.status === 'unavailable' || result.status === 'ineligible') {
-        try {
-          await load('refresh');
-        } catch (error: unknown) {
-          applyError(error);
-        }
-      }
-    } catch (error: unknown) {
-      if (error instanceof Error && error.message) {
-        console.warn('[V3-1 P3] accept_job_opportunity threw:', error.message);
-      }
-      setNotice(acceptJobNotice({ status: 'generic' }));
-    } finally {
-      setIsAccepting(false);
     }
   }
 

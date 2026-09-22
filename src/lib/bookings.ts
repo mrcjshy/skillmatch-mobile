@@ -50,6 +50,24 @@ export function isBookingStatus(v: string): v is BookingStatus {
   return (BOOKING_STATUSES as readonly string[]).includes(v);
 }
 
+/** Locate a server-returned Booking by its authoritative Job id. */
+export function findBookingForJob<T extends { job_id: string }>(
+  bookings: readonly T[],
+  jobId: string
+): T | null {
+  if (jobId.trim() === '') return null;
+  return bookings.find((booking) => booking.job_id === jobId) ?? null;
+}
+
+/** Locate a confirmed Booking for the Job currently awaiting acceptance. */
+export function findConfirmedBookingForJob<T extends { job_id: string; booking_status: BookingStatus }>(
+  bookings: readonly T[],
+  jobId: string
+): T | null {
+  const booking = findBookingForJob(bookings, jobId);
+  return booking?.booking_status === 'confirmed' ? booking : null;
+}
+
 /**
  * Human label for a status. An unrecognised value is rendered verbatim rather
  * than coerced into a known one: inventing a status would misreport the

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -20,6 +20,12 @@ import {
   loadMyJobOpportunities,
   type JobOpportunity,
 } from '@/lib/job-opportunities';
+import {
+  createCoalescedInvalidation,
+  JOB_OPPORTUNITIES_CHANGED,
+  subscribeInvalidation,
+  workerOpportunitiesTopic,
+} from '@/lib/realtime';
 import {
   IDENTITY_COPY,
   getMyIdentitySubmission,
@@ -52,6 +58,13 @@ export default function WorkerHome() {
   const [bookings, setBookings] = useState<WorkerBooking[]>([]);
   const [identityStatus, setIdentityStatus] = useState<IdentityDocumentStatus | null>(null);
   const [identityReady, setIdentityReady] = useState(false);
+  const accountId = account?.id;
+  const canLoadOpportunities = Boolean(
+    accountId && account?.role === 'worker' && account.is_active &&
+    !isLoading && !loadError && availability === 'available'
+  );
+  const refreshOpportunities = useRef<(() => void) | null>(null);
+  const opportunityRequest = useRef<Promise<JobOpportunity[]> | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -74,20 +87,33 @@ export default function WorkerHome() {
     }, [refreshPersistedAvailability])
   );
 
-  const loadOpportunities = useCallback(async () => {
-    const rows = await loadMyJobOpportunities();
-    setOpportunities(rows);
-    setOppError(null);
-  }, []);
-
   useEffect(() => {
-    if (isLoading || loadError || availability !== 'available') return;
+    if (!canLoadOpportunities) return;
 
     let cancelled = false;
-    void (async () => {
-      setOppLoading(true);
+    let firstRead = true;
+    // One queue serves mount, focus, SUBSCRIBED/reconnect, and Broadcast.
+    // Keep the rendered rows in place during background revalidation.
+    const rereader = createCoalescedInvalidation(async () => {
+      if (firstRead) {
+        firstRead = false;
+        setOppLoading(true);
+        setOpportunities([]);
+        setOppError(null);
+      }
+      // A prior account/eligibility scope may still have a request in flight.
+      // Drain it before starting another; its own cleanup suppresses its result.
+      if (opportunityRequest.current) {
+        await opportunityRequest.current.catch(() => undefined);
+      }
+      if (cancelled) return;
+      const request = loadMyJobOpportunities();
+      opportunityRequest.current = request;
       try {
-        await loadOpportunities();
+        const rows = await request;
+        if (cancelled) return;
+        setOpportunities(rows);
+        setOppError(null);
       } catch (error: unknown) {
         if (cancelled) return;
         if (error instanceof Error && error.message) {
@@ -95,14 +121,33 @@ export default function WorkerHome() {
         }
         setOppError(JOB_OPPORTUNITY_COPY.loadFailed);
       } finally {
+        if (opportunityRequest.current === request) opportunityRequest.current = null;
         if (!cancelled) setOppLoading(false);
       }
-    })();
+    });
+    refreshOpportunities.current = rereader.invalidate;
+    // Initial authoritative load must still work when Realtime is unavailable.
+    rereader.invalidate();
+    const unsubscribe = subscribeInvalidation({
+      topic: workerOpportunitiesTopic(),
+      events: [JOB_OPPORTUNITIES_CHANGED],
+      onInvalidate: rereader.invalidate,
+    });
 
     return () => {
       cancelled = true;
+      refreshOpportunities.current = null;
+      rereader.cancel();
+      unsubscribe();
     };
-  }, [availability, isLoading, loadError, loadOpportunities]);
+  }, [accountId, canLoadOpportunities]);
+
+  // Defined after queue setup: focus never starts a separate competing read.
+  useFocusEffect(
+    useCallback(() => {
+      if (accountId && canLoadOpportunities) refreshOpportunities.current?.();
+    }, [accountId, canLoadOpportunities])
+  );
 
   const fullName = account?.full_name ?? '—';
   const firstName = firstNameFromFullName(account?.full_name ?? '');
@@ -197,15 +242,15 @@ export default function WorkerHome() {
             message="Set your status to Available to receive matching job opportunities. Busy workers are not included in matching."
             style={styles.statusPad}
           />
-        ) : oppLoading ? (
+        ) : canLoadOpportunities && oppLoading ? (
           <InlineStatus
             variant="loading"
             message="Loading your opportunities…"
             style={styles.statusPad}
           />
-        ) : oppError ? (
+        ) : canLoadOpportunities && oppError ? (
           <InlineStatus variant="error" message={oppError} style={styles.statusPad} />
-        ) : opportunities.length === 0 ? (
+        ) : !canLoadOpportunities || opportunities.length === 0 ? (
           <InlineStatus
             variant="empty"
             message="No matching job opportunities right now."

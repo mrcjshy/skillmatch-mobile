@@ -108,6 +108,9 @@ export const ACCEPT_JOB_COPY = {
   ineligible: "You're no longer eligible for this job.",
   generic: "We couldn't accept this job. Please refresh and try again.",
   accepted: 'Job accepted. It is now booked to you.',
+  bookingHandoffFailed:
+    'Your acceptance was submitted successfully, but the booking could not be opened. ' +
+    'Open Bookings to continue.',
   refreshFailed:
     "Your acceptance was submitted, but we couldn't refresh this opportunity. " +
     'Refresh to see the latest status.',
