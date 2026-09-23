@@ -43,13 +43,15 @@ function CountRow({ label, value }: { label: string; value: number }) {
 }
 
 export function AdminAnalyticsDashboard({
-  view, onRefresh, onRetry, onIdentityReviews, onReports, footer,
+  view, onRefresh, onRetry, onIdentityReviews, onReports, onWorkers, onClients, footer,
 }: {
   view: AdminAnalyticsView;
   onRefresh: () => void;
   onRetry: () => void;
   onIdentityReviews: () => void;
   onReports: () => void;
+  onWorkers: () => void;
+  onClients: () => void;
   footer: ReactNode;
 }) {
   const summary = view.snapshot;
@@ -69,6 +71,13 @@ export function AdminAnalyticsDashboard({
       }
     >
       <Text style={styles.heading}>Admin Dashboard</Text>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Directories</Text>
+        <View style={styles.directoryButtons}>
+          <AppButton label="Workers" variant="secondary" onPress={onWorkers} />
+          <AppButton label="Clients" variant="secondary" onPress={onClients} />
+        </View>
+      </View>
       <Text style={styles.context}>
         Current retained-data snapshot, including inactive accounts and retained test data.
       </Text>
@@ -152,6 +161,7 @@ const styles = StyleSheet.create({
   context: { ...type.helper, color: colors.textSecondary },
   updated: { ...type.caption, color: colors.textSecondary },
   section: { gap: spacing.md },
+  directoryButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   sectionTitle: { ...type.sectionTitle, color: colors.textPrimary },
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   metric: { flexBasis: '46%', flexGrow: 1, minWidth: 128, padding: spacing.md },

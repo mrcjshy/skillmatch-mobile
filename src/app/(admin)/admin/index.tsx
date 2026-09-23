@@ -70,6 +70,8 @@ export default function AdminHome() {
       onRetry={() => controller.refresh()}
       onIdentityReviews={() => router.push('/admin/identity-reviews' as Href)}
       onReports={() => router.push('/admin/reports' as Href)}
+      onWorkers={() => router.push('/admin/workers' as Href)}
+      onClients={() => router.push('/admin/clients' as Href)}
       footer={
         <>
           <AppButton
