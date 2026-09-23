@@ -1,25 +1,47 @@
-import { useState } from 'react';
-import { type Href, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { type Href, useFocusEffect, useRouter } from 'expo-router';
 
+import { AdminAnalyticsDashboard } from '@/components/admin-analytics-dashboard';
 import { AppButton } from '@/components/app-button';
 import { AppNotice } from '@/components/app-notice';
-import { IdentityReviewQueue } from '@/components/identity-review-queue';
+import {
+  AdminAnalyticsCoordinator, loadAdminAnalyticsSummary, type AdminAnalyticsView,
+} from '@/lib/admin-analytics';
 import { signOutCurrentUser } from '@/lib/sign-out';
 import { useAccount } from '@/providers/account-provider';
+import { useSession } from '@/providers/session-provider';
 
-/**
- * Administrator Home = pending Worker ID review list.
- *
- * Approve/reject and ID preview live on Verification Details. Approve there
- * calls public.approve_worker_identity, which wraps verify_worker — the sole
- * writer of is_verified. This screen does not call verify_worker directly and
- * never uses getPublicUrl() for identity images.
- */
 export default function AdminHome() {
   const router = useRouter();
-  const { account } = useAccount();
+  const { account, status } = useAccount();
+  const { session } = useSession();
+  const sessionUserId = session?.user.id;
+  const authorizedId =
+    status === 'resolved' && account?.role === 'administrator' &&
+    account.is_active && account.id === sessionUserId
+      ? account.id
+      : null;
+  const [view, setView] = useState<AdminAnalyticsView>({
+    ownerId: null, snapshot: null, loading: false, refreshing: false, error: null,
+  });
+  const [controller] = useState(
+    () => new AdminAnalyticsCoordinator(loadAdminAnalyticsSummary, setView)
+  );
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (authorizedId === null) {
+        controller.clear();
+        return undefined;
+      }
+      controller.activate(authorizedId);
+      return () => controller.deactivate();
+    }, [authorizedId, controller])
+  );
+
+  useEffect(() => () => controller.dispose(), [controller]);
 
   async function handleSignOut() {
     if (isSigningOut) return;
@@ -35,30 +57,25 @@ export default function AdminHome() {
     }
   }
 
+  // Do not pass a previous account's snapshot to the dashboard while the
+  // focus effect invalidates that request lifetime.
+  const visibleView: AdminAnalyticsView = authorizedId !== null && view.ownerId === authorizedId
+    ? view
+    : { ownerId: authorizedId, snapshot: null, loading: true, refreshing: false, error: null };
+
   return (
-    <IdentityReviewQueue
-      adminId={account?.id}
-      onSelectWorker={(userId) => {
-        router.push({
-          pathname: '/admin/verification-details',
-          params: { userId },
-        } as unknown as Href);
-      }}
-      header={
-        <AppButton
-          label="Reports"
-          variant="secondary"
-          onPress={() => router.push('/admin/reports' as unknown as Href)}
-        />
-      }
+    <AdminAnalyticsDashboard
+      view={visibleView}
+      onRefresh={() => controller.refresh()}
+      onRetry={() => controller.refresh()}
+      onIdentityReviews={() => router.push('/admin/identity-reviews' as Href)}
+      onReports={() => router.push('/admin/reports' as Href)}
       footer={
         <>
           <AppButton
             label="Sign Out"
             variant="secondary"
-            onPress={() => {
-              void handleSignOut();
-            }}
+            onPress={() => { void handleSignOut(); }}
             loading={isSigningOut}
             disabled={isSigningOut}
           />

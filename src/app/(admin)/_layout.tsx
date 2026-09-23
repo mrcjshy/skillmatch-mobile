@@ -10,6 +10,10 @@ export default function AdminLayout() {
       }}
     >
       <Stack.Screen name="admin/index" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="admin/identity-reviews"
+        options={{ title: 'Identity Reviews', headerShown: true }}
+      />
       <Stack.Screen name="admin/reports" options={{ title: 'Reports', headerShown: true }} />
       <Stack.Screen
         name="admin/report-details"
