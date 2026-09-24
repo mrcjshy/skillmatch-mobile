@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
@@ -29,6 +29,7 @@ function summary(item: DirectoryItem, kind: DirectoryKind): string {
 }
 
 export function AdminDirectory({ kind }: { kind: DirectoryKind }) {
+  const router = useRouter();
   const { account, status } = useAccount();
   const { session } = useSession();
   const adminId = status === 'resolved' && account?.role === 'administrator' && account.is_active &&
@@ -75,7 +76,9 @@ export function AdminDirectory({ kind }: { kind: DirectoryKind }) {
       keyboardShouldPersistTaps="handled"
       data={loading && !current ? [] : current?.items ?? []}
       keyExtractor={(item) => item.user_id}
-      renderItem={({ item }) => <AppListRow title={item.full_name} subtitle={summary(item, kind)} showDivider />}
+      renderItem={({ item }) => <AppListRow title={item.full_name} subtitle={summary(item, kind)} showDivider
+        onPress={() => router.push({ pathname: '/admin/user-detail', params: { userId: item.user_id, kind } } as unknown as Href)}
+        accessibilityLabel={`View ${kind} details for ${item.full_name}`} />}
       ListHeaderComponent={
         <View style={styles.header}>
           <AppField

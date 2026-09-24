@@ -12,6 +12,7 @@ export default function AdminLayout() {
       <Stack.Screen name="admin/index" options={{ headerShown: false }} />
       <Stack.Screen name="admin/workers" options={{ title: 'Worker Directory' }} />
       <Stack.Screen name="admin/clients" options={{ title: 'Client Directory' }} />
+      <Stack.Screen name="admin/user-detail" options={{ title: 'User Details' }} />
       <Stack.Screen
         name="admin/identity-reviews"
         options={{ title: 'Identity Reviews', headerShown: true }}
