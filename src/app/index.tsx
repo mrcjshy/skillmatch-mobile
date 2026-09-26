@@ -1,4 +1,4 @@
-import { Redirect } from 'expo-router';
+import { Redirect, type Href } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { ACCESS_ROUTE, deriveAccessState } from '@/app/_layout';
@@ -34,7 +34,7 @@ export default function RootIndex() {
   // Worker ID gates still fail closed: do not enter a role inbox until the
   // matching access state is the role app.
   if (inbox.kind === 'replace' && (access === 'worker' || access === 'client')) {
-    return <Redirect href={inbox.href} />;
+    return <Redirect href={inbox.href as Href} />;
   }
 
   // Inline states are held by the root layout and never reach here; this is

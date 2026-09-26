@@ -68,6 +68,7 @@ export default function AdminHome() {
       view={visibleView}
       onRefresh={() => controller.refresh()}
       onRetry={() => controller.refresh()}
+      onNotifications={() => router.push('/admin/notifications' as Href)}
       onIdentityReviews={() => router.push('/admin/identity-reviews' as Href)}
       onReports={() => router.push('/admin/reports' as Href)}
       onWorkers={() => router.push('/admin/workers' as Href)}

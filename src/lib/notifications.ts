@@ -41,7 +41,7 @@ export type NotificationRow = {
  * Human-readable label per notification type. A raw type string such as
  * `booking_confirmed` or `no_show_strike` must NEVER reach the screen.
  *
- * These are the eight values `notifications_type_check` permits after N12-DB.
+ * These are the values `notifications_type_check` permits after V4 #16.
  * The four that no current server path emits yet are still mapped, because the
  * type domain allows them and a future writer must not be able to surface a
  * raw identifier just because this map was left incomplete.
@@ -55,6 +55,7 @@ const NOTIFICATION_LABEL: Record<string, string> = {
   account_suspended: 'Account suspended',
   payment_received: 'Payment received',
   worker_verified: 'Profile verified',
+  report_submitted: 'Report submitted',
 };
 
 /**

@@ -14,6 +14,8 @@ export const ANDROID_CHANNEL_ID = 'default';
 export const ANDROID_CHANNEL_NAME = 'SkillMatch Notifications';
 export const WORKER_NOTIFICATIONS_HREF = '/worker/notifications';
 export const CLIENT_NOTIFICATIONS_HREF = '/client/notifications';
+export const ADMIN_NOTIFICATIONS_HREF = '/admin/notifications';
+export const ADMIN_REPORTS_HREF = '/admin/reports';
 export const PERMISSION_SETTLE_MS = 800;
 /** The only R5B navigation intent. Role/route are never taken from the payload. */
 export const OPEN_NOTIFICATIONS_INBOX = 'OPEN_NOTIFICATIONS_INBOX';
@@ -32,9 +34,13 @@ export type PushFailureCode =
   | 'register_failed'
   | 'deactivate_failed';
 
-export type PushRole = 'worker' | 'client';
+export type PushRole = 'worker' | 'client' | 'administrator';
 
-export type InboxHref = typeof WORKER_NOTIFICATIONS_HREF | typeof CLIENT_NOTIFICATIONS_HREF;
+export type InboxHref =
+  | typeof WORKER_NOTIFICATIONS_HREF
+  | typeof CLIENT_NOTIFICATIONS_HREF
+  | typeof ADMIN_NOTIFICATIONS_HREF
+  | typeof ADMIN_REPORTS_HREF;
 
 export type PushDeliveryHint = {
   /** Untrusted delivery metadata. Never a business record. */
@@ -93,6 +99,8 @@ let androidChannelReady = false;
 let foregroundHandlerConfigured = false;
 /** Generic pending launch intent. Stores no role, route, or business ids. */
 let pendingOpenNotificationsInbox = false;
+/** Delivery metadata used only to re-read the recipient-owned row after auth. */
+let pendingNotificationId: string | null = null;
 
 export function getRememberedExpoPushToken(): string | null {
   return rememberedExpoPushToken;
@@ -112,14 +120,20 @@ export function resetPushClientState(): void {
   androidChannelReady = false;
   foregroundHandlerConfigured = false;
   pendingOpenNotificationsInbox = false;
+  pendingNotificationId = null;
 }
 
 export function hasPendingNotificationsInboxIntent(): boolean {
   return pendingOpenNotificationsInbox;
 }
 
+export function getPendingNotificationId(): string | null {
+  return pendingNotificationId;
+}
+
 export function clearPendingNotificationsInboxIntent(): void {
   pendingOpenNotificationsInbox = false;
+  pendingNotificationId = null;
 }
 
 export type PendingInboxAccountStatus = 'idle' | 'pending' | 'resolved' | 'error';
@@ -131,6 +145,8 @@ export type PendingInboxNavInput = {
   accountStatus: PendingInboxAccountStatus;
   role: unknown;
   isActive?: boolean | null;
+  isNotificationTypeResolved?: boolean;
+  notificationType?: unknown;
 };
 
 export type PendingInboxNavDecision =
@@ -152,6 +168,7 @@ export function isSkillMatchNotificationResponse(response: unknown): boolean {
 /** Records OPEN_NOTIFICATIONS_INBOX. Returns true when a new pending intent was set. */
 export function captureNotificationResponse(response: unknown): boolean {
   if (!isSkillMatchNotificationResponse(response)) return false;
+  pendingNotificationId = parsePushTapData(extractTapData(response))?.notificationId ?? null;
   pendingOpenNotificationsInbox = true;
   return true;
 }
@@ -163,7 +180,10 @@ export function decidePendingInboxNavigation(input: PendingInboxNavInput): Pendi
   if (input.accountStatus === 'idle' || input.accountStatus === 'pending') return { kind: 'wait' };
   if (input.accountStatus === 'error') return { kind: 'wait' };
   if (input.isActive !== true) return { kind: 'wait' };
-  const href = inboxHrefForRole(input.role);
+  if (input.role === 'administrator' && input.isNotificationTypeResolved !== true) {
+    return { kind: 'wait' };
+  }
+  const href = notificationActivationHref(input.role, input.notificationType);
   if (!href) return { kind: 'wait' };
   return { kind: 'replace', href };
 }
@@ -179,7 +199,7 @@ export function consumeReadyInboxNavigation(input: PendingInboxNavInput): InboxH
     hasPendingInboxIntent: true,
   });
   if (decision.kind !== 'replace') return null;
-  pendingOpenNotificationsInbox = false;
+  clearPendingNotificationsInboxIntent();
   return decision.href;
 }
 
@@ -203,7 +223,30 @@ export function resolveEasProjectId(source: ProjectIdSource): string | null {
 export function inboxHrefForRole(role: unknown): InboxHref | null {
   if (role === 'worker') return WORKER_NOTIFICATIONS_HREF;
   if (role === 'client') return CLIENT_NOTIFICATIONS_HREF;
+  if (role === 'administrator') return ADMIN_NOTIFICATIONS_HREF;
   return null;
+}
+
+export function isPushRegistrationRole(role: unknown): role is PushRole {
+  return role === 'worker' || role === 'client' || role === 'administrator';
+}
+
+/**
+ * Resolves a notification activation from the authenticated account role and
+ * a notification type read from the recipient-owned database row. Payload
+ * fields never select a route. Admin report notifications deliberately open
+ * the report list because notification rows contain no trusted report id.
+ */
+export function notificationActivationHref(
+  role: unknown,
+  trustedNotificationType: unknown
+): InboxHref | null {
+  if (role === 'administrator') {
+    return trustedNotificationType === 'report_submitted'
+      ? ADMIN_REPORTS_HREF
+      : ADMIN_NOTIFICATIONS_HREF;
+  }
+  return inboxHrefForRole(role);
 }
 
 /**

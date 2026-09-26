@@ -4,12 +4,17 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
 import { supabase } from '@/lib/supabase';
-import { PERMISSION_SETTLE_MS, registerCurrentPushDevice, type PushRole } from '@/lib/push-notifications';
+import {
+  isPushRegistrationRole,
+  PERMISSION_SETTLE_MS,
+  registerCurrentPushDevice,
+  type PushRole,
+} from '@/lib/push-notifications';
 import { useAccount } from '@/providers/account-provider';
 import { useSession } from '@/providers/session-provider';
 
 /**
- * Authenticated Worker/Client device registration only.
+ * Authenticated Worker/Client/Administrator device registration only.
  *
  * Tap routing lives in PushNotificationInboxIntent so a single response
  * pipeline can capture cold-start responses before role layouts mount.
@@ -22,7 +27,7 @@ export function PushNotificationRegistration({ role }: { role: PushRole }) {
 
   useEffect(() => {
     if (!session || status !== 'resolved' || !account?.is_active) return;
-    if (account.role !== role) return;
+    if (!isPushRegistrationRole(account.role) || account.role !== role) return;
 
     let cancelled = false;
     const timer = setTimeout(() => {

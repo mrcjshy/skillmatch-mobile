@@ -84,7 +84,11 @@ async function loadNotifications(): Promise<NotificationRow[]> {
 
 type Notice = { tone: 'info' | 'warning'; text: string };
 
-export default function NotificationList() {
+export default function NotificationList({
+  onNotificationPress,
+}: {
+  onNotificationPress?: (notification: NotificationRow) => void;
+}) {
   const { account } = useAccount();
   const accountId = account?.id;
 
@@ -285,6 +289,14 @@ export default function NotificationList() {
     }
   }
 
+  async function handleNotificationPress(notification: NotificationRow) {
+    if (busy) return;
+    if (isUnread(notification.is_read)) {
+      await handleMarkRead(notification.id);
+    }
+    onNotificationPress?.(notification);
+  }
+
   return (
     <ScrollView
       style={styles.scroll}
@@ -317,6 +329,7 @@ export default function NotificationList() {
       ) : (
         notifications.map((n) => {
           const unread = isUnread(n.is_read);
+          const canOpen = onNotificationPress !== undefined;
           const created = formatTimestamp(n.created_at);
           const isMarkingThis = markingId === n.id;
 
@@ -339,24 +352,29 @@ export default function NotificationList() {
                   <Text style={styles.note}>Marking as read…</Text>
                 </View>
               ) : unread ? (
-                <Text style={styles.hint}>Tap to mark as read</Text>
+                <Text style={styles.hint}>
+                  {canOpen ? 'Tap to mark as read and open' : 'Tap to mark as read'}
+                </Text>
+              ) : canOpen ? (
+                <Text style={styles.hint}>Tap to open</Text>
               ) : null}
             </>
           );
 
-          // Only unread rows are interactive: a read row has nothing left to
-          // do, so making it pressable would offer an action with no effect.
-          return unread ? (
+          // Worker/Client behavior stays mark-read-only. A caller may opt into
+          // activation (the Admin inbox does) so already-read rows can still
+          // open their trusted destination.
+          return unread || canOpen ? (
             <Pressable
               key={n.id}
-              onPress={() => handleMarkRead(n.id)}
+              onPress={() => { void handleNotificationPress(n); }}
               disabled={busy}
               accessibilityRole="button"
               accessibilityState={{ disabled: busy, busy: isMarkingThis }}
-              accessibilityLabel={`${formatNotificationLabel(n.type)}, unread. ${n.message}`}
+              accessibilityLabel={`${formatNotificationLabel(n.type)}${unread ? ', unread' : ''}. ${n.message}`}
               style={busy && !isMarkingThis ? styles.cardDisabled : undefined}
             >
-              <AppCard style={styles.cardUnread}>{body}</AppCard>
+              <AppCard style={unread ? styles.cardUnread : undefined}>{body}</AppCard>
             </Pressable>
           ) : (
             <AppCard key={n.id}>{body}</AppCard>

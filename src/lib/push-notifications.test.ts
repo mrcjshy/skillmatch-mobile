@@ -3,16 +3,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ANDROID_CHANNEL_ID,
   ANDROID_CHANNEL_NAME,
+  ADMIN_NOTIFICATIONS_HREF,
+  ADMIN_REPORTS_HREF,
   CLIENT_NOTIFICATIONS_HREF,
   WORKER_NOTIFICATIONS_HREF,
   acquireExpoPushToken,
   configureForegroundHandler,
   ensureAndroidNotificationChannel,
   extractTapData,
+  getPendingNotificationId,
   inboxHrefForRole,
   inspectPermission,
   isAndroidChannelReady,
   isForegroundHandlerConfigured,
+  isPushRegistrationRole,
+  notificationActivationHref,
   parsePushTapData,
   registerCurrentPushDevice,
   registerExpoPushToken,
@@ -228,9 +233,52 @@ describe('push-notifications', () => {
     expect(resolveTapInboxHref('client', null)).toBe('/client/notifications');
   });
 
+  it('keeps Worker, Client, and Admin eligible for the shared push registration path', () => {
+    expect(isPushRegistrationRole('worker')).toBe(true);
+    expect(isPushRegistrationRole('client')).toBe(true);
+    expect(isPushRegistrationRole('administrator')).toBe(true);
+    expect(isPushRegistrationRole('admin')).toBe(false);
+    expect(isPushRegistrationRole(null)).toBe(false);
+  });
+
+  it('routes a trusted Admin report notification to the report list only', () => {
+    expect(notificationActivationHref('administrator', 'report_submitted')).toBe(
+      ADMIN_REPORTS_HREF
+    );
+    expect(notificationActivationHref('administrator', 'report_submitted')).toBe(
+      '/admin/reports'
+    );
+    expect(notificationActivationHref('administrator', 'report_submitted')).not.toBe(
+      '/admin/report-details'
+    );
+    expect(notificationActivationHref('administrator', 'unknown')).toBe(
+      ADMIN_NOTIFICATIONS_HREF
+    );
+  });
+
+  it('preserves Worker and Client destinations regardless of notification type', () => {
+    expect(notificationActivationHref('worker', 'report_submitted')).toBe(
+      WORKER_NOTIFICATIONS_HREF
+    );
+    expect(notificationActivationHref('client', 'report_submitted')).toBe(
+      CLIENT_NOTIFICATIONS_HREF
+    );
+  });
+
+  it('does not let an inappropriate role or type fabricate an Admin destination', () => {
+    expect(notificationActivationHref('worker', '/admin/reports')).toBe(
+      WORKER_NOTIFICATIONS_HREF
+    );
+    expect(notificationActivationHref('client', 'report_submitted')).not.toMatch(/^\/admin\//);
+    expect(notificationActivationHref('administrator', '/admin/report-details')).toBe(
+      ADMIN_NOTIFICATIONS_HREF
+    );
+    expect(notificationActivationHref('unexpected', 'report_submitted')).toBeNull();
+  });
+
   it('does not bypass role guards for unresolved or unauthenticated taps', () => {
     expect(inboxHrefForRole(null)).toBeNull();
-    expect(inboxHrefForRole('administrator')).toBeNull();
+    expect(inboxHrefForRole('unexpected')).toBeNull();
     expect(resolveTapInboxHref(undefined, parsePushTapData({ notification_id: '11111111-1111-4111-8111-111111111111' }))).toBeNull();
   });
 
@@ -333,6 +381,16 @@ describe('pending OPEN_NOTIFICATIONS_INBOX intent', () => {
     return { ...readyClient(overrides), role: 'worker' };
   }
 
+  function readyAdmin(overrides: Partial<PendingInboxNavInput> = {}): PendingInboxNavInput {
+    return {
+      ...readyClient(),
+      role: 'administrator',
+      isNotificationTypeResolved: true,
+      notificationType: 'report_submitted',
+      ...overrides,
+    };
+  }
+
   beforeEach(() => {
     resetPushClientState();
   });
@@ -361,6 +419,30 @@ describe('pending OPEN_NOTIFICATIONS_INBOX intent', () => {
     captureNotificationResponse(tapResponse(payload));
     expect(consumeReadyInboxNavigation(readyWorker())).toBe('/worker/notifications');
     expect(consumeReadyInboxNavigation(readyWorker())).toBeNull();
+  });
+
+  it('waits for the owned notification row before routing an Admin push tap', () => {
+    captureNotificationResponse(tapResponse(payload));
+    expect(
+      decidePendingInboxNavigation(
+        readyAdmin({ isNotificationTypeResolved: false, notificationType: undefined })
+      )
+    ).toEqual({ kind: 'wait' });
+    expect(
+      consumeReadyInboxNavigation(
+        readyAdmin({ isNotificationTypeResolved: false, notificationType: undefined })
+      )
+    ).toBeNull();
+    expect(hasPendingNotificationsInboxIntent()).toBe(true);
+    expect(consumeReadyInboxNavigation(readyAdmin())).toBe('/admin/reports');
+    expect(hasPendingNotificationsInboxIntent()).toBe(false);
+  });
+
+  it('falls back to the protected Admin inbox for a non-report trusted type', () => {
+    captureNotificationResponse(tapResponse(payload));
+    expect(
+      consumeReadyInboxNavigation(readyAdmin({ notificationType: 'worker_verified' }))
+    ).toBe('/admin/notifications');
   });
 
   it('does not enter a protected inbox when there is no session', () => {
@@ -400,8 +482,21 @@ describe('pending OPEN_NOTIFICATIONS_INBOX intent', () => {
   it('does not open the inbox for inactive or unsupported accounts', () => {
     captureNotificationResponse(tapResponse(payload));
     expect(consumeReadyInboxNavigation(readyClient({ isActive: false }))).toBeNull();
-    expect(consumeReadyInboxNavigation(readyClient({ role: 'administrator' }))).toBeNull();
+    expect(consumeReadyInboxNavigation(readyClient({ role: 'unexpected' }))).toBeNull();
     expect(hasPendingNotificationsInboxIntent()).toBe(true);
+  });
+
+  it('retains only notification_id from the response for the trusted Admin lookup', () => {
+    captureNotificationResponse(
+      tapResponse({
+        notification_id: '55555555-5555-4555-8555-555555555555',
+        type: 'report_submitted',
+        href: '/admin/report-details',
+      })
+    );
+    expect(getPendingNotificationId()).toBe('55555555-5555-4555-8555-555555555555');
+    clearPendingNotificationsInboxIntent();
+    expect(getPendingNotificationId()).toBeNull();
   });
 
   it('does not redirect on an ordinary launch with no notification response', () => {

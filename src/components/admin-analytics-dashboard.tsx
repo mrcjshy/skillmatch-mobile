@@ -43,11 +43,13 @@ function CountRow({ label, value }: { label: string; value: number }) {
 }
 
 export function AdminAnalyticsDashboard({
-  view, onRefresh, onRetry, onIdentityReviews, onReports, onWorkers, onClients, footer,
+  view, onRefresh, onRetry, onNotifications, onIdentityReviews, onReports, onWorkers, onClients,
+  footer,
 }: {
   view: AdminAnalyticsView;
   onRefresh: () => void;
   onRetry: () => void;
+  onNotifications: () => void;
   onIdentityReviews: () => void;
   onReports: () => void;
   onWorkers: () => void;
@@ -71,6 +73,10 @@ export function AdminAnalyticsDashboard({
       }
     >
       <Text style={styles.heading}>Admin Dashboard</Text>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Inbox</Text>
+        <AppButton label="Notifications" variant="secondary" onPress={onNotifications} />
+      </View>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Directories</Text>
         <View style={styles.directoryButtons}>
