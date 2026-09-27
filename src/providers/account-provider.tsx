@@ -314,6 +314,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const userEmail = session?.user.email;
   const userMetadata = session?.user.user_metadata;
 
+  /* eslint-disable react-hooks/set-state-in-effect -- session bootstrap clears stale account state before asynchronous reads */
   useEffect(() => {
     // Session not usable → idle. Not an account error.
     if (isSessionLoading || sessionError || !session || !userId) {
@@ -397,6 +398,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     // user or attempt is discarded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSessionLoading, sessionError, session, userId, retryToken]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const retryAccountBootstrap = useCallback(() => {
     setRetryToken((token) => token + 1);

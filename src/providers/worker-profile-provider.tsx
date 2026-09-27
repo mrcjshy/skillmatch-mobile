@@ -191,6 +191,7 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
     setIsVerified(loaded.isVerified);
   }, []);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- each user load starts loading and clears its prior error before asynchronous reads */
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
@@ -212,6 +213,7 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [userId, applyLoaded]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   async function persistAvailability(status: AvailabilityStatus) {
     if (isPersistingAvailability || isSaving || !userId) return;

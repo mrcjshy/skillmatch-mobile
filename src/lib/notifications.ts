@@ -1,4 +1,4 @@
-import { formatCompactDateTime } from '@/lib/date-time';
+import { formatCompactDateTime } from './date-time';
 
 /**
  * N12-UI shared Notification contract.
