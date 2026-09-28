@@ -46,8 +46,8 @@
  * N11 established is not reopened through this screen.
  */
 
-import { formatCompactDateTime } from '@/lib/date-time';
-import { supabase } from '@/lib/supabase';
+import { formatCompactDateTime } from './date-time';
+import { supabase } from './supabase';
 
 /**
  * The locked maximum, in CHARACTERS, mirroring `length(content) <= 2000` in
@@ -266,6 +266,105 @@ export async function fetchBookingMessages(bookingId: string): Promise<MessageRo
   }
   const rows = Array.isArray(res.data) ? res.data : [];
   return rows.map(toMessageRow).filter((m): m is MessageRow => m !== null);
+}
+
+/** Banner observation never fetches bodies or read-state columns. */
+export type MessageCursor = { created_at: string; id: string };
+export type IncomingMessageRow = MessageCursor & { sender_id: string };
+export const INCOMING_MESSAGE_PAGE_SIZE = 100;
+
+const CURSOR_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CURSOR_TIME = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/;
+
+function cursorTime(value: string): bigint {
+  const match = CURSOR_TIME.exec(value);
+  if (!match) throw new MessageError('Invalid message cursor.', null);
+  const milliseconds = Date.parse(match[1] + match[3]);
+  if (!Number.isFinite(milliseconds)) throw new MessageError('Invalid message cursor.', null);
+  // Preserve PostgreSQL microseconds; Date alone loses the last three digits.
+  return BigInt(milliseconds) * BigInt(1000) + BigInt((match[2] ?? '').padEnd(6, '0'));
+}
+
+function readCursor(row: unknown): MessageCursor {
+  if (typeof row !== 'object' || row === null || !('id' in row) ||
+      !('created_at' in row) || typeof row.id !== 'string' || !CURSOR_UUID.test(row.id) ||
+      typeof row.created_at !== 'string') throw new MessageError('Invalid message cursor.', null);
+  cursorTime(row.created_at);
+  return { id: row.id.toLowerCase(), created_at: row.created_at };
+}
+
+export function compareMessageCursors(a: MessageCursor, b: MessageCursor): number {
+  const left = cursorTime(a.created_at), right = cursorTime(b.created_at);
+  return left < right ? -1 : left > right ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/** One bounded authoritative read, including for conversations larger than the API cap. */
+export async function seedBookingMessageCursor(bookingId: string): Promise<MessageCursor | null> {
+  const result = await supabase.from('messages').select('id, created_at')
+    .eq('booking_id', bookingId).order('created_at', { ascending: false })
+    .order('id', { ascending: false }).limit(1);
+  if (result.error) throw new MessageError(result.error.message, result.error.code ?? null);
+  if (!Array.isArray(result.data)) throw new MessageError('Invalid message response.', null);
+  return result.data.length === 0 ? null : readCursor(result.data[0]);
+}
+
+/**
+ * Keyset pagination up to a bounded latest-row snapshot. Never infer exhaustion
+ * from a short page: the server can impose a smaller cap than our request.
+ * No partial result escapes on failure or cancellation. The caller performs
+ * participant Booking authorization before this call and again before display.
+ */
+export async function readNewBookingMessages(
+  bookingId: string,
+  after: MessageCursor | null,
+  isCurrent: () => boolean,
+): Promise<{ cursor: MessageCursor | null; messages: IncomingMessageRow[] }> {
+  const check = () => {
+    if (!isCurrent()) throw new MessageError('Message observation invalidated.', null);
+  };
+  check();
+  let cursor = after === null ? null : readCursor(after);
+  const upper = await seedBookingMessageCursor(bookingId);
+  check();
+  if (upper === null || (cursor !== null && compareMessageCursors(upper, cursor) <= 0)) {
+    return { cursor, messages: [] };
+  }
+  const messages: IncomingMessageRow[] = [];
+  const ids = new Set<string>();
+  while (cursor === null || compareMessageCursors(cursor, upper) < 0) {
+    check();
+    // Only validated UUIDs and ISO timestamps enter the raw PostgREST grammar.
+    const ceiling = `or(created_at.lt.${upper.created_at},and(created_at.eq.${upper.created_at},id.lte.${upper.id}))`;
+    const floor = cursor === null ? null :
+      `or(created_at.gt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.gt.${cursor.id}))`;
+    const result = await supabase.from('messages').select('id, sender_id, created_at')
+      .eq('booking_id', bookingId).or(floor === null ? ceiling : `and(${floor},${ceiling})`)
+      .order('created_at', { ascending: true }).order('id', { ascending: true })
+      .limit(INCOMING_MESSAGE_PAGE_SIZE);
+    check();
+    if (result.error) throw new MessageError(result.error.message, result.error.code ?? null);
+    if (!Array.isArray(result.data)) throw new MessageError('Invalid message response.', null);
+    const previous = cursor;
+    for (const raw of result.data) {
+      const next = readCursor(raw);
+      if (typeof raw.sender_id !== 'string' || !CURSOR_UUID.test(raw.sender_id)) {
+        throw new MessageError('Invalid message sender.', null);
+      }
+      if (compareMessageCursors(next, upper) > 0) throw new MessageError('Invalid message page.', null);
+      // Defensive overlap suppression; keyset SELECT itself uses a strict floor.
+      if (cursor !== null && compareMessageCursors(next, cursor) <= 0) continue;
+      cursor = next;
+      if (!ids.has(next.id)) {
+        ids.add(next.id);
+        messages.push({ ...next, sender_id: raw.sender_id.toLowerCase() });
+      }
+    }
+    if (cursor === null || (previous !== null && compareMessageCursors(cursor, previous) <= 0)) {
+      // Includes RLS returning zero rows mid-pagination. Never spin or disclose a partial batch.
+      throw new MessageError('Message observation could not complete.', null);
+    }
+  }
+  return { cursor, messages };
 }
 
 /**

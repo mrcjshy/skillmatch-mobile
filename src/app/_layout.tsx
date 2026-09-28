@@ -5,6 +5,7 @@ import { TamaguiProvider } from 'tamagui';
 import { tamaguiConfig } from '../../tamagui.config';
 
 import { PushNotificationInboxIntent } from '@/components/push-notification-inbox-intent';
+import { IncomingMessageBannerHost } from '@/components/incoming-message-banner-host';
 import { isRecoverySurfaceActive } from '@/lib/auth-recovery';
 import {
   AccountProvider,
@@ -190,6 +191,7 @@ export default function RootLayout() {
         <TamaguiProvider config={tamaguiConfig} defaultTheme="skillmatch">
           <PushNotificationInboxIntent />
           <RootNavigator />
+          <IncomingMessageBannerHost />
         </TamaguiProvider>
       </AccountProvider>
     </SessionProvider>
