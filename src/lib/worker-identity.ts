@@ -323,7 +323,12 @@ function throwIdentityError(error: { message?: string; code?: string | null }, f
 export async function getMyIdentitySubmission(): Promise<WorkerIdentitySubmission | null> {
   const result = await supabase.rpc('get_my_identity_submission');
   if (result.error) throwIdentityError(result.error, IDENTITY_COPY.loadFailed);
-  return parseIdentitySubmissionResult(result.data);
+  const row = parseIdentitySubmissionResult(result.data);
+  if (row === null && result.data !== null && result.data !== undefined &&
+      (!Array.isArray(result.data) || result.data.length > 0)) {
+    throw new WorkerIdentityError(IDENTITY_COPY.loadFailed, null);
+  }
+  return row;
 }
 
 function parseOwnWorkerProfileId(data: unknown): string | null {
