@@ -9,11 +9,14 @@ export function InitialsAvatar({
   name,
   accent,
   size = 48,
+  initials,
 }: {
   name: string;
   accent: string;
   size?: number;
+  initials?: string;
 }) {
+  const letters = initials ?? initialsFromName(name);
   return (
     <View
       style={[
@@ -26,9 +29,9 @@ export function InitialsAvatar({
         },
       ]}
       accessibilityRole="image"
-      accessibilityLabel={`Avatar ${initialsFromName(name)}`}
+      accessibilityLabel={`Avatar ${letters}`}
     >
-      <Text style={styles.letters}>{initialsFromName(name)}</Text>
+      <Text style={styles.letters}>{letters}</Text>
     </View>
   );
 }
