@@ -7,6 +7,7 @@ import { tamaguiConfig } from '../../tamagui.config';
 import { PushNotificationInboxIntent } from '@/components/push-notification-inbox-intent';
 import { IncomingMessageBannerHost } from '@/components/incoming-message-banner-host';
 import { isRecoverySurfaceActive } from '@/lib/auth-recovery';
+import { canEnterWorkerApp } from '@/lib/worker-onboarding';
 import {
   AccountProvider,
   useAccount,
@@ -58,11 +59,11 @@ export function deriveAccessState(
   >,
   accountValue: Pick<
     AccountContextValue,
-    'account' | 'status' | 'hasCurrentConsent' | 'identitySubmission' | 'workerIsVerified'
+    'account' | 'status' | 'hasCurrentConsent' | 'workerOnboardingState'
   >
 ): AccessState {
   const { session, isSessionLoading, sessionError, recoveryStatus } = sessionValue;
-  const { account, status, hasCurrentConsent, identitySubmission, workerIsVerified } =
+  const { account, status, hasCurrentConsent, workerOnboardingState } =
     accountValue;
 
   if (isSessionLoading) return 'session-restoring';
@@ -71,6 +72,9 @@ export function deriveAccessState(
 
   // Authenticated from here on.
   if (status === 'idle' || status === 'pending') return 'account-pending';
+  if (status === 'resolved' && account !== null && account.id !== session.user.id) {
+    return 'account-pending';
+  }
 
   const resolved = status === 'resolved' && account !== null;
   if (resolved && account.is_active === false) return 'blocked';
@@ -81,9 +85,7 @@ export function deriveAccessState(
   }
   if (resolved && account.is_active === true && account.role === 'worker') {
     if (hasCurrentConsent !== true) return 'needs-consent';
-    const submitted = identitySubmission !== null;
-    if (!submitted && workerIsVerified !== true) return 'worker-identity';
-    return 'worker';
+    return canEnterWorkerApp(workerOnboardingState) ? 'worker' : 'worker-identity';
   }
   if (resolved && account.is_active === true && account.role === 'client') {
     if (hasCurrentConsent !== true) return 'needs-consent';

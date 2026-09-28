@@ -242,9 +242,14 @@ describe('loadClientBookingPortfolio', () => {
 
   it('does not query portfolio when the own booking is not confirmed', async () => {
     const loadBookings = vi.fn(async () => [clientBooking({ booking_status: 'completed' })]);
-    const loaded = await loadClientBookingPortfolio(BOOKING_ID, { loadBookings });
+    const loadProfilePhoto = vi.fn();
+    const loaded = await loadClientBookingPortfolio(BOOKING_ID, {
+      loadBookings,
+      loadProfilePhoto,
+    });
     expect(loaded).toEqual({ kind: 'revoked' });
     expect(fromMock).not.toHaveBeenCalled();
+    expect(loadProfilePhoto).not.toHaveBeenCalled();
   });
 
   it('does not treat a Worker user id as a booking id', async () => {
@@ -256,6 +261,11 @@ describe('loadClientBookingPortfolio', () => {
 
   it('loads only the assigned Worker portfolio and keeps text if signing fails', async () => {
     const loadBookings = vi.fn(async () => [clientBooking()]);
+    const loadProfilePhoto = vi.fn(async () => ({
+      status: 'available' as const,
+      path: `${WORKER_USER_ID}/avatar`,
+      signedUrl: 'https://signed.example/worker-avatar',
+    }));
     const { createSignedUrls, getPublicUrl, upload, remove } = storageApi({
       createSignedUrls: vi.fn(async () => ({ data: null, error: { message: 'sign failed' } })),
     });
@@ -294,10 +304,15 @@ describe('loadClientBookingPortfolio', () => {
       },
     ]);
 
-    const loaded = await loadClientBookingPortfolio(BOOKING_ID, { loadBookings });
+    const loaded = await loadClientBookingPortfolio(BOOKING_ID, {
+      loadBookings,
+      loadProfilePhoto,
+    });
     expect(loaded.kind).toBe('ready');
     if (loaded.kind !== 'ready') return;
     expect(loaded.workerName).toBe('Demo Worker');
+    expect(loaded.workerPhotoUrl).toBe('https://signed.example/worker-avatar');
+    expect(loadProfilePhoto).toHaveBeenCalledWith(WORKER_USER_ID);
     expect(loaded.items).toHaveLength(1);
     expect(loaded.items[0]?.title).toBe('Kitchen cabinet install');
     expect(loaded.items[0]?.description).toBe('Replaced lower cabinets.');

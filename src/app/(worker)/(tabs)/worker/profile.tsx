@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { type Href, useRouter } from 'expo-router';
+import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/app-button';
@@ -21,10 +21,12 @@ import { AppNotice } from '@/components/app-notice';
 import { AppSegment } from '@/components/app-segment';
 import { AvailabilityControl } from '@/components/availability-control';
 import { InlineStatus } from '@/components/inline-status';
+import { InitialsAvatar } from '@/components/initials-avatar';
 import { SectionHeader } from '@/components/section-header';
 import { SelectedSkillChips } from '@/components/selected-skill-chips';
 import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
 import { WorkerIdentitySection } from '@/components/worker-identity-section';
+import { WorkerProfilePhotoPicker } from '@/components/worker-profile-photo-picker';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   copySkillSelection,
@@ -36,6 +38,13 @@ import {
 import { PORTFOLIO_PATH } from '@/lib/portfolio';
 import { signOutCurrentUser } from '@/lib/sign-out';
 import { workerVerificationLabel } from '@/lib/worker-profile';
+import {
+  getWorkerProfilePhoto,
+  loadValidatedWorkerProfilePhoto,
+  removeWorkerProfilePhoto,
+  replaceWorkerProfilePhoto,
+  uploadWorkerProfilePhoto,
+} from '@/lib/worker-profile-photo';
 import { useAccount } from '@/providers/account-provider';
 import {
   PROFICIENCY_OPTIONS,
@@ -79,9 +88,92 @@ export default function WorkerProfile() {
   const [isAddingSkills, setIsAddingSkills] = useState(false);
   const [modalQuery, setModalQuery] = useState('');
   const [modalWorkingSelection, setModalWorkingSelection] = useState<SkillSelectionMap>({});
+  const [profilePhotoUri, setProfilePhotoUri] = useState<string | null>(null);
+  const [profilePhotoStatus, setProfilePhotoStatus] = useState<
+    'loading' | 'available' | 'missing' | 'unavailable'
+  >('loading');
+  const [isProfilePhotoBusy, setIsProfilePhotoBusy] = useState(false);
+  const [profilePhotoError, setProfilePhotoError] = useState<string | null>(null);
   const busy = isSaving || isSigningOut;
   const verificationLabel = workerVerificationLabel(isVerified);
   const selectedSkills = selectedCatalogSkills(skills, Object.keys(selection));
+  const workerUserId = account?.id;
+
+  const refreshProfilePhoto = useCallback(async () => {
+    if (!workerUserId) {
+      setProfilePhotoUri(null);
+      setProfilePhotoStatus('missing');
+      return;
+    }
+    const result = await getWorkerProfilePhoto(workerUserId);
+    if (result.status === 'available') {
+      setProfilePhotoUri(result.signedUrl);
+      setProfilePhotoStatus('available');
+      return;
+    }
+    setProfilePhotoUri(null);
+    setProfilePhotoStatus(result.reason);
+  }, [workerUserId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      setProfilePhotoStatus('loading');
+      void refreshProfilePhoto().catch(() => {
+        if (!cancelled) {
+          setProfilePhotoUri(null);
+          setProfilePhotoStatus('unavailable');
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [refreshProfilePhoto])
+  );
+
+  async function handleProfilePhotoSelected(asset: { uri: string }) {
+    if (!account?.id || isProfilePhotoBusy || profilePhotoStatus === 'unavailable') return;
+    setIsProfilePhotoBusy(true);
+    setProfilePhotoError(null);
+    try {
+      const checked = await loadValidatedWorkerProfilePhoto(asset.uri);
+      if (!checked.ok) {
+        setProfilePhotoError(
+          checked.reason === 'too_large'
+            ? 'Choose a photo that is 5 MiB or smaller.'
+            : checked.reason === 'unsupported_type'
+              ? 'Choose a JPEG, PNG, or WebP image.'
+              : 'The selected photo could not be read. Choose another photo.'
+        );
+        return;
+      }
+      if (profilePhotoStatus === 'available') {
+        await replaceWorkerProfilePhoto({ workerUserId: account.id, image: checked.image });
+      } else {
+        await uploadWorkerProfilePhoto({ workerUserId: account.id, image: checked.image });
+      }
+      await refreshProfilePhoto();
+    } catch {
+      setProfilePhotoError('Your profile photo could not be updated. Please try again.');
+    } finally {
+      setIsProfilePhotoBusy(false);
+    }
+  }
+
+  async function handleProfilePhotoRemove() {
+    if (!account?.id || isProfilePhotoBusy || profilePhotoStatus !== 'available') return;
+    setIsProfilePhotoBusy(true);
+    setProfilePhotoError(null);
+    try {
+      await removeWorkerProfilePhoto(account.id);
+      setProfilePhotoUri(null);
+      setProfilePhotoStatus('missing');
+    } catch {
+      setProfilePhotoError('Your profile photo could not be removed. Please try again.');
+    } finally {
+      setIsProfilePhotoBusy(false);
+    }
+  }
 
   async function handleSignOut() {
     if (isSigningOut) return;
@@ -134,6 +226,14 @@ export default function WorkerProfile() {
       keyboardShouldPersistTaps="handled"
     >
       <AppCard>
+        <View style={styles.profileAvatar}>
+          <InitialsAvatar
+            name={account?.full_name ?? 'Worker'}
+            accent={colors.accentSoft}
+            size={88}
+            photoUri={profilePhotoUri}
+          />
+        </View>
         <Text style={styles.identityName}>{account?.full_name ?? '—'}</Text>
         {!isLoading && !loadError ? (
           <View
@@ -179,6 +279,23 @@ export default function WorkerProfile() {
           <AvailabilityControl value={availability} onChange={setAvailability} disabled={busy} />
 
           <WorkerIdentitySection disabled={busy} surface="profile" />
+
+          <SectionHeader title="Profile photo" />
+          <AppCard>
+            <WorkerProfilePhotoPicker
+              photoUri={profilePhotoUri}
+              onPhotoSelected={(asset) => void handleProfilePhotoSelected(asset)}
+              onRemove={() => void handleProfilePhotoRemove()}
+              validationMessage={
+                profilePhotoStatus === 'unavailable'
+                  ? 'Your profile photo is unavailable right now. Your initials will be shown.'
+                  : profilePhotoError
+              }
+              disabled={busy || !account || profilePhotoStatus === 'unavailable'}
+              busy={isProfilePhotoBusy || profilePhotoStatus === 'loading'}
+              helpText="Optional. Choose one JPEG, PNG, or WebP image up to 5 MiB from your gallery."
+            />
+          </AppCard>
 
           <SectionHeader title="Skills" />
           <SelectedSkillChips
@@ -373,6 +490,9 @@ const styles = StyleSheet.create({
     padding: spacing.gutter,
     gap: spacing.lg,
     paddingBottom: spacing.xxxl + spacing.sm,
+  },
+  profileAvatar: {
+    alignItems: 'center',
   },
   identityName: {
     ...type.screenTitle,

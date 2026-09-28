@@ -1,3 +1,5 @@
+import { Image } from 'expo-image';
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { SkillMatchTheme } from '@/constants/theme';
@@ -10,13 +12,29 @@ export function InitialsAvatar({
   accent,
   size = 48,
   initials,
+  photoUri,
 }: {
   name: string;
   accent: string;
   size?: number;
   initials?: string;
+  photoUri?: string | null;
 }) {
   const letters = initials ?? initialsFromName(name);
+  const [failedPhotoUri, setFailedPhotoUri] = useState<string | null>(null);
+
+  if (photoUri && photoUri !== failedPhotoUri) {
+    return (
+      <Image
+        source={{ uri: photoUri }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+        contentFit="cover"
+        accessibilityLabel={`${name} profile photo`}
+        onError={() => setFailedPhotoUri(photoUri)}
+      />
+    );
+  }
+
   return (
     <View
       style={[

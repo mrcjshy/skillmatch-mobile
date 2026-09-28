@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -13,8 +13,16 @@ import { AppButton } from '@/components/app-button';
 import { AppChip, type AppChipVariant } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
 import { AppNotice } from '@/components/app-notice';
+import { InitialsAvatar } from '@/components/initials-avatar';
 import { InlineStatus } from '@/components/inline-status';
 import { BookingLoadError, formatBookingStatus, isBookingChatAvailable } from '@/lib/bookings';
+import {
+  counterpartPresentation,
+  findChatBooking,
+  messageAuthor,
+  type ChatBooking,
+  type ChatRole,
+} from '@/lib/chat-presentation';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   canSendInStatus,
@@ -39,6 +47,7 @@ import {
 } from '@/lib/realtime';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
+import { XStack, YStack } from 'tamagui';
 
 const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
@@ -66,14 +75,11 @@ const { colors, type, spacing, radius } = SkillMatchTheme.ui;
  * would refuse anyway; this only avoids rendering a composer over an empty
  * conversation the caller cannot write to.
  *
- * NO COUNTERPARTY DATA IS READ TO RENDER A CONVERSATION
- * -----------------------------------------------------
- * The RPC projects counterparty contact for released statuses, and this screen
- * uses NONE of it — not the name, phone, barangay, skills, verification or
- * rating. Only `booking_status` and `job_title` are consumed. Bubbles are
- * labelled from `sender_id` alone, so the terminal-state privacy suppression
- * N11 established cannot be reopened here, and a label never flips from a
- * person's name to "Other participant" as a Booking ends.
+ * COUNTERPARTY PRESENTATION
+ * -------------------------
+ * The participant RPC supplies the role-specific name only while confirmed.
+ * The screen uses that name for presentation, never phone or other profile
+ * fields. On a terminal or unavailable read, no counterpart identity renders.
  *
  * ORDINARY CHAT IS CONFIRMED-ONLY
  * -------------------------------
@@ -95,15 +101,9 @@ const { colors, type, spacing, radius } = SkillMatchTheme.ui;
  * socket is unavailable.
  */
 
-export type ChatRole = 'worker' | 'client';
+export type { ChatRole } from '@/lib/chat-presentation';
 
 const CHAT_UNAVAILABLE = 'Chat is only available while this booking is confirmed.';
-
-/** The only two fields consumed from the Booking-list row. */
-type ChatBooking = {
-  status: string;
-  jobTitle: string;
-};
 
 const RPC_FOR_ROLE: Record<ChatRole, string> = {
   worker: 'list_my_worker_bookings',
@@ -129,17 +129,7 @@ async function loadChatBooking(role: ChatRole, bookingId: string): Promise<ChatB
   if (res.error) {
     throw new BookingLoadError(res.error.message || 'The request failed.', res.error.code ?? null);
   }
-  const rows = Array.isArray(res.data) ? res.data : [];
-  for (const row of rows) {
-    if (typeof row !== 'object' || row === null) continue;
-    const r = row as Record<string, unknown>;
-    if (r.booking_id !== bookingId) continue;
-    const status = typeof r.booking_status === 'string' ? r.booking_status : null;
-    const jobTitle = typeof r.job_title === 'string' ? r.job_title : null;
-    if (status === null || jobTitle === null) return null;
-    return { status, jobTitle };
-  }
-  return null;
+  return findChatBooking(role, res.data, bookingId);
 }
 
 export default function BookingChat({
@@ -159,6 +149,8 @@ export default function BookingChat({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [booking, setBooking] = useState<ChatBooking | null>(null);
   const [messages, setMessages] = useState<MessageRow[]>([]);
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const loadSequence = useRef(0);
 
   const [draft, setDraft] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -172,33 +164,41 @@ export default function BookingChat({
    * than one frame later.
    */
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
+    const requestKey = `${role}:${senderId}:${bookingId}`;
     if (bookingId === null) {
       setBooking(null);
       setMessages([]);
+      setLoadedFor(requestKey);
       setLoadError(null);
       return;
     }
     const found = await loadChatBooking(role, bookingId);
+    if (sequence !== loadSequence.current) return;
     if (found === null) {
       // Not the caller's Booking, or gone. No history is fetched: the SELECT
       // would return zero rows anyway, and asking would imply the id is worth
       // probing.
       setBooking(null);
       setMessages([]);
+      setLoadedFor(requestKey);
       setLoadError(null);
       return;
     }
     if (!isBookingChatAvailable(found.status)) {
       setBooking(found);
       setMessages([]);
+      setLoadedFor(requestKey);
       setLoadError(null);
       return;
     }
     const rows = await fetchBookingMessages(bookingId);
+    if (sequence !== loadSequence.current) return;
     setBooking(found);
     setMessages(rows);
+    setLoadedFor(requestKey);
     setLoadError(null);
-  }, [role, bookingId]);
+  }, [role, bookingId, senderId]);
 
   /**
    * Failure path. The raw database/network message is logged for developers
@@ -254,7 +254,10 @@ export default function BookingChat({
    * produces a new object, but this value only flips when the status genuinely
    * crosses the confirmed boundary.
    */
-  const chatAvailable = booking !== null && isBookingChatAvailable(booking.status);
+  const visibleBooking = loadedFor === `${role}:${senderId}:${bookingId}` ? booking : null;
+  const visibleMessages = visibleBooking === null ? [] : messages;
+  const chatAvailable = visibleBooking !== null && isBookingChatAvailable(visibleBooking.status);
+  const counterpart = counterpartPresentation(role, visibleBooking);
 
   /**
    * Subscribe only while this confirmed Booking's chat is actually on screen.
@@ -408,7 +411,7 @@ export default function BookingChat({
     }
   }
 
-  const canSend = chatAvailable && booking !== null && canSendInStatus(booking.status);
+  const canSend = chatAvailable && visibleBooking !== null && canSendInStatus(visibleBooking.status);
   const remaining = remainingCharacters(draft);
   const isDraftSendable = validateContent(draft).ok;
 
@@ -422,12 +425,23 @@ export default function BookingChat({
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
       >
-        {booking !== null ? (
+        {visibleBooking !== null && chatAvailable && counterpart !== null ? (
           <>
-            <Text style={styles.heading}>{booking.jobTitle}</Text>
+            <XStack style={styles.chatHeader}>
+              <InitialsAvatar
+                name={counterpart.name}
+                initials={counterpart.initials}
+                accent={role === 'worker' ? colors.accentClient : colors.accentWorker}
+                size={48}
+              />
+              <YStack style={styles.headerText}>
+                <Text style={styles.heading}>{counterpart.name}</Text>
+                <Text style={styles.jobContext}>{visibleBooking.jobTitle}</Text>
+              </YStack>
+            </XStack>
             <AppChip
-              label={formatBookingStatus(booking.status)}
-              variant={statusChipVariant(booking.status)}
+              label={formatBookingStatus(visibleBooking.status)}
+              variant={statusChipVariant(visibleBooking.status)}
               style={styles.statusChip}
             />
           </>
@@ -453,7 +467,7 @@ export default function BookingChat({
               }
             />
           </View>
-        ) : booking === null ? (
+        ) : visibleBooking === null ? (
           // Not the caller's Booking, or no Booking id was supplied. Says
           // nothing about whether such a Booking exists.
           <View style={styles.center}>
@@ -463,29 +477,37 @@ export default function BookingChat({
           <View style={styles.center}>
             <InlineStatus variant="note" message={CHAT_UNAVAILABLE} />
           </View>
-        ) : messages.length === 0 ? (
+        ) : visibleMessages.length === 0 ? (
           // A successful read that returned nothing — not an error.
           <View style={styles.center}>
             <InlineStatus variant="empty" message={COPY.empty} />
           </View>
         ) : (
-          messages.map((message) => {
+          visibleMessages.map((message) => {
             const mine = message.sender_id === senderId;
             // Formatted at render from the raw ISO instant, never cached in
             // state, so a device timezone change re-derives it on reload.
             const sentAt = formatTimestamp(message.created_at);
 
             return (
-              <View
-                key={message.id}
-                style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}
-              >
-                <Text style={styles.bubbleAuthor}>{mine ? COPY.you : COPY.other}</Text>
-                {/* Plain text. React Native <Text> renders no markup, so there
-                    is nothing to sanitise and nothing is interpreted. */}
-                <Text style={styles.bubbleText}>{message.content}</Text>
-                {sentAt ? <Text style={styles.bubbleTime}>{sentAt}</Text> : null}
-              </View>
+              <XStack key={message.id} style={mine ? styles.messageMine : styles.messageTheirs}>
+                {!mine && counterpart !== null ? (
+                  <InitialsAvatar
+                    name={counterpart.name}
+                    initials={counterpart.initials}
+                    accent={role === 'worker' ? colors.accentClient : colors.accentWorker}
+                    size={32}
+                  />
+                ) : null}
+                <YStack style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                  <Text style={styles.bubbleAuthor}>
+                    {messageAuthor(message.sender_id, senderId ?? '', counterpart!)}
+                  </Text>
+                  {/* Message content remains plain text from the authorized read. */}
+                  <Text style={styles.bubbleText}>{message.content}</Text>
+                  {sentAt ? <Text style={styles.bubbleTime}>{sentAt}</Text> : null}
+                </YStack>
+              </XStack>
             );
           })
         )}
@@ -557,6 +579,19 @@ const styles = StyleSheet.create({
     ...type.sectionTitle,
     color: colors.textPrimary,
   },
+  chatHeader: {
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  headerText: {
+    flex: 1,
+    gap: spacing.xxs,
+  },
+  jobContext: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
   statusChip: {
     alignSelf: 'flex-start',
   },
@@ -567,6 +602,16 @@ const styles = StyleSheet.create({
     maxWidth: '90%',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
+  },
+  messageMine: {
+    alignSelf: 'flex-end',
+    maxWidth: '90%',
+  },
+  messageTheirs: {
+    alignSelf: 'flex-start',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    maxWidth: '95%',
   },
   bubbleMine: {
     alignSelf: 'flex-end',

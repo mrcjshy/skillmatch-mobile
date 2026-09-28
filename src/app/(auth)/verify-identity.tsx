@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { AppState, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/app-button';
@@ -7,30 +8,51 @@ import { AppNotice } from '@/components/app-notice';
 import { WorkerIdentitySection } from '@/components/worker-identity-section';
 import { SkillMatchTheme } from '@/constants/theme';
 import { IDENTITY_COPY } from '@/lib/worker-identity';
+import { signOutCurrentUser } from '@/lib/sign-out';
 import { useAccount } from '@/providers/account-provider';
 
 const { colors, type, spacing } = SkillMatchTheme.ui;
 
 export default function VerifyIdentityScreen() {
   const insets = useSafeAreaInsets();
-  const { refreshIdentity } = useAccount();
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { refreshIdentity, workerOnboardingState, identitySubmission } = useAccount();
   const [isRetrying, setIsRetrying] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
 
-  const handleSubmitted = useCallback(() => {
-    void refreshIdentity();
+  const handleSubmitted = useCallback(async () => {
+    await refreshIdentity();
   }, [refreshIdentity]);
+
+  useFocusEffect(useCallback(() => {
+    void refreshIdentity();
+    const listener = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void refreshIdentity();
+    });
+    return () => listener.remove();
+  }, [refreshIdentity]));
 
   async function handleRetry() {
     if (isRetrying) return;
     setIsRetrying(true);
     try {
       await refreshIdentity();
-      setLoadError(null);
-    } catch {
-      setLoadError(IDENTITY_COPY.loadFailed);
     } finally {
       setIsRetrying(false);
+    }
+  }
+
+  async function handleSignOut() {
+    if (isSigningOut) return;
+    setSignOutError(null);
+    setIsSigningOut(true);
+    try {
+      const { error } = await signOutCurrentUser();
+      if (error) setSignOutError(error.message || 'Sign out failed. Please try again.');
+    } catch {
+      setSignOutError('Sign out failed. Please try again.');
+    } finally {
+      setIsSigningOut(false);
     }
   }
 
@@ -50,16 +72,23 @@ export default function VerifyIdentityScreen() {
         />
         <Text style={styles.brandName}>SkillMatch</Text>
       </View>
-      <Text style={styles.heading}>Verify your identity</Text>
+      <Text style={styles.heading}>
+        {workerOnboardingState === 'pending-review' ? 'Verification Pending'
+          : workerOnboardingState === 'rejected' ? 'Verification Needs Attention'
+            : 'Verify your identity'}
+      </Text>
       <Text style={styles.note}>
-        A valid ID is required before you can use the Worker app. After you
-        submit, you may continue while an Administrator reviews it. There is no
-        skip.
+        {workerOnboardingState === 'pending-review'
+          ? 'Your valid ID has been submitted and is waiting for administrator review.'
+          : workerOnboardingState === 'rejected'
+            ? 'Your previous ID submission was not approved. Please submit another supported valid ID.'
+            : 'A valid ID is required before you can use the Worker app. There is no skip.'}
       </Text>
 
-      {loadError ? (
+      {workerOnboardingState === 'loading' ? <AppNotice variant="warning" message="Checking verification status..." /> : null}
+      {workerOnboardingState === 'load-error' ? (
         <View style={styles.retryBlock}>
-          <AppNotice variant="danger" message={loadError} />
+          <AppNotice variant="danger" message={IDENTITY_COPY.loadFailed} />
           <AppButton
             label="Try again"
             variant="secondary"
@@ -71,11 +100,19 @@ export default function VerifyIdentityScreen() {
         </View>
       ) : null}
 
-      <WorkerIdentitySection
-        disabled={false}
-        surface="onboarding"
-        onSubmitted={handleSubmitted}
-      />
+      {workerOnboardingState === 'pending-review' ? (
+        <AppButton label="Refresh Status" variant="secondary" onPress={() => { void handleRetry(); }} loading={isRetrying} />
+      ) : null}
+      {(workerOnboardingState === 'needs-submission' || workerOnboardingState === 'rejected') ? (
+        <WorkerIdentitySection
+          disabled={false}
+          surface="onboarding"
+          authoritativeSubmission={identitySubmission}
+          onSubmitted={handleSubmitted}
+        />
+      ) : null}
+      <AppButton label="Sign Out" variant="ghost" onPress={() => { void handleSignOut(); }} loading={isSigningOut} />
+      {signOutError ? <AppNotice variant="danger" message={signOutError} /> : null}
     </ScrollView>
   );
 }

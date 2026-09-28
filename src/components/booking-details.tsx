@@ -13,6 +13,7 @@ import { AppChip, type AppChipVariant } from '@/components/app-chip';
 import BookingLifecycle from '@/components/booking-lifecycle';
 import BookingPayment from '@/components/booking-payment';
 import { InlineStatus } from '@/components/inline-status';
+import { JobPhotoGallery } from '@/components/job-photo-gallery';
 import { WorkerAssignedJobLocation, nativeJobMapsLoaded, openWorkerMapsUrl } from '@/components/job-location-map';
 import RateWorker from '@/components/rate-worker';
 import { SectionHeader } from '@/components/section-header';
@@ -43,6 +44,7 @@ import {
   fetchJobPaymentMethod,
   type JobPaymentMethod,
 } from '@/lib/job-payment';
+import { listJobPhotos, type SignedJobPhoto } from '@/lib/job-photos';
 import {
   BookingPayment as BookingPaymentState,
   fetchBookingPayments,
@@ -87,6 +89,10 @@ type DetailState = {
     | { status: 'skipped' }
     | { status: 'ready'; location: AuthorizedJobLocation }
     | { status: 'denied' }
+    | { status: 'error' };
+  jobPhotos:
+    | { status: 'skipped' }
+    | { status: 'ready'; photos: SignedJobPhoto[] }
     | { status: 'error' };
 };
 
@@ -167,6 +173,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
         : new Set<string>();
 
     let exactLocation: DetailState['exactLocation'] = { status: 'skipped' };
+    let jobPhotos: DetailState['jobPhotos'] = { status: 'skipped' };
     if (role === 'worker' && booking.booking_status === 'confirmed') {
       try {
         exactLocation = { status: 'ready', location: await getAuthorizedJobLocation(booking.job_id) };
@@ -174,6 +181,20 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
         const code = error instanceof JobLocationError ? error.code : null;
         console.warn('[R5E-M2] get_authorized_job_location failed:', code);
         exactLocation = code === 'SM409' || code === '42501' ? { status: 'denied' } : { status: 'error' };
+      }
+      if (isWorkerBooking(booking)) {
+        try {
+          jobPhotos = {
+            status: 'ready',
+            photos: await listJobPhotos({
+              clientId: booking.client_user_id,
+              jobId: booking.job_id,
+            }),
+          };
+        } catch {
+          console.warn('[V4-9] authorized Job photo load failed');
+          jobPhotos = { status: 'error' };
+        }
       }
     }
 
@@ -186,6 +207,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
       jobPaymentReady,
       isRated: rated.has(booking.booking_id),
       exactLocation,
+      jobPhotos,
     });
     setLoadError(null);
     setMapsNote(null);
@@ -209,6 +231,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
         ...current,
         booking: stripProtectedBookingFields(current.booking),
         exactLocation: { status: 'skipped' },
+        jobPhotos: { status: 'skipped' },
       };
     });
     setMapsNote(null);
@@ -329,7 +352,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     );
   }
 
-  const { booking, payment, jobPaymentMethod, jobPaymentReady, isRated, exactLocation } = visibleDetail;
+  const { booking, payment, jobPaymentMethod, jobPaymentReady, isRated, exactLocation, jobPhotos } = visibleDetail;
   const schedule = formatDetailDateTime(booking.job_scheduled_at);
   const bookedAt = formatDetailDateTime(booking.booked_at);
   const completedAt = formatDetailDateTime(booking.completed_at);
@@ -395,6 +418,12 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
           <DetailLine label="Booked" value={bookedAt} />
           <DetailLine label="Completed" value={completedAt} />
         </View>
+        {role === 'worker' && protectedReleased && booking.booking_status === 'confirmed' ? (
+          <JobPhotoGallery
+            photos={jobPhotos.status === 'ready' ? jobPhotos.photos : []}
+            error={jobPhotos.status === 'error'}
+          />
+        ) : null}
       </View>
 
       <View style={styles.section}>

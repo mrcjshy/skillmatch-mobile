@@ -1,3 +1,5 @@
+// @ts-expect-error -- Vitest runs in Node; the Expo app tsconfig omits Node declarations.
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -89,7 +91,12 @@ describe('authorized chat presentation', () => {
     expect(counterpartPresentation('worker', single)?.initials).toBe('I');
   });
 
-  it('keeps sensitive fields out of the identity model', () => {
+  it('keeps sensitive fields out of the identity model and chat renderer', () => {
     expect(Object.keys(chatBookingFromRow('worker', workerRow)!)).toEqual(['status', 'jobTitle', 'counterpartName']);
+    const source = readFileSync('src/components/booking-chat.tsx', 'utf8');
+    expect(source).not.toMatch(/\b(?:client_phone|worker_phone|client_email|worker_email|job_address|identity_document)\b/);
+    expect(source).toContain('findChatBooking(role, res.data, bookingId)');
+    expect(source).toContain('loadedFor === `${role}:${senderId}:${bookingId}`');
+    expect(source).toContain('<InitialsAvatar');
   });
 });

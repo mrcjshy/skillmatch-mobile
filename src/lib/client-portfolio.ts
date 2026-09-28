@@ -19,6 +19,10 @@ import {
   logPortfolioImageFailure,
 } from './portfolio-images';
 import { supabase } from './supabase';
+import {
+  getWorkerProfilePhoto,
+  type WorkerProfilePhotoReadResult,
+} from './worker-profile-photo';
 
 export const CLIENT_PORTFOLIO_PATH = '/client/portfolio';
 
@@ -59,7 +63,12 @@ export type ClientPortfolioAccess =
 export type ClientPortfolioLoad =
   | { kind: 'unavailable' }
   | { kind: 'revoked' }
-  | { kind: 'ready'; workerName: string | null; items: PortfolioItem[] };
+  | {
+      kind: 'ready';
+      workerName: string | null;
+      workerPhotoUrl: string | null;
+      items: PortfolioItem[];
+    };
 
 export function resolveClientPortfolioAccess(
   bookingId: string | null | undefined,
@@ -184,6 +193,7 @@ async function attachSignedUrls(images: PortfolioImage[]): Promise<PortfolioItem
 
 export type ClientPortfolioDeps = {
   loadBookings?: () => Promise<readonly ClientPortfolioBooking[]>;
+  loadProfilePhoto?: (workerUserId: string) => Promise<WorkerProfilePhotoReadResult>;
 };
 
 export async function loadClientBookingPortfolio(
@@ -201,9 +211,20 @@ export async function loadClientBookingPortfolio(
   if (access.kind === 'invalid' || access.kind === 'missing') return { kind: 'unavailable' };
   if (access.kind === 'revoked') return { kind: 'revoked' };
 
+  const profilePhoto = await (deps.loadProfilePhoto ?? getWorkerProfilePhoto)(
+    access.workerUserId
+  );
+  const workerPhotoUrl =
+    profilePhoto.status === 'available' ? profilePhoto.signedUrl : null;
+
   const workerProfileId = await resolveCounterpartWorkerProfileId(access.workerUserId);
   if (workerProfileId === null) {
-    return { kind: 'ready', workerName: access.workerName, items: [] };
+    return {
+      kind: 'ready',
+      workerName: access.workerName,
+      workerPhotoUrl,
+      items: [],
+    };
   }
 
   const itemsRes = await supabase
@@ -219,7 +240,12 @@ export async function loadClientBookingPortfolio(
     .filter((item): item is Omit<PortfolioItem, 'images'> => item !== null && item.workerId === workerProfileId);
 
   if (baseItems.length === 0) {
-    return { kind: 'ready', workerName: access.workerName, items: [] };
+    return {
+      kind: 'ready',
+      workerName: access.workerName,
+      workerPhotoUrl,
+      items: [],
+    };
   }
 
   const imageRes = await supabase
@@ -240,6 +266,7 @@ export async function loadClientBookingPortfolio(
   return {
     kind: 'ready',
     workerName: access.workerName,
+    workerPhotoUrl,
     items: assembleClientPortfolioItems(baseItems, displayed),
   };
 }

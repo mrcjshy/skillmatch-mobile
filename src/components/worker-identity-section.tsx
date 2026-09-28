@@ -31,13 +31,19 @@ export function WorkerIdentitySection({
   disabled,
   surface = 'profile',
   onSubmitted,
+  authoritativeSubmission,
 }: {
   disabled: boolean;
   surface?: WorkerIdentitySurface;
-  onSubmitted?: (row: WorkerIdentitySubmission) => void;
+  onSubmitted?: (row: WorkerIdentitySubmission) => void | Promise<void>;
+  /** Onboarding uses the provider's already-loaded authoritative state. */
+  authoritativeSubmission?: WorkerIdentitySubmission | null;
 }) {
-  const [loading, setLoading] = useState(true);
-  const [submission, setSubmission] = useState<WorkerIdentitySubmission | null>(null);
+  const providerOwnsLoad = authoritativeSubmission !== undefined;
+  const [loading, setLoading] = useState(!providerOwnsLoad);
+  const [submission, setSubmission] = useState<WorkerIdentitySubmission | null>(
+    authoritativeSubmission ?? null
+  );
   const [idType, setIdType] = useState<IdentityIdType | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,16 +68,20 @@ export function WorkerIdentitySection({
 
   /* eslint-disable react-hooks/set-state-in-effect -- fetch-on-mount; same convention as resume-builder */
   useEffect(() => {
+    if (providerOwnsLoad) return;
     const run = { cancelled: false };
     void load(run);
     return () => {
       run.cancelled = true;
     };
-  }, [load]);
+  }, [load, providerOwnsLoad]);
+  useEffect(() => {
+    if (providerOwnsLoad) setSubmission(authoritativeSubmission ?? null);
+  }, [authoritativeSubmission, providerOwnsLoad]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const status = submission?.status ?? null;
-  const locked = status === 'approved' || submitting || disabled;
+  const locked = status === 'approved' || status === 'pending' || submitting || disabled;
   const canResubmit = canResubmitIdentity(status);
   const showForm = shouldShowWorkerIdentityForm({
     surface,
@@ -127,8 +137,8 @@ export function WorkerIdentitySection({
       setSubmission(row);
       setImageUri(null);
       setResubmitOpen(false);
+      await onSubmitted?.(row);
       setSuccess('ID submitted for review. Upload is not approval.');
-      onSubmitted?.(row);
     } catch (caught: unknown) {
       console.warn('[V3-W1] identity submit failed:', classifyWorkerIdentityFailure(caught));
       setError(identityErrorCopy(caught));
@@ -198,7 +208,7 @@ export function WorkerIdentitySection({
               />
               <AppButton
                 variant="primary"
-                label={isResubmit ? 'Resubmit ID' : 'Submit ID'}
+                label={isResubmit ? 'Submit Another ID' : 'Submit ID'}
                 onPress={() => {
                   void handleSubmit();
                 }}

@@ -18,6 +18,7 @@ import { AppButton } from '@/components/app-button';
 import { AppField } from '@/components/app-field';
 import { HomeHeader } from '@/components/home-header';
 import { InlineStatus } from '@/components/inline-status';
+import { JobPhotoPicker, type JobPhotoDraft } from '@/components/job-photo-picker';
 import { JobLocationPicker } from '@/components/job-location-picker';
 import { JobSchedulePicker } from '@/components/job-schedule-picker';
 import { SectionHeader } from '@/components/section-header';
@@ -38,6 +39,12 @@ import {
   postingLocationError,
   type JobPin,
 } from '@/lib/job-location';
+import {
+  JOB_PHOTO_SLOTS,
+  loadValidatedJobPhoto,
+  retryMissingJobPhotos,
+  type JobPhotoRetry,
+} from '@/lib/job-photos';
 import {
   type JobPaymentMethod,
   postingPaymentError,
@@ -135,6 +142,8 @@ export default function ClientHome() {
   const [modalQuery, setModalQuery] = useState('');
   const [modalPrimaryId, setModalPrimaryId] = useState<string | null>(null);
   const [modalAdditionalIds, setModalAdditionalIds] = useState<string[]>([]);
+  const [jobPhotos, setJobPhotos] = useState<JobPhotoDraft[]>([]);
+  const [jobPhotoPickerKey, setJobPhotoPickerKey] = useState(0);
 
   const [isPosting, setIsPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
@@ -278,25 +287,82 @@ export default function ClientHome() {
     const additionalUniqueIds = uniqueSkillIds(additionalSkillIds, knownSkillIds, primarySkillId);
     const skillIds = [primarySkillId, ...additionalUniqueIds];
     const primarySkillName = primarySkill?.skill_name ?? '';
+    const capturedPhotos = [...jobPhotos];
 
     setIsPosting(true);
-    let created = false;
     try {
-      const createdJobId = await createMyJobWithLocation({
-        title: primarySkillName,
-        description: description.trim(),
-        address: trimmedAddress,
-        scheduledAt: schedule.toISOString(),
-        budget,
-        paymentMethod,
-        skillIds,
-        latitude: pin.latitude,
-        longitude: pin.longitude,
-      });
-      created = true;
+      let createdJobId: string;
+      try {
+        createdJobId = await createMyJobWithLocation({
+          title: primarySkillName,
+          description: description.trim(),
+          address: trimmedAddress,
+          scheduledAt: schedule.toISOString(),
+          budget,
+          paymentMethod,
+          skillIds,
+          latitude: pin.latitude,
+          longitude: pin.longitude,
+        });
+      } catch (error: unknown) {
+        const code = error instanceof JobLocationError ? error.code : 'unknown';
+        console.warn('[R5E-M1] create_my_job_with_location failed:', code);
+        setPostError(`${createJobLocationErrorCopy(error)} No job was created.`);
+        return;
+      }
+
       postingFocus.waitForJob(createdJobId);
-      await refresh(clientId);
-      setPostSuccess('Job posted. Waiting for a worker to accept.');
+
+      let uploadedPhotoCount = 0;
+      if (capturedPhotos.length > 0) {
+        const retries: JobPhotoRetry[] = [];
+        for (let index = 0; index < capturedPhotos.length; index += 1) {
+          const draft = capturedPhotos[index];
+          const slot = JOB_PHOTO_SLOTS[index];
+          if (!draft || slot === undefined) continue;
+          const loaded = await loadValidatedJobPhoto(draft.uri);
+          if (loaded.ok) retries.push({ slot, image: loaded.image });
+        }
+        if (retries.length > 0) {
+          try {
+            const uploaded = await retryMissingJobPhotos({
+              clientId,
+              jobId: createdJobId,
+              retries,
+            });
+            uploadedPhotoCount = uploaded.successfulCount;
+          } catch {
+            uploadedPhotoCount = 0;
+          }
+        }
+      }
+
+      let refreshFailed = false;
+      try {
+        await refresh(clientId);
+      } catch {
+        refreshFailed = true;
+      }
+
+      if (capturedPhotos.length === 0) {
+        setPostSuccess('Job posted. Waiting for a worker to accept.');
+      } else if (uploadedPhotoCount === capturedPhotos.length) {
+        setPostSuccess(
+          `Job posted. ${uploadedPhotoCount} of ${capturedPhotos.length} photos uploaded. Waiting for a worker to accept.`
+        );
+      } else if (uploadedPhotoCount === 0) {
+        setPostSuccess('Job posted, but the photos could not be uploaded.');
+      } else {
+        const failedPhotoCount = capturedPhotos.length - uploadedPhotoCount;
+        setPostSuccess(
+          `Job posted. ${uploadedPhotoCount} of ${capturedPhotos.length} photos uploaded; ${failedPhotoCount} ${failedPhotoCount === 1 ? 'photo' : 'photos'} could not be uploaded.`
+        );
+      }
+      setPostError(
+        refreshFailed
+          ? 'Job posted, but the job list could not be refreshed. Check My Posted Jobs.'
+          : null
+      );
       setDescription('');
       setAddress('');
       setPin(initialJobPin());
@@ -312,22 +378,8 @@ export default function ClientHome() {
       setModalPrimaryId(null);
       setModalAdditionalIds([]);
       setSkillsModalVisible(false);
-      setPostError(null);
-    } catch (e: unknown) {
-      if (created) {
-        setPostError('Job posted, but the list could not be refreshed. Check My Posted Jobs.');
-      } else {
-        const code = e instanceof JobLocationError ? e.code : 'unknown';
-        console.warn('[R5E-M1] create_my_job_with_location failed:', code);
-        setPostError(`${createJobLocationErrorCopy(e)} No job was created.`);
-      }
-      if (clientId) {
-        try {
-          await refresh(clientId);
-        } catch {
-          /* keep the original error visible */
-        }
-      }
+      setJobPhotos([]);
+      setJobPhotoPickerKey((value) => value + 1);
     } finally {
       setIsPosting(false);
     }
@@ -572,6 +624,15 @@ export default function ClientHome() {
                   onPress={() => openSkillsModal('additional')}
                   disabled={busy}
                   accessibilityLabel={hasSelectedSkills ? 'Edit Skills' : 'Choose Skills'}
+                />
+              </View>
+
+              <View style={styles.section} accessibilityLabel="Job Photos">
+                <SectionHeader title="Photos (Optional)" />
+                <JobPhotoPicker
+                  key={jobPhotoPickerKey}
+                  disabled={busy}
+                  onPhotosChange={setJobPhotos}
                 />
               </View>
 

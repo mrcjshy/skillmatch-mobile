@@ -5,6 +5,7 @@ import { Image } from 'expo-image';
 
 import { AppButton } from '@/components/app-button';
 import { AppCard } from '@/components/app-card';
+import { InitialsAvatar } from '@/components/initials-avatar';
 import { InlineStatus } from '@/components/inline-status';
 import { SectionHeader } from '@/components/section-header';
 import { SkillMatchTheme } from '@/constants/theme';
@@ -145,7 +146,17 @@ export default function ClientPortfolio({ bookingId }: { bookingId: string | nul
         />
       }
     >
-      {state.workerName ? <SectionHeader title={state.workerName} /> : null}
+      <SectionHeader
+        title={state.workerName ?? 'Worker'}
+        trailing={
+          <InitialsAvatar
+            name={state.workerName ?? 'Worker'}
+            accent={colors.accentSoft}
+            size={56}
+            photoUri={state.workerPhotoUrl}
+          />
+        }
+      />
       {state.items.length === 0 ? (
         <InlineStatus variant="empty" message={CLIENT_PORTFOLIO_COPY.empty} />
       ) : (

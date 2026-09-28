@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   Image,
@@ -17,11 +17,8 @@ import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import {
   CONSENT_COPY,
-  consentErrorCopy,
   hasRequiredLegalAcceptance,
-  persistCurrentLegalConsentAfterSignup,
 } from '@/lib/user-consent';
-import { useAccount } from '@/providers/account-provider';
 
 const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
@@ -44,7 +41,7 @@ const ROLE_OPTIONS: { value: RegistrationRoleIntent; label: string }[] = [
 
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
-  const { retryAccountBootstrap } = useAccount();
+  const router = useRouter();
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -57,13 +54,11 @@ export default function RegisterScreen() {
   const [acknowledgedPrivacy, setAcknowledgedPrivacy] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   async function handleRegister() {
     if (isSubmitting) return;
 
     setErrorMessage(null);
-    setSuccessMessage(null);
 
     const trimmedFullName = fullName.trim();
     const trimmedPhone = phone.trim();
@@ -103,7 +98,7 @@ export default function RegisterScreen() {
 
     setIsSubmitting(true);
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email: trimmedEmail,
         password,
         options: {
@@ -120,27 +115,9 @@ export default function RegisterScreen() {
         return;
       }
 
-      if (!data.session) {
-        setSuccessMessage(
-          'Account created. Check your email if confirmation is required.'
-        );
-        return;
-      }
-
-      try {
-        await persistCurrentLegalConsentAfterSignup();
-      } catch (consentError: unknown) {
-        const code =
-          typeof consentError === 'object' &&
-          consentError !== null &&
-          'code' in consentError &&
-          typeof (consentError as { code?: unknown }).code === 'string'
-            ? (consentError as { code: string }).code
-            : 'unclassified';
-        console.warn('[V3-W1] registration consent persist failed:', code);
-        setErrorMessage(consentErrorCopy(consentError));
-      }
-      retryAccountBootstrap();
+      router.replace(
+        { pathname: '/verify-email', params: { email: trimmedEmail } } as unknown as Href
+      );
     } catch {
       setErrorMessage(
         'Registration failed. Please check your connection and try again.'
@@ -302,7 +279,6 @@ export default function RegisterScreen() {
           </View>
 
           {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-          {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
 
           <AppButton label="Create Account" onPress={handleRegister} loading={isSubmitting} />
 
@@ -424,10 +400,6 @@ const styles = StyleSheet.create({
   error: {
     ...type.helper,
     color: colors.danger,
-  },
-  success: {
-    ...type.helper,
-    color: colors.success,
   },
   link: {
     fontSize: 16,
