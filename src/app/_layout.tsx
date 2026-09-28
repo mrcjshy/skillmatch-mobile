@@ -1,5 +1,8 @@
 import { Stack, type Href } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { TamaguiProvider } from 'tamagui';
+
+import { tamaguiConfig } from '../../tamagui.config';
 
 import { PushNotificationInboxIntent } from '@/components/push-notification-inbox-intent';
 import { isRecoverySurfaceActive } from '@/lib/auth-recovery';
@@ -184,8 +187,10 @@ export default function RootLayout() {
   return (
     <SessionProvider>
       <AccountProvider>
-        <PushNotificationInboxIntent />
-        <RootNavigator />
+        <TamaguiProvider config={tamaguiConfig} defaultTheme="skillmatch">
+          <PushNotificationInboxIntent />
+          <RootNavigator />
+        </TamaguiProvider>
       </AccountProvider>
     </SessionProvider>
   );
