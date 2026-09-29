@@ -1,6 +1,7 @@
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AppState,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -117,6 +118,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const loadGate = useRef(createLoadGenerationTracker());
   const hasLoaded = useRef(false);
   const displayedStatusRef = useRef<string | null>(null);
+  const focused = useRef(false);
   const visibleDetail =
     detail !== null && bookingId !== null && detail.booking.booking_id === bookingId ? detail : null;
 
@@ -131,6 +133,8 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   }, [bookingId, role]);
 
   const load = useCallback(async () => {
+    hideProtectedProjection();
+    if (!focused.current || AppState.currentState !== 'active') return;
     const token = loadGate.current.start();
     if (bookingId === null || !UUID_PATTERN.test(bookingId)) {
       if (!loadGate.current.isCurrent(token)) return;
@@ -188,7 +192,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
 
     let exactLocation: DetailState['exactLocation'] = { status: 'skipped' };
     let jobPhotos: DetailState['jobPhotos'] = { status: 'skipped' };
-    if (role === 'worker' && booking.booking_status === 'confirmed') {
+    if (booking.booking_status === 'confirmed') {
       try {
         exactLocation = { status: 'ready', location: await getAuthorizedJobLocation(booking.job_id) };
       } catch (error: unknown) {
@@ -239,6 +243,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   }, [role]);
 
   function hideProtectedProjection() {
+    loadGate.current.start();
     setSuppressProtected(true);
     setDetail((current) => {
       if (current === null) return current;
@@ -254,6 +259,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
 
   useFocusEffect(
     useCallback(() => {
+      focused.current = true;
       const run = { cancelled: false };
       if (
         shouldSuppressProtectedBeforeRefresh({
@@ -278,11 +284,21 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
         });
       return () => {
         run.cancelled = true;
+        focused.current = false;
+        hideProtectedProjection();
       };
     }, [load, applyError])
   );
 
   const listenStatus = visibleDetail?.booking.booking_status;
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      hideProtectedProjection();
+      if (state === 'active' && focused.current) void load().catch(applyError);
+    });
+    return () => subscription.remove();
+  }, [load, applyError]);
 
   useEffect(() => {
     if (bookingId === null || !UUID_PATTERN.test(bookingId)) return;
@@ -291,6 +307,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     const run = { cancelled: false, inFlight: false, pending: false };
     const revalidate = () => {
       if (run.cancelled) return;
+      hideProtectedProjection();
       if (run.inFlight) {
         run.pending = true;
         return;
@@ -316,6 +333,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
       events: [BOOKING_STATUS_CHANGED],
       onBroadcastEvent: hideProtectedProjection,
       onInvalidate: revalidate,
+      onUnavailable: hideProtectedProjection,
     });
 
     return () => {
@@ -390,7 +408,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const released = protectedReleased && isCounterpartyReleased(booking.booking_status);
   const chatAvailable = protectedReleased && isBookingChatAvailable(booking.booking_status);
   const workerLocationSurface =
-    role === 'worker' && protectedReleased
+    protectedReleased
       ? projectAssignedWorkerLocation({
           bookingStatus: booking.booking_status,
           exact: exactLocation.status === 'ready' ? exactLocation.location : null,
@@ -436,12 +454,13 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
           <DetailLine label="Schedule" value={schedule} />
           <DetailLine label="Budget" value={budget} />
           <DetailLine label="Location" value={location} />
-          {role === 'worker' && protectedReleased && exactLocation.status === 'error' ? (
+          {protectedReleased && exactLocation.status === 'error' ? (
             <Text style={styles.note}>{JOB_LOCATION_COPY.workerLocationGeneric}</Text>
           ) : workerLocationSurface ? (
             <WorkerAssignedJobLocation
               surface={workerLocationSurface}
               mapsNote={mapsNote}
+              allowNavigation={role === 'worker'}
               onOpenMaps={() => {
                 const url = workerLocationSurface.kind === 'exact' ? workerLocationSurface.openInMapsUrl : null;
                 void openWorkerMapsUrl(url).then((ok) => {

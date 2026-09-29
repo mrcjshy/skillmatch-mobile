@@ -58,13 +58,13 @@ describe('shouldSuppressProtectedBeforeRefresh', () => {
     ).toBe(true);
   });
 
-  it('does not hide a confirmed projection on manual refresh or SUBSCRIBED reconnect', () => {
+  it('hides a confirmed projection on manual refresh or SUBSCRIBED reconnect', () => {
     expect(
       shouldSuppressProtectedBeforeRefresh({ reason: 'manual', displayedStatus: 'confirmed' })
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldSuppressProtectedBeforeRefresh({ reason: 'subscribed', displayedStatus: 'confirmed' })
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 

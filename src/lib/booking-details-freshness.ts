@@ -35,15 +35,15 @@ export function isProtectedProjectionReleased(
  * Focus onto a confirmed snapshot is the Chat → Details return path.
  * Suppress first so a missed booking_status_changed cannot flash
  * address/contact/actions. A completed snapshot is already suppressed.
- * Manual refresh and SUBSCRIBED reconnect do not hide a live confirmed
- * projection before the read returns.
+ * Manual refresh and SUBSCRIBED reconnect also clear protected presentation
+ * before reauthorization; an old confirmed snapshot is not fresh authority.
  */
 export function shouldSuppressProtectedBeforeRefresh(input: {
   reason: DetailsRefreshReason;
   displayedStatus: string | null;
 }): boolean {
   if (input.reason === 'status-changed') return true;
-  return input.reason === 'focus' && input.displayedStatus === 'confirmed';
+  return input.displayedStatus === 'confirmed';
 }
 
 export function isMatchingBookingBroadcastTopic(bookingId: string, topic: string): boolean {

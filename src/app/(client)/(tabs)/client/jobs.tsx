@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppCard } from '@/components/app-card';
+import { AppButton } from '@/components/app-button';
+import { ClientJobLocation } from '@/components/client-job-location';
 import { AppChip } from '@/components/app-chip';
 import { InlineStatus } from '@/components/inline-status';
 import { JobPhotoGallery } from '@/components/job-photo-gallery';
@@ -44,12 +46,14 @@ function ClientJobPhotos({ clientId, jobId }: { clientId: string; jobId: string 
 }
 
 export default function ClientJobs() {
+  const [locationJobId, setLocationJobId] = useState<string | null>(null);
   const { account } = useAccount();
   const { isLoading, loadError, jobs } = useClientJobs();
   const clientId = account?.role === 'client' && account.is_active ? account.id : null;
 
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
+      {locationJobId && clientId ? <ClientJobLocation key={`${clientId}:${locationJobId}`} jobId={locationJobId} clientId={clientId} onClose={() => setLocationJobId(null)} /> : null}
       {isLoading ? (
         <InlineStatus variant="loading" message="Loading your jobs…" />
       ) : loadError ? (
@@ -61,6 +65,7 @@ export default function ClientJobs() {
           <AppCard key={job.id}>
             <Text style={styles.cardTitle}>{job.title}</Text>
             <AppChip label={`Status: ${job.status}`} variant="neutral" />
+            {clientId && job.status === 'open' ? <AppButton label="View/Edit Location" onPress={() => setLocationJobId(job.id)} /> : null}
             <View style={styles.meta}>
               <Text style={styles.cardLine}>Schedule: {formatSchedule(job.scheduled_at)}</Text>
               <Text style={styles.cardLine}>

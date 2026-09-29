@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
 import { AppChip } from '@/components/app-chip';
 import { InlineStatus } from '@/components/inline-status';
-import { WorkerApproximateJobArea } from '@/components/job-location-map';
+import { WorkerOpportunityJobLocation } from '@/components/job-location-map';
 import { SectionHeader } from '@/components/section-header';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatOpportunityPaymentLine } from '@/lib/job-payment';
@@ -19,7 +19,6 @@ import {
   JOB_OPPORTUNITY_COPY,
   acceptJobNotice,
   acceptJobOpportunity,
-  findOpportunityById,
   formatLocationScoreLine,
   formatOpportunityArea,
   formatOpportunityBudget,
@@ -33,6 +32,8 @@ import {
   type JobOpportunity,
   type SkillRef,
 } from '@/lib/job-opportunities';
+import { createOpportunityLocationAccess, getMyOpportunityLocation, type OpportunityLocation } from '@/lib/opportunity-location';
+import { JOB_OPPORTUNITIES_CHANGED, subscribeInvalidation, workerOpportunitiesTopic } from '@/lib/realtime';
 import { useAccount } from '@/providers/account-provider';
 import { useSession } from '@/providers/session-provider';
 
@@ -48,11 +49,19 @@ type RequirementsState =
 export default function JobOpportunityDetails({ jobId }: { jobId: string | null }) {
   const { account } = useAccount();
   const { session } = useSession();
+  return <OpportunityDetails key={`${account?.id}:${account?.is_active}:${account?.role}:${session?.user.id}:${jobId}`} jobId={jobId} />;
+}
+
+function OpportunityDetails({ jobId }: { jobId: string | null }) {
+  const { account } = useAccount();
+  const { session } = useSession();
   const router = useRouter();
   const workerId = account?.id;
   const sessionUserId = session?.user.id;
   const activeWorker = account?.role === 'worker' && account.is_active;
 
+  const [location, setLocation] = useState<OpportunityLocation | null>(null);
+  const accessRef = useRef<ReturnType<typeof createOpportunityLocationAccess> | null>(null);
   const [opportunity, setOpportunity] = useState<JobOpportunity | null>(null);
   const [requirements, setRequirements] = useState<RequirementsState>({ status: 'loading' });
   const [isLoading, setIsLoading] = useState(true);
@@ -92,6 +101,9 @@ export default function JobOpportunityDetails({ jobId }: { jobId: string | null 
       acceptJob: acceptJobOpportunity,
       readBookings: loadWorkerBookings,
       onState: ({ pending, result, handoffFailed }) => {
+        if (result && ['accepted', 'unavailable', 'ineligible', 'forbidden'].includes(result.status)) {
+          accessRef.current?.invalidate();
+        }
         setIsAccepting(pending);
         setAccepted(result?.status === 'accepted');
         setNotice(handoffFailed ? {
@@ -112,32 +124,41 @@ export default function JobOpportunityDetails({ jobId }: { jobId: string | null 
     };
   }, [activeWorker, workerId, sessionUserId, jobId, handoff, router]));
 
-  const load = useCallback(async (
-    mode: 'initial' | 'refresh' = 'initial',
-    isCurrent: () => boolean = () => true
-  ) => {
-    if (!isCurrent()) return;
-    if (jobId === null || !UUID_PATTERN.test(jobId)) {
-      setOpportunity(null);
+  useFocusEffect(useCallback(() => {
+    if (!activeWorker || !workerId || sessionUserId !== workerId || !jobId || !UUID_PATTERN.test(jobId)) {
+      setLocation(null); setOpportunity(null); setIsLoading(false);
       setLoadError(JOB_OPPORTUNITY_COPY.unavailable);
       return;
     }
-
-    const rows = await loadMyJobOpportunities();
-    if (!isCurrent()) return;
-    const next = findOpportunityById(rows, jobId);
-    if (next === null) {
-      // After Accept the Job leaves the opportunity list. Keep the last
-      // rendered details so the outcome notice is not replaced by "unavailable".
-      if (mode === 'refresh') return;
-      setOpportunity(null);
-      setLoadError(JOB_OPPORTUNITY_COPY.unavailable);
-      return;
-    }
-
-    setOpportunity(next);
-    setLoadError(null);
-  }, [jobId]);
+    const access = createOpportunityLocationAccess({
+      jobId, readOpportunities: loadMyJobOpportunities, readLocation: getMyOpportunityLocation,
+      onState: (state) => {
+        setLocation(state.location);
+        setOpportunity(state.opportunity);
+        setIsLoading(state.status === 'loading');
+        setLoadError(state.status === 'error' ? JOB_OPPORTUNITY_COPY.loadFailed :
+          state.status === 'unavailable' ? JOB_OPPORTUNITY_COPY.unavailable : null);
+      },
+    });
+    accessRef.current = access;
+    const revalidate = () => {
+      if (AppState.currentState === 'active') void access.refresh();
+      else access.invalidate();
+    };
+    revalidate();
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void access.refresh();
+      else access.invalidate();
+    });
+    const unsubscribe = subscribeInvalidation({
+      topic: workerOpportunitiesTopic(), events: [JOB_OPPORTUNITIES_CHANGED], onInvalidate: revalidate,
+      onUnavailable: () => access.invalidate(),
+    });
+    return () => {
+      appState.remove(); unsubscribe(); access.cancel();
+      if (accessRef.current === access) accessRef.current = null;
+    };
+  }, [activeWorker, workerId, sessionUserId, jobId]));
 
   const loadRequirements = useCallback(async (id: string) => {
     setRequirements({ status: 'loading' });
@@ -151,30 +172,6 @@ export default function JobOpportunityDetails({ jobId }: { jobId: string | null 
       setRequirements({ status: 'error' });
     }
   }, []);
-
-  const applyError = useCallback((error: unknown) => {
-    if (error instanceof Error && error.message) {
-      console.warn('[V3-1 P3] list_my_job_opportunities failed:', error.message);
-    }
-    setLoadError(JOB_OPPORTUNITY_COPY.loadFailed);
-  }, []);
-
-  /* eslint-disable react-hooks/set-state-in-effect -- fetch-on-mount; same convention as booking details */
-  useEffect(() => {
-    const run = { cancelled: false };
-    setIsLoading(true);
-    load()
-      .catch((error: unknown) => {
-        if (!run.cancelled) applyError(error);
-      })
-      .finally(() => {
-        if (!run.cancelled) setIsLoading(false);
-      });
-    return () => {
-      run.cancelled = true;
-    };
-  }, [load, applyError]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const loadedJobId = opportunity?.job_id ?? null;
 
@@ -192,28 +189,14 @@ export default function JobOpportunityDetails({ jobId }: { jobId: string | null 
   /* eslint-enable react-hooks/set-state-in-effect */
 
   async function retry() {
-    if (isAccepting) return;
-    setIsLoading(true);
-    try {
-      await load();
-    } catch (error: unknown) {
-      applyError(error);
-    } finally {
-      setIsLoading(false);
-    }
+    if (!isAccepting) await accessRef.current?.refresh();
   }
 
   async function refresh() {
     if (isRefreshing || isAccepting) return;
     setIsRefreshing(true);
-    try {
-      await load(accepted ? 'refresh' : 'initial');
-      setNotice(null);
-    } catch (error: unknown) {
-      applyError(error);
-    } finally {
-      setIsRefreshing(false);
-    }
+    try { await accessRef.current?.refresh(); }
+    finally { setIsRefreshing(false); }
   }
 
   async function handleAccept() {
@@ -222,13 +205,20 @@ export default function JobOpportunityDetails({ jobId }: { jobId: string | null 
         isAccepting || accepted || isLoading || isRefreshing) return;
     const result = await focus.accept();
     if (!focus.isCurrent() || result === null) return;
-    if (result.status === 'unavailable' || result.status === 'ineligible') {
-      try {
-        await load('refresh', focus.isCurrent);
-      } catch (error: unknown) {
-        if (focus.isCurrent()) applyError(error);
-      }
+    if (result.status === 'unavailable' || result.status === 'ineligible' || result.status === 'accepted') {
+      accessRef.current?.invalidate();
     }
+  }
+
+  if (accepted) {
+    return (
+      <View style={styles.center}>
+        <InlineStatus variant="note" headline={notice?.headline ?? ACCEPT_JOB_COPY.accepted}
+          message={notice?.detail ?? ACCEPT_JOB_COPY.accepted} />
+        <AppButton label="View bookings" variant="secondary"
+          onPress={() => router.replace('/worker/bookings' as Href)} />
+      </View>
+    );
   }
 
   if (isLoading) {
@@ -308,7 +298,7 @@ export default function JobOpportunityDetails({ jobId }: { jobId: string | null 
       </View>
 
       <View style={styles.section}>
-        <WorkerApproximateJobArea jobId={opportunity.job_id} />
+        <WorkerOpportunityJobLocation location={location} />
       </View>
 
       <View style={styles.section}>

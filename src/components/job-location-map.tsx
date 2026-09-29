@@ -1,46 +1,24 @@
-import { Component, useCallback, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
+import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import * as Linking from 'expo-linking';
 
 import { AppButton } from '@/components/app-button';
+import {
+  WorkerJobLocationMapLibre,
+} from '@/components/worker-job-location-map';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   COPY,
   classifyMapAvailability,
-  createWorkerLocationErrorCopy,
-  getJobApproximateArea,
-  projectPreAcceptWorkerLocation,
-  type ApproximateJobArea,
   type JobPin,
   type WorkerLocationSurface,
 } from '@/lib/job-location';
+import type { OpportunityLocation } from '@/lib/opportunity-location';
 import { formatLocation } from '@/lib/bookings';
+import { JOB_MAP_STYLE, jobMapRuntime as mapsRuntime } from '@/lib/native-job-map';
+import { pinToLngLat } from '@/lib/map-coordinates';
 
 const { colors, type, spacing, radius } = SkillMatchTheme.ui;
-
-type MapsRuntime = {
-  MapView: typeof import('react-native-maps').default;
-  Marker: typeof import('react-native-maps').Marker;
-  PROVIDER_GOOGLE: typeof import('react-native-maps').PROVIDER_GOOGLE;
-};
-
-function loadMapsRuntime(): MapsRuntime | null {
-  try {
-    // Native TurboModule is evaluated on require. Catch so a reused APK without
-    // RNMapsAirModule still shows Worker screens instead of crashing.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const maps = require('react-native-maps') as typeof import('react-native-maps');
-    return {
-      MapView: maps.default,
-      Marker: maps.Marker,
-      PROVIDER_GOOGLE: maps.PROVIDER_GOOGLE,
-    };
-  } catch {
-    return null;
-  }
-}
-
-const mapsRuntime = loadMapsRuntime();
 
 export function nativeJobMapsLoaded(): boolean {
   return mapsRuntime !== null;
@@ -66,146 +44,74 @@ class MapErrorBoundary extends Component<
   }
 }
 
-function exactPinRegion(pin: JobPin) {
-  return {
-    latitude: pin.latitude,
-    longitude: pin.longitude,
-    latitudeDelta: 0.004,
-    longitudeDelta: 0.004,
-  };
-}
-
 function StaticJobMap({
-  region,
   pin,
   accessibilityLabel,
-  variant,
 }: {
-  region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number };
-  pin: JobPin | null;
+  pin: JobPin;
   accessibilityLabel: string;
-  variant: 'approximate' | 'exact';
 }) {
   const [mapReady, setMapReady] = useState(mapsRuntime !== null);
-  const MapView = mapsRuntime?.MapView;
+  const [loaded, setLoaded] = useState(false);
+  const Map = mapsRuntime?.Map;
+  const Camera = mapsRuntime?.Camera;
   const Marker = mapsRuntime?.Marker;
   const available = classifyMapAvailability(mapReady && mapsRuntime !== null);
-  const isExact = variant === 'exact';
 
-  if (available !== 'ready' || !MapView || !Marker) {
+  useEffect(() => {
+    if (!mapReady || loaded) return;
+    const timer = setTimeout(() => setMapReady(false), 20_000);
+    return () => clearTimeout(timer);
+  }, [mapReady, loaded]);
+
+  if (available !== 'ready' || !Map || !Camera || !Marker) {
     return (
       <View
-        style={isExact ? styles.exactUnavailable : styles.unavailable}
+        style={styles.exactUnavailable}
         accessibilityLabel="Job location map unavailable"
       >
-        <Text style={isExact ? styles.exactHelp : styles.help}>{COPY.workerMapUnavailable}</Text>
+        <Text style={styles.exactHelp}>{COPY.workerMapUnavailable}</Text>
       </View>
     );
   }
 
   return (
     <MapErrorBoundary onError={() => setMapReady(false)}>
-      <View style={isExact ? styles.exactMapFrame : styles.mapFrame} pointerEvents="none">
-        <MapView
+      <View style={styles.exactMapFrame} pointerEvents="none">
+        <Map
           style={styles.map}
-          provider={Platform.OS === 'android' ? mapsRuntime?.PROVIDER_GOOGLE : undefined}
-          initialRegion={region}
-          region={region}
-          scrollEnabled={false}
-          zoomEnabled={false}
-          zoomTapEnabled={false}
-          zoomControlEnabled={false}
-          rotateEnabled={false}
-          pitchEnabled={false}
-          toolbarEnabled={false}
-          liteMode={Platform.OS === 'android'}
-          showsUserLocation={false}
-          showsMyLocationButton={false}
-          followsUserLocation={false}
-          moveOnMarkerPress={false}
-          pointerEvents="none"
+          mapStyle={JOB_MAP_STYLE}
+          androidView="texture"
+          dragPan={false}
+          touchZoom={false}
+          doubleTapZoom={false}
+          doubleTapHoldZoom={false}
+          touchRotate={false}
+          touchPitch={false}
+          compass={false}
+          onDidFailLoadingMap={() => setMapReady(false)}
+          onDidFinishRenderingMapFully={() => setLoaded(true)}
           accessibilityLabel={accessibilityLabel}
         >
-          {pin ? (
-            <Marker coordinate={pin} draggable={false} accessibilityLabel="Authorized job pin" />
-          ) : null}
-        </MapView>
+          <Camera initialViewState={{ center: pinToLngLat(pin), zoom: 16, bearing: 0, pitch: 0 }} />
+          <Marker lngLat={pinToLngLat(pin)} accessibilityLabel="Authorized job pin">
+            <View style={styles.destination} />
+          </Marker>
+        </Map>
+        {!loaded ? <View style={styles.loading}><ActivityIndicator accessibilityLabel="Loading job location map" /></View> : null}
       </View>
     </MapErrorBoundary>
   );
 }
 
-export function WorkerApproximateJobArea({ jobId }: { jobId: string }) {
-  const [area, setArea] = useState<ApproximateJobArea | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorCopy, setErrorCopy] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    const next = await getJobApproximateArea(jobId);
-    setArea(next);
-    setErrorCopy(null);
-  }, [jobId]);
-
-  /* eslint-disable react-hooks/set-state-in-effect -- fetch-on-mount; same convention as other screens */
-  useEffect(() => {
-    const run = { cancelled: false };
-    setIsLoading(true);
-    load()
-      .catch((error: unknown) => {
-        if (run.cancelled) return;
-        setArea(null);
-        setErrorCopy(createWorkerLocationErrorCopy(error));
-      })
-      .finally(() => {
-        if (!run.cancelled) setIsLoading(false);
-      });
-    return () => {
-      run.cancelled = true;
-    };
-  }, [load]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  if (isLoading) {
-    return (
-      <View style={styles.block}>
-        <ActivityIndicator />
-        <Text style={styles.help}>Loading job area…</Text>
-      </View>
-    );
-  }
-
-  const surface = projectPreAcceptWorkerLocation(
-    errorCopy ? null : area,
-    classifyMapAvailability(nativeJobMapsLoaded())
-  );
-
-  if (surface.kind !== 'approximate') {
-    return (
-      <View style={styles.block}>
-        <Text style={styles.note}>{errorCopy ?? COPY.workerLocationGeneric}</Text>
-      </View>
-    );
-  }
-
-  const areaLine = formatLocation(surface.barangay, surface.city);
-
+export function WorkerOpportunityJobLocation({ location }: { location: OpportunityLocation | null }) {
+  if (!location) return <Text style={styles.note}>{COPY.workerLocationUnavailable}</Text>;
   return (
     <View style={styles.block}>
-      <Text style={styles.heading}>{surface.heading}</Text>
-      {areaLine ? <Text style={styles.body}>{areaLine}</Text> : null}
-      <Text style={styles.help}>{surface.copy}</Text>
-      {surface.showMap ? (
-        <StaticJobMap
-          region={surface.mapRegion}
-          pin={null}
-          accessibilityLabel="Approximate job area map"
-          variant="approximate"
-        />
-      ) : (
-        <View style={styles.unavailable} accessibilityLabel="Job location map unavailable">
-          <Text style={styles.help}>{COPY.workerMapUnavailable}</Text>
-        </View>
-      )}
+      <Text style={styles.heading}>Job location</Text>
+      <Text style={styles.body}>{location.address ?? 'Address unavailable for this saved job.'}</Text>
+      <Text style={styles.help}>{formatLocation(location.barangay, location.city)}</Text>
+      <WorkerJobLocationMapLibre key={`${location.pin.longitude}:${location.pin.latitude}`} pin={location.pin} />
     </View>
   );
 }
@@ -214,10 +120,12 @@ export function WorkerAssignedJobLocation({
   surface,
   mapsNote,
   onOpenMaps,
+  allowNavigation = true,
 }: {
   surface: WorkerLocationSurface;
   mapsNote: string | null;
   onOpenMaps: () => void;
+  allowNavigation?: boolean;
 }) {
   if (surface.kind === 'suppressed' || surface.kind === 'unavailable') {
     if (surface.kind === 'unavailable') {
@@ -250,17 +158,16 @@ export function WorkerAssignedJobLocation({
         {areaLine ? <Text style={styles.exactArea}>{areaLine}</Text> : null}
         {surface.showMap ? (
           <StaticJobMap
-            region={exactPinRegion(surface.pin)}
+            key={`${surface.pin.longitude}:${surface.pin.latitude}`}
             pin={surface.pin}
             accessibilityLabel="Exact job location map"
-            variant="exact"
           />
         ) : (
           <View style={styles.exactUnavailable} accessibilityLabel="Job location map unavailable">
             <Text style={styles.exactHelp}>{COPY.workerMapUnavailable}</Text>
           </View>
         )}
-        {surface.openInMapsUrl ? (
+        {allowNavigation && surface.openInMapsUrl ? (
           <AppButton label={COPY.openInMaps} variant="ghost" onPress={onOpenMaps} />
         ) : null}
         {mapsNote ? <Text style={styles.exactNote}>{mapsNote}</Text> : null}
@@ -289,6 +196,8 @@ export async function openWorkerMapsUrl(url: string | null): Promise<boolean> {
 }
 
 const styles = StyleSheet.create({
+  destination: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.primary, borderWidth: 3, borderColor: '#ffffff' },
+  loading: { ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center' },
   block: {
     gap: 8,
     marginTop: 8,

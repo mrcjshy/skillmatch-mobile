@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActiveBookingHomeCard } from '@/components/active-booking-home-card';
 import { AppButton } from '@/components/app-button';
+import { AppCard } from '@/components/app-card';
 import { AppField } from '@/components/app-field';
 import { HomeHeader } from '@/components/home-header';
 import { InlineStatus } from '@/components/inline-status';
@@ -128,8 +129,8 @@ export default function ClientHome() {
   const [description, setDescription] = useState('');
   const [address, setAddress] = useState('');
   const [pin, setPin] = useState<JobPin | null>(initialJobPin);
+  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [locationNote, setLocationNote] = useState<string | null>(null);
-  const [mapGesture, setMapGesture] = useState(false);
   const [scheduleDate, setScheduleDate] = useState<Date | null>(null);
   const [scheduleTime, setScheduleTime] = useState<Date | null>(null);
   const [budgetText, setBudgetText] = useState('');
@@ -366,6 +367,7 @@ export default function ClientHome() {
       setDescription('');
       setAddress('');
       setPin(initialJobPin());
+      setLocationPickerVisible(false);
       setLocationNote(null);
       setScheduleDate(null);
       setScheduleTime(null);
@@ -396,7 +398,6 @@ export default function ClientHome() {
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
-        scrollEnabled={!mapGesture}
       >
         <HomeHeader fullName={fullName} role="client" variant="chrome" />
 
@@ -453,25 +454,18 @@ export default function ClientHome() {
 
               <View style={styles.section} accessibilityLabel="Where">
                 <SectionHeader title="Where" />
-                <AppField
-                  label="Address"
-                  value={address}
-                  onChangeText={setAddress}
-                  placeholder="House / street / landmark"
-                  disabled={busy}
-                  accessibilityLabel="Address"
-                  helperText="Required. Write the house, street, or landmark. The pin does not replace this address."
-                />
-                <Text style={styles.mapLabel}>Map</Text>
-                <JobLocationPicker
-                  pin={pin}
-                  onChangePin={setPin}
-                  note={locationNote}
-                  onNote={setLocationNote}
-                  disabled={busy}
-                  onMapGesture={setMapGesture}
-                  onAutofillAddress={setAddress}
-                />
+                <AppCard>
+                  <Text style={styles.fieldLabel}>Service Location</Text>
+                  <Text accessibilityLabel="Confirmed job address" style={styles.locationAddress}>
+                    {address || 'No location selected'}
+                  </Text>
+                  <AppButton
+                    label={pin && address ? 'Change Location' : 'Choose Location'}
+                    variant="secondary"
+                    disabled={busy}
+                    onPress={() => { setLocationNote(null); setLocationPickerVisible(true); }}
+                  />
+                </AppCard>
               </View>
 
               <View style={styles.section} accessibilityLabel="Schedule">
@@ -655,6 +649,23 @@ export default function ClientHome() {
         </View>
       </ScrollView>
 
+      <Modal visible={locationPickerVisible} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setLocationPickerVisible(false)}>
+        {locationPickerVisible ? (
+          <JobLocationPicker
+            pin={pin}
+            initialAddress={address}
+            note={locationNote}
+            onNote={setLocationNote}
+            onCancel={() => setLocationPickerVisible(false)}
+            onConfirm={(location) => {
+              setPin(location.pin);
+              setAddress(location.address);
+              setLocationPickerVisible(false);
+            }}
+          />
+        ) : null}
+      </Modal>
+
       <Modal visible={skillsModalVisible} animationType="slide" onRequestClose={closeSkillsModal}>
         <KeyboardAvoidingView
           style={styles.modalFlex}
@@ -768,12 +779,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: colors.primary,
   },
-  mapLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-    color: colors.primary,
-  },
+  locationAddress: { ...type.body, color: colors.textPrimary },
   feePresetGroup: {
     flexDirection: 'row',
     flexWrap: 'wrap',

@@ -79,12 +79,12 @@ describe('coordinate validation', () => {
 });
 
 describe('posting location validation', () => {
-  it('requires both a manual address and a selected exact pin', () => {
+  it('requires both a confirmed derived address and a selected exact pin', () => {
     expect(postingLocationError('', SANTA_ANA_PATEROS_INTERIOR_TEST_PIN)).toBe(
-      'Please enter a house, street, or landmark.'
+      'Please confirm the address derived from your selected job pin.'
     );
     expect(postingLocationError('   ', SANTA_ANA_PATEROS_INTERIOR_TEST_PIN)).toBe(
-      'Please enter a house, street, or landmark.'
+      'Please confirm the address derived from your selected job pin.'
     );
     expect(postingLocationError('123 Test Street', null)).toBe(
       'Please select a location on the map.'
@@ -185,7 +185,7 @@ describe('formatReverseGeocodeAddress', () => {
 
   it('keeps Current Location autofill recoverable when reverse geocode is empty', () => {
     expect(COPY.geocodeUnavailable).toBe(
-      "Couldn't fill the address automatically. You can still enter it manually."
+      "Couldn't find the address for this pin. Retry before confirming the location."
     );
   });
 });
@@ -244,18 +244,17 @@ describe('resolveCurrentLocationPin', () => {
     expect(location.reads).toBe(0);
   });
 
-  it('requests once when undetermined and then places the pin', async () => {
+  it('does not request even if permission becomes undetermined before the position read', async () => {
     const location = fakeLocation({
       status: 'undetermined',
       afterRequest: 'granted',
       coords: { latitude: 14.546, longitude: 121.07 },
     });
     await expect(resolveCurrentLocationPin(location)).resolves.toEqual({
-      kind: 'pin',
-      pin: { latitude: 14.546, longitude: 121.07 },
+      kind: 'denied',
     });
-    expect(location.requests).toBe(1);
-    expect(location.reads).toBe(1);
+    expect(location.requests).toBe(0);
+    expect(location.reads).toBe(0);
   });
 
   it('uses an already granted permission without requesting again', async () => {

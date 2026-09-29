@@ -1,68 +1,37 @@
-import { Component, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Component, useCallback, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
+import { ActivityIndicator, AppState, Linking, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { CameraRef, MapRef, ViewStateChangeEvent } from '@maplibre/maplibre-react-native';
+import type { NativeSyntheticEvent } from 'react-native';
 
 import { SkillMatchTheme } from '@/constants/theme';
 import {
   COPY,
   SANTA_ANA_PATEROS_DISPLAY_REGION,
   classifyMapAvailability,
-  formatReverseGeocodeAddress,
-  isValidJobCoordinate,
-  postingPinState,
   resolveCurrentLocationPin,
-  reviewJobPinPlacement,
-  type ForegroundLocationLike,
   type JobPin,
-  type ReverseGeocodeLike,
 } from '@/lib/job-location';
 
-const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
+import { createCanonicalLocationSelection, type CanonicalJobLocation, type LocationSelectionState } from '@/lib/canonical-job-location';
+import { JOB_MAP_STYLE, jobMapRuntime as mapsRuntime } from '@/lib/native-job-map';
+import { pinFromMapCenter, pinToLngLat } from '@/lib/map-coordinates';
+import { findNearbyMappedFeatures, findNearbySnap, SNAP_MIN_ZOOM, type NearbyMappedFeature, type SnapKind } from '@/lib/job-location-snap';
+import { AppButton } from '@/components/app-button';
+import { AppNotice } from '@/components/app-notice';
+import { inspectLocationPermission, type LocationPermissionState } from '@/lib/location-permission';
 
-type MapsRuntime = {
-  MapView: typeof import('react-native-maps').default;
-  Marker: typeof import('react-native-maps').Marker;
-  PROVIDER_GOOGLE: typeof import('react-native-maps').PROVIDER_GOOGLE;
-};
-
-type MapCoordinateEvent = {
-  nativeEvent: { coordinate: { latitude: number; longitude: number } };
-};
-
-type MapHandle = {
-  animateToRegion: (region: {
-    latitude: number;
-    longitude: number;
-    latitudeDelta: number;
-    longitudeDelta: number;
-  }) => void;
-};
-
-function loadMapsRuntime(): MapsRuntime | null {
-  try {
-    // Native TurboModule is evaluated on require. Catch so a reused APK without
-    // RNMapsAirModule still shows Post Job instead of crashing the Client tab.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const maps = require('react-native-maps') as typeof import('react-native-maps');
-    return {
-      MapView: maps.default,
-      Marker: maps.Marker,
-      PROVIDER_GOOGLE: maps.PROVIDER_GOOGLE,
-    };
-  } catch {
-    return null;
-  }
-}
-
-const mapsRuntime = loadMapsRuntime();
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 type JobLocationPickerProps = {
   pin: JobPin | null;
-  onChangePin: (pin: JobPin) => void;
+  initialAddress?: string;
+  onInvalidate?: () => void;
   note: string | null;
   onNote: (note: string | null) => void;
   disabled?: boolean;
-  onMapGesture?: (active: boolean) => void;
-  onAutofillAddress?: (address: string) => void;
+  onCancel?: () => void;
+  onConfirm: (location: CanonicalJobLocation) => void;
 };
 
 class MapErrorBoundary extends Component<
@@ -87,181 +56,324 @@ class MapErrorBoundary extends Component<
 
 export function JobLocationPicker({
   pin,
-  onChangePin,
+  initialAddress,
+  onInvalidate,
   note,
   onNote,
   disabled = false,
-  onMapGesture,
-  onAutofillAddress,
+  onCancel,
+  onConfirm,
 }: JobLocationPickerProps) {
-  const mapRef = useRef<MapHandle>(null);
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const cameraRef = useRef<CameraRef>(null);
+  const mapRef = useRef<MapRef>(null);
+  const movingRef = useRef(false);
+  const currentMoveRef = useRef(false);
+  const programmaticMoveRef = useRef(false);
+  const rawCenterRef = useRef<JobPin | null>(null);
+  const lookupEpoch = useRef(0);
+  const [moving, setMoving] = useState(false);
+  const [checkingSnap, setCheckingSnap] = useState(false);
+  const [snapKind, setSnapKind] = useState<SnapKind | null>(null);
+  const [nearby, setNearby] = useState<NearbyMappedFeature[]>([]);
+  const [showInitialAddress, setShowInitialAddress] = useState(Boolean(pin && initialAddress));
   const [mapReady, setMapReady] = useState(mapsRuntime !== null);
+  const [mapLoaded, setMapLoaded] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [permission, setPermission] = useState<LocationPermissionState | null>(null);
   const mapAvailable = classifyMapAvailability(mapReady && mapsRuntime !== null);
   const busy = disabled || locating;
-  const MapView = mapsRuntime?.MapView;
-  const Marker = mapsRuntime?.Marker;
+  const Map = mapsRuntime?.Map;
+  const Camera = mapsRuntime?.Camera;
 
-  async function applyCoordinate(latitude: number, longitude: number): Promise<void> {
-    if (!isValidJobCoordinate(latitude, longitude)) return;
-    const nextPin = { latitude, longitude };
-    const result = await reviewJobPinPlacement(nextPin);
-    if (!result.ok) {
-      onNote(result.reason === 'invalid' ? COPY.invalidPin : COPY.outsideServiceArea);
-      onMapGesture?.(false);
+  useEffect(() => {
+    if (!mapReady || mapLoaded) return;
+    const timer = setTimeout(() => setMapReady(false), 20_000);
+    return () => clearTimeout(timer);
+  }, [mapReady, mapLoaded]);
+
+  const [selectionState, setSelectionState] = useState<LocationSelectionState>({
+    pin: null, address: null, status: 'empty', error: null,
+  });
+  const [selection] = useState(() => createCanonicalLocationSelection(setSelectionState));
+  const lifetime = useRef(true);
+  useEffect(() => {
+    lifetime.current = true;
+    return () => { lifetime.current = false; selection.cancel(); };
+  }, [selection]);
+  const resolveAddress = useCallback(async (explicitRequest = false): Promise<void> => {
+    const epoch = lookupEpoch.current;
+    selection.select(selection.snapshot().pin);
+    setShowInitialAddress(false);
+    try {
+      const location = await import('expo-location');
+      const nextPermission = await inspectLocationPermission(location, explicitRequest);
+      if (!lifetime.current || epoch !== lookupEpoch.current || movingRef.current) return;
+      setPermission(nextPermission);
+      if (nextPermission !== 'granted') return;
+      if (!selection.snapshot().pin) return;
+      await selection.resolve(location);
+    } catch {
+      if (lifetime.current && epoch === lookupEpoch.current && !movingRef.current) {
+        await selection.resolve({ reverseGeocodeAsync: async () => { throw new Error('Unavailable'); } });
+      }
+    }
+  }, [selection]);
+
+  useEffect(() => {
+    const listener = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void resolveAddress();
+      else {
+        lookupEpoch.current += 1;
+        selection.select(selection.snapshot().pin);
+        setShowInitialAddress(false);
+      }
+    });
+    return () => listener.remove();
+  }, [resolveAddress, selection]);
+
+  function beginMove(): void {
+    if (movingRef.current) return;
+    movingRef.current = true;
+    lookupEpoch.current += 1;
+    selection.select(null);
+    setCheckingSnap(false);
+    setSnapKind(null);
+    setNearby([]);
+    setShowInitialAddress(false);
+    rawCenterRef.current = null;
+    onInvalidate?.();
+    onNote(null);
+    setMoving(true);
+  }
+
+  function handleRegionWillChange(event: NativeSyntheticEvent<ViewStateChangeEvent>): void {
+    if (event.nativeEvent.userInteraction) {
+      programmaticMoveRef.current = false;
+      beginMove();
+    } else if (!programmaticMoveRef.current && currentMoveRef.current) beginMove();
+  }
+
+  function handleRegionDidChange(event: NativeSyntheticEvent<ViewStateChangeEvent>): void {
+    if (programmaticMoveRef.current && !event.nativeEvent.userInteraction) {
+      programmaticMoveRef.current = false;
       return;
     }
-    onChangePin(nextPin);
-    onNote(null);
-    onMapGesture?.(false);
+    if (!movingRef.current && !event.nativeEvent.userInteraction && !currentMoveRef.current) return;
+    if (!movingRef.current) beginMove();
+    currentMoveRef.current = false;
+    movingRef.current = false;
+    setMoving(false);
+    const nextPin = pinFromMapCenter(event.nativeEvent.center);
+    rawCenterRef.current = nextPin;
+    selection.select(nextPin);
+    const epoch = ++lookupEpoch.current;
+    if (nextPin) void settleSelection(nextPin, event.nativeEvent.zoom, epoch);
   }
 
-  function handleMapPress(event: MapCoordinateEvent): void {
-    if (busy) return;
-    const { latitude, longitude } = event.nativeEvent.coordinate;
-    void applyCoordinate(latitude, longitude);
+  async function settleSelection(rawCenter: JobPin, zoom: number, epoch: number): Promise<void> {
+    const maySnap = zoom >= SNAP_MIN_ZOOM && mapRef.current !== null;
+    setCheckingSnap(maySnap);
+    let candidate = null;
+    try {
+      if (maySnap && mapRef.current) candidate = await findNearbySnap(mapRef.current, rawCenter, zoom);
+    } catch { /* A failed feature query keeps the manually placed center. */ }
+    if (!lifetime.current || epoch !== lookupEpoch.current || movingRef.current) return;
+    setCheckingSnap(false);
+    if (candidate && cameraRef.current) {
+      setSnapKind(candidate.kind);
+      selection.select(candidate.pin);
+      programmaticMoveRef.current = true;
+      cameraRef.current.easeTo({ center: pinToLngLat(candidate.pin), duration: 200 });
+    } else {
+      setSnapKind(null);
+      selection.select(rawCenter);
+    }
+    void resolveAddress();
+    if (maySnap && mapRef.current) {
+      void findNearbyMappedFeatures(mapRef.current, rawCenter, zoom).then((items) => {
+        if (lifetime.current && epoch === lookupEpoch.current && !movingRef.current) setNearby(items);
+      }).catch(() => { /* Nearby context is optional. */ });
+    }
   }
 
-  function handleMarkerDragEnd(event: MapCoordinateEvent): void {
-    if (disabled) return;
-    const { latitude, longitude } = event.nativeEvent.coordinate;
-    void applyCoordinate(latitude, longitude);
+  function useExactPin(): void {
+    const rawCenter = rawCenterRef.current;
+    if (!rawCenter || !snapKind || !cameraRef.current) return;
+    lookupEpoch.current += 1;
+    setSnapKind(null);
+    setCheckingSnap(false);
+    setNearby([]);
+    selection.select(rawCenter);
+    programmaticMoveRef.current = true;
+    cameraRef.current.easeTo({ center: pinToLngLat(rawCenter), duration: 200 });
+    void resolveAddress();
   }
 
   async function handleUseCurrentLocation(): Promise<void> {
     if (busy || mapAvailable !== 'ready') return;
     setLocating(true);
+    const requestEpoch = lookupEpoch.current;
     try {
-      let location: ForegroundLocationLike;
-      try {
-        location = (await import('expo-location')) as ForegroundLocationLike;
-      } catch {
-        onNote(COPY.locationUnavailable);
+      const location = await import('expo-location');
+      const nextPermission = await inspectLocationPermission(location);
+      if (!lifetime.current || requestEpoch !== lookupEpoch.current) return;
+      setPermission(nextPermission);
+      if (nextPermission !== 'granted') {
+        selection.select(selection.snapshot().pin);
+        setShowInitialAddress(false);
         return;
       }
       const result = await resolveCurrentLocationPin(location);
-      if (result.kind === 'denied') {
-        onNote(COPY.permissionDenied);
+      if (!lifetime.current || requestEpoch !== lookupEpoch.current) return;
+      if (result.kind !== 'pin') {
+        onNote(result.kind === 'denied' ? COPY.permissionDenied : COPY.locationUnavailable);
         return;
       }
-      if (result.kind === 'unavailable' || result.kind === 'invalid') {
-        onNote(COPY.locationUnavailable);
-        return;
-      }
-      const placement = await reviewJobPinPlacement(result.pin);
-      if (!placement.ok) {
-        onNote(placement.reason === 'invalid' ? COPY.invalidPin : COPY.outsideServiceArea);
-        return;
-      }
-      onChangePin(result.pin);
-      mapRef.current?.animateToRegion({
-        latitude: result.pin.latitude,
-        longitude: result.pin.longitude,
-        latitudeDelta: SANTA_ANA_PATEROS_DISPLAY_REGION.latitudeDelta,
-        longitudeDelta: SANTA_ANA_PATEROS_DISPLAY_REGION.longitudeDelta,
-      });
-      const geocoder = location as ForegroundLocationLike & ReverseGeocodeLike;
-      try {
-        if (typeof geocoder.reverseGeocodeAsync !== 'function') {
-          onNote(COPY.geocodeUnavailable);
-          return;
-        }
-        const rows = await geocoder.reverseGeocodeAsync({
-          latitude: result.pin.latitude,
-          longitude: result.pin.longitude,
-        });
-        const address = formatReverseGeocodeAddress(rows);
-        if (address) {
-          onAutofillAddress?.(address);
-          onNote(null);
-        } else {
-          onNote(COPY.geocodeUnavailable);
-        }
-      } catch {
-        onNote(COPY.geocodeUnavailable);
-      }
+      if (!cameraRef.current) { onNote(COPY.mapUnavailable); return; }
+      beginMove();
+      currentMoveRef.current = true;
+      cameraRef.current.easeTo({ center: pinToLngLat(result.pin), zoom: SNAP_MIN_ZOOM, duration: 300 });
+    } catch {
+      if (lifetime.current) onNote(COPY.locationUnavailable);
     } finally {
-      setLocating(false);
-      onMapGesture?.(false);
+      if (lifetime.current) setLocating(false);
     }
   }
 
+  function selectNearby(item: NearbyMappedFeature): void {
+    if (busy || !cameraRef.current) return;
+    beginMove();
+    currentMoveRef.current = true;
+    cameraRef.current.easeTo({ center: pinToLngLat(item.pin), zoom: SNAP_MIN_ZOOM, duration: 300 });
+  }
+
+  const addressCopy = showInitialAddress && initialAddress ? initialAddress : selectionState.address ?? (
+    moving ? 'Move the map to position the center pin.' :
+    checkingSnap ? 'Checking nearby mapped features...' :
+    selectionState.status === 'resolving' ? 'Finding address…' :
+    selectionState.error === 'outside' ? 'This location is outside Barangay Santa Ana.' :
+    selectionState.error === 'geocode' ? 'Unable to determine the address. Move the map slightly and try again.' :
+    'Move the map to choose a service location.'
+  );
+
   return (
-    <View style={styles.wrap}>
-      {mapAvailable === 'ready' && MapView && Marker ? (
+    <View style={styles.screen}>
+      {mapAvailable === 'ready' && Map && Camera ? (
         <MapErrorBoundary onError={() => setMapReady(false)}>
           <View
             style={styles.mapFrame}
-            onTouchStart={() => onMapGesture?.(true)}
-            onTouchEnd={() => onMapGesture?.(false)}
-            onTouchCancel={() => onMapGesture?.(false)}
           >
-            <MapView
-              ref={mapRef as never}
+            <Map
+              ref={mapRef}
               style={styles.map}
-              provider={Platform.OS === 'android' ? mapsRuntime?.PROVIDER_GOOGLE : undefined}
-              initialRegion={SANTA_ANA_PATEROS_DISPLAY_REGION}
-              onPress={handleMapPress}
-              pitchEnabled={false}
-              rotateEnabled={false}
-              toolbarEnabled={false}
-              showsUserLocation={false}
-              showsMyLocationButton={false}
-              followsUserLocation={false}
-              moveOnMarkerPress={false}
+              mapStyle={JOB_MAP_STYLE}
+              androidView="texture"
+              dragPan={!disabled && !locating}
+              touchZoom={!disabled && !locating}
+              onRegionWillChange={handleRegionWillChange}
+              onRegionDidChange={handleRegionDidChange}
+              touchPitch={false}
+              touchRotate={false}
+              compass={false}
+              onDidFailLoadingMap={() => setMapReady(false)}
+              onDidFinishRenderingMapFully={() => setMapLoaded(true)}
               accessibilityLabel="Job location map"
             >
-              {pin ? (
-                <Marker
-                  coordinate={pin}
-                  draggable={!disabled}
-                  onDragEnd={handleMarkerDragEnd}
-                  accessibilityLabel="Selected job pin"
-                />
-              ) : null}
-            </MapView>
+              <Camera
+                ref={cameraRef}
+                initialViewState={{ center: pinToLngLat(pin ?? SANTA_ANA_PATEROS_DISPLAY_REGION), zoom: pin ? SNAP_MIN_ZOOM : 14, bearing: 0, pitch: 0 }}
+              />
+            </Map>
+            <View pointerEvents="none" style={styles.centerPinOverlay} accessibilityLabel="Center service location pin">
+              <View style={styles.destination} />
+            </View>
+            {!mapLoaded ? (
+              <View style={styles.loading} pointerEvents="none">
+                <ActivityIndicator accessibilityLabel="Loading job location map" />
+              </View>
+            ) : null}
+            <Pressable
+              style={[styles.floatingControl, styles.backControl, { top: insets.top + spacing.sm }]}
+              onPress={onCancel}
+              accessibilityRole="button"
+              accessibilityLabel="Back to Post Job"
+            ><Text style={styles.controlText}>←</Text></Pressable>
+            <Pressable
+              style={[styles.floatingControl, styles.currentControl]}
+              onPress={() => { void handleUseCurrentLocation(); }}
+              disabled={busy}
+              accessibilityRole="button"
+              accessibilityLabel={COPY.useCurrentLocation}
+            >{locating ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.controlText}>◎</Text>}</Pressable>
           </View>
         </MapErrorBoundary>
       ) : (
         <View style={styles.unavailable} accessibilityLabel="Job location map unavailable">
-          <Text style={styles.help}>{COPY.mapUnavailable}</Text>
+          <Pressable style={[styles.floatingControl, styles.backControl, { top: insets.top + spacing.sm }]}
+            onPress={onCancel} accessibilityRole="button" accessibilityLabel="Back to Post Job">
+            <Text style={styles.controlText}>←</Text>
+          </Pressable>
+          <Text style={styles.addressText}>{COPY.mapUnavailable}</Text>
         </View>
       )}
-      <Text style={styles.help}>
-        {postingPinState(pin) === 'selected'
-          ? 'Job location selected. Tap another area or drag the pin to adjust it.'
-          : 'No job location selected yet. Tap the map to place the job pin.'}
-      </Text>
-      <Pressable
-        style={[styles.button, busy && styles.buttonDisabled]}
-        onPress={() => {
-          void handleUseCurrentLocation();
-        }}
-        disabled={busy || mapAvailable !== 'ready'}
-        accessibilityRole="button"
-        accessibilityLabel={COPY.useCurrentLocation}
-      >
-        {locating ? (
-          <ActivityIndicator color={colors.primary} />
-        ) : (
-          <Text style={styles.buttonText}>{COPY.useCurrentLocation}</Text>
-        )}
-      </Pressable>
-      {note ? <Text style={styles.note}>{note}</Text> : null}
+      <View style={[styles.sheet, { maxHeight: Math.min(height * 0.48, 430), paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+        <View style={styles.handle} />
+        <ScrollView style={styles.sheetBody} contentContainerStyle={styles.sheetContent} nestedScrollEnabled>
+          <Text style={styles.sheetTitle}>Service location</Text>
+          <View style={styles.addressCard} accessibilityLabel="Selected location address">
+            <Text style={styles.addressText}>{addressCopy}</Text>
+          </View>
+          {snapKind ? (
+            <View>
+              <AppNotice variant="success" message={snapKind === 'building' ? 'Snapped to nearby building' : 'Nearby mapped place detected'} />
+              <AppButton label="Use exact pin instead" variant="ghost" onPress={useExactPin} disabled={busy || moving} />
+            </View>
+          ) : null}
+          {nearby.length > 0 ? (
+            <View style={styles.nearbyBlock} accessibilityLabel="Nearby mapped features">
+              <Text style={styles.nearbyTitle}>Nearby</Text>
+              {nearby.map((item) => (
+                <Pressable key={`${item.label}:${item.pin.latitude}:${item.pin.longitude}`}
+                  style={styles.nearbyRow} onPress={() => selectNearby(item)}
+                  accessibilityRole="button" accessibilityLabel={`Move map to ${item.label}`}>
+                  <Text style={styles.nearbyLabel}>{item.label}</Text>
+                  <Text style={styles.nearbyDistance}>Nearby mapped place</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+          {selectionState.error === 'geocode' ? <AppButton label="Retry address lookup" variant="ghost" onPress={() => void resolveAddress()} disabled={busy} /> : null}
+          {permission && permission !== 'granted' ? (
+            <View>
+              <AppNotice variant="warning" message="Location permission is required to translate your selected Job pin into its address. SkillMatch does not track your movement." />
+              <AppButton label={permission === 'settings' ? 'Open Settings' : 'Enable Location to Confirm Address'}
+                onPress={() => { if (permission === 'settings') void Linking.openSettings().catch(() => onNote('Unable to open Settings. Open Android app settings manually.')); else void resolveAddress(true); }} disabled={busy || moving} />
+            </View>
+          ) : null}
+          {note ? <AppNotice variant="warning" message={note} /> : null}
+        </ScrollView>
+        <AppButton
+          label="Choose This Location"
+          variant="primary"
+          disabled={busy || moving || checkingSnap || mapAvailable !== 'ready' || selectionState.status !== 'ready'}
+          onPress={() => { if (!movingRef.current) { const confirmed = selection.confirm(); if (confirmed) onConfirm(confirmed); } }}
+        />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    gap: spacing.sm,
-  },
+  screen: { flex: 1, backgroundColor: colors.background },
+  destination: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.primary, borderWidth: 4, borderColor: '#ffffff', elevation: 4 },
+  centerPinOverlay: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+  loading: { ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center' },
   mapFrame: {
-    height: 220,
-    borderRadius: radius.md,
+    flex: 1,
+    minHeight: 200,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
     backgroundColor: colors.surfaceSubtle,
   },
   map: {
@@ -269,37 +381,56 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   unavailable: {
-    height: 220,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
     backgroundColor: colors.surfaceSubtle,
   },
-  help: {
-    ...type.helper,
-    color: colors.textSecondary,
+  floatingControl: {
+    position: 'absolute',
+    width: 52,
+    height: 52,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 5,
   },
-  note: {
-    ...type.helper,
-    color: colors.warning,
+  backControl: { left: spacing.gutter },
+  currentControl: { right: spacing.gutter, bottom: spacing.lg },
+  controlText: { fontSize: 28, color: colors.primary, lineHeight: 34 },
+  sheet: {
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.gutter,
+    paddingTop: spacing.sm,
+    gap: spacing.sm,
   },
-  button: {
-    minHeight: size.ghostButton,
+  handle: {
+    alignSelf: 'center',
+    width: 44,
+    height: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.border,
+  },
+  sheetBody: { flexShrink: 1 },
+  sheetContent: { gap: spacing.sm, paddingBottom: spacing.sm },
+  sheetTitle: { ...type.screenTitle, color: colors.textPrimary },
+  addressCard: {
     borderRadius: radius.md,
     backgroundColor: colors.surfaceSubtle,
+    padding: spacing.md,
+  },
+  addressText: { ...type.bodyEmphasis, color: colors.textPrimary },
+  nearbyBlock: { gap: spacing.xs },
+  nearbyTitle: { ...type.bodyEmphasis, color: colors.primary },
+  nearbyRow: {
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    ...type.bodyEmphasis,
-    color: colors.primary,
-  },
+  nearbyLabel: { ...type.bodyEmphasis, color: colors.textPrimary },
+  nearbyDistance: { ...type.helper, color: colors.textSecondary },
 });

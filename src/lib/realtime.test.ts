@@ -27,6 +27,19 @@ vi.mock('./supabase', () => ({
 
 afterEach(() => vi.restoreAllMocks());
 
+it('clears opted-in protected presentation on channel failure, but not normal teardown', () => {
+  const transport = fakeClient();
+  const unavailable = vi.fn();
+  const stop = subscribeInvalidation({ client: transport.client, topic: workerOpportunitiesTopic(), events: [JOB_OPPORTUNITIES_CHANGED], onInvalidate: vi.fn(), onUnavailable: unavailable });
+  transport.channels[0].reportStatus('CHANNEL_ERROR');
+  expect(unavailable).toHaveBeenCalledTimes(1);
+  transport.channels[0].reportStatus('TIMED_OUT');
+  transport.channels[0].reportStatus('CLOSED');
+  expect(unavailable).toHaveBeenCalledTimes(3);
+  stop();
+  expect(unavailable).toHaveBeenCalledTimes(3);
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: Error) => void;

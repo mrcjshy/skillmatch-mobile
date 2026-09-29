@@ -112,6 +112,8 @@ export type SubscribeInvalidationOptions = {
    * so a reconnect cannot blank a conversation.
    */
   onBroadcastEvent?: () => void;
+  /** Protected-location consumers clear on loss of live invalidation transport. */
+  onUnavailable?: () => void;
   client?: BroadcastClientLike;
 };
 
@@ -185,6 +187,7 @@ type InvalidationSubscriber = {
   events: Set<string>;
   onInvalidate: () => void;
   onBroadcastEvent?: () => void;
+  onUnavailable?: () => void;
   lastSubscribed: number;
 };
 
@@ -261,6 +264,11 @@ function openChannel(entry: TopicEntry): void {
       return;
     }
     entry.subscribed = false;
+    if (FAILED_STATUSES.includes(status) || status === 'CLOSED') {
+      for (const listener of [...entry.subscribers]) {
+        if (entry.subscribers.has(listener) && listener.onUnavailable) deliver(entry, listener.onUnavailable);
+      }
+    }
     if (FAILED_STATUSES.includes(status)) {
       console.warn('[R5-UI] broadcast channel not delivering:', entry.topic, status);
     }
@@ -332,7 +340,7 @@ function recoverSetupFailure(entry: TopicEntry): void {
  * event set and cleanup; only the final owner removes the physical channel.
  */
 export function subscribeInvalidation(options: SubscribeInvalidationOptions): () => void {
-  const { topic, events, onInvalidate, onBroadcastEvent } = options;
+  const { topic, events, onInvalidate, onBroadcastEvent, onUnavailable } = options;
   // Annotated, not cast: this is what checks that the real client still
   // satisfies the narrow contract above.
   const client: BroadcastClientLike = options.client ?? supabase;
@@ -352,7 +360,7 @@ export function subscribeInvalidation(options: SubscribeInvalidationOptions): ()
     topics.set(topic, entry);
   }
   const shared = entry;
-  const subscriber = { events: new Set(events), onInvalidate, onBroadcastEvent, lastSubscribed: 0 };
+  const subscriber = { events: new Set(events), onInvalidate, onBroadcastEvent, onUnavailable, lastSubscribed: 0 };
   shared.subscribers.add(subscriber);
 
   try {

@@ -1,26 +1,21 @@
 const appJson = require('./app.json');
 
-const androidMapsKey = process.env.GOOGLE_MAPS_ANDROID_API_KEY ?? '';
-const mapsPlugin = androidMapsKey
-  ? ['react-native-maps', { androidGoogleMapsApiKey: androidMapsKey }]
-  : 'react-native-maps';
-
 module.exports = {
   expo: {
     ...appJson.expo,
     plugins: [
       ...(appJson.expo.plugins ?? []),
-      mapsPlugin,
       [
         'expo-location',
         {
           locationWhenInUsePermission:
-            'SkillMatch uses your location only when you tap Use Current Location to place the Job pin.',
+            'SkillMatch uses foreground location permission to identify the address of your selected Job pin and, when requested, obtain one current position. Your movement is not tracked.',
           isIosBackgroundLocationEnabled: false,
           isAndroidBackgroundLocationEnabled: false,
           isAndroidForegroundServiceEnabled: false,
         },
       ],
+      '@maplibre/maplibre-react-native',
     ],
   },
 };

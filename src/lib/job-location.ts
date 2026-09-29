@@ -4,8 +4,8 @@
  * Coordinates are display/service-location data only. Matching remains
  * Skill 50 / Location 30 / Rating 20 on barangay/city. This module never
  * writes public.job_postings or private.job_locations directly.
- * Pre-accept Workers use get_job_approximate_area only. Exact pin access
- * uses get_authorized_job_location only.
+ * V4 pre-accept access uses get_my_opportunity_location. Confirmed Booking
+ * access remains separate through get_authorized_job_location.
  */
 
 import { supabase } from './supabase';
@@ -56,7 +56,7 @@ const FORBIDDEN = '42501';
 const INVALID_INPUT = '22023';
 
 export const COPY = {
-  missingAddress: 'Please enter a house, street, or landmark.',
+  missingAddress: 'Please confirm the address derived from your selected job pin.',
   missingDescription: 'Please describe the work needed.',
   missingPin: 'Please select a location on the map.',
   invalidPin: 'Please select a valid location on the map.',
@@ -69,10 +69,10 @@ export const COPY = {
     'Please choose a location inside the supported area.',
   ].join('\n'),
   permissionDenied:
-    'Location permission is off. You can still tap the map to place the Job pin.',
-  locationUnavailable: "Couldn't read your current location. Place the pin on the map instead.",
-  geocodeUnavailable: "Couldn't fill the address automatically. You can still enter it manually.",
-  mapUnavailable: 'Map is unavailable. You can still enter the address, but posting needs a selected pin.',
+    'Location permission is off. You can still move the map under the center pin.',
+  locationUnavailable: "Couldn't read your current location. Move the map under the center pin instead.",
+  geocodeUnavailable: "Couldn't find the address for this pin. Retry before confirming the location.",
+  mapUnavailable: 'Map is unavailable. Posting requires a selected pin and its confirmed address.',
   forbidden: "You don't have permission to post a job.",
   invalid: 'Check the job details and selected location, then try again.',
   generic: "Couldn't post your job. Please try again.",
@@ -276,14 +276,8 @@ export async function resolveCurrentLocationPin(
   const current = classifyForegroundPermission(
     (await location.getForegroundPermissionsAsync()).status
   );
-  const decision = decideCurrentLocationAction(current);
-  if (decision.action === 'explain-denied') return { kind: 'denied' };
-  if (decision.action === 'request') {
-    const requested = classifyForegroundPermission(
-      (await location.requestForegroundPermissionsAsync()).status
-    );
-    if (requested !== 'granted') return { kind: 'denied' };
-  }
+  // Permission prompting belongs only to the explicit address-confirmation action.
+  if (current !== 'granted') return { kind: 'denied' };
   try {
     const position = await location.getCurrentPositionAsync();
     const pin = {
