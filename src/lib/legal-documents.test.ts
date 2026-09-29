@@ -74,19 +74,27 @@ describe('approved Terms and Privacy wording', () => {
   });
 
   it('describes authentication without claiming plaintext-password storage details', () => {
-    expect(privacyText).toContain(
-      "Authentication credentials are handled by SkillMatch's authentication service. The SkillMatch application does not store your plaintext password."
-    );
+    expect(privacyText).toContain("Authentication credentials are handled by SkillMatch's authentication service.");
+    expect(privacyText).toContain('The SkillMatch application does not store your plaintext password or verification codes.');
     expect(privacyText).not.toContain('password (stored by the sign-in service)');
   });
 
   it('describes service-provider processing without unsupported guarantees', () => {
-    expect(privacyText).toContain(
-      'Technical service providers may process information as necessary to provide the services SkillMatch relies on, such as authentication, database hosting, file storage, and test-mode payment functionality.'
-    );
+    expect(privacyText).toContain('Technical service providers may process information as necessary to provide these functions.');
     expect(privacyText).not.toContain(
       'Those services process data only as needed to operate SkillMatch.'
     );
+  });
+
+  it('states the V5 conditional phone, location, call, and report-email boundaries', () => {
+    expect(privacyText).toContain('SMS ownership verification may be required only when phone verification is enabled');
+    expect(privacyText).toContain('Location search text may be sent to the configured third-party place-search service');
+    expect(privacyText).toContain('Recent confirmed Job destinations are stored locally on the device');
+    expect(privacyText).toContain('may receive the authorized exact Job pin and canonical address before acceptance');
+    expect(privacyText).toContain('SkillMatch does not provide voice calling or record the call');
+    expect(privacyText).toContain('When report outcome email delivery is enabled and configured');
+    expect(privacyText).toContain('Reported users are not sent the reporter identity');
+    expect(privacyText).not.toContain('Before acceptance, Workers see an approximate area.');
   });
 
   it('keeps research participation separate from ordinary account consent', () => {

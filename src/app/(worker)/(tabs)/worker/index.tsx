@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActiveBookingHomeCard } from '@/components/active-booking-home-card';
 import { AppCard } from '@/components/app-card';
-import { AppListRow } from '@/components/app-list-row';
 import { AvailabilityControl } from '@/components/availability-control';
 import { HomeHeader } from '@/components/home-header';
 import { InlineStatus } from '@/components/inline-status';
@@ -35,7 +33,7 @@ import {
 import { useAccount } from '@/providers/account-provider';
 import { useWorkerProfile } from '@/providers/worker-profile-provider';
 
-const { colors, type, spacing, size } = SkillMatchTheme.ui;
+const { colors, type, spacing } = SkillMatchTheme.ui;
 
 export default function WorkerHome() {
   const { account } = useAccount();
@@ -273,19 +271,6 @@ export default function WorkerHome() {
         )}
       </View>
 
-      <AppListRow
-        title="Skill Gap"
-        subtitle="What a job still needs"
-        onPress={() => router.push('/worker/skill-gap')}
-        trailing={
-          <SymbolView
-            name={{ android: 'chevron_right', ios: 'chevron.right', web: 'chevron_right' }}
-            size={size.icon}
-            tintColor={colors.textSecondary}
-          />
-        }
-        style={styles.listRow}
-      />
     </ScrollView>
   );
 }

@@ -19,7 +19,6 @@ import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
 import { AppNotice } from '@/components/app-notice';
 import { AppSegment } from '@/components/app-segment';
-import { AvailabilityControl } from '@/components/availability-control';
 import { InlineStatus } from '@/components/inline-status';
 import { InitialsAvatar } from '@/components/initials-avatar';
 import { SectionHeader } from '@/components/section-header';
@@ -70,17 +69,12 @@ export default function WorkerProfile() {
     skills,
     bio,
     setBio,
-    availability,
-    setAvailability,
     selection,
     persistedSelection,
-    applySkillDraft,
     isVerified,
     isSaving,
     saveError,
     saveSuccess,
-    toggleSkill,
-    setProficiency,
     handleSave,
   } = useWorkerProfile();
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -202,9 +196,17 @@ export default function WorkerProfile() {
     setModalWorkingSelection({});
   }
 
-  function confirmAddSkills() {
-    applySkillDraft(modalWorkingSelection);
-    closeAddSkillsWithoutApply();
+  function saveManagedSkills() {
+    if (busy) return;
+    Alert.alert(SKILL_CONFIRMATION.title, SKILL_CONFIRMATION.body, [
+      { text: SKILL_CONFIRMATION.cancel, style: 'cancel' },
+      {
+        text: SKILL_CONFIRMATION.confirm,
+        onPress: () => void handleSave(modalWorkingSelection).then((saved) => {
+          if (saved) closeAddSkillsWithoutApply();
+        }),
+      },
+    ]);
   }
 
   function promptSave() {
@@ -275,9 +277,6 @@ export default function WorkerProfile() {
             accessibilityLabel="About Me"
           />
 
-          <Text style={styles.fieldLabel}>Availability</Text>
-          <AvailabilityControl value={availability} onChange={setAvailability} disabled={busy} />
-
           <WorkerIdentitySection disabled={busy} surface="profile" />
 
           <SectionHeader title="Profile photo" />
@@ -298,30 +297,27 @@ export default function WorkerProfile() {
           </AppCard>
 
           <SectionHeader title="Skills" />
-          <SelectedSkillChips
-            skills={selectedSkills}
-            onRemove={toggleSkill}
-            disabled={busy}
-            renderAfterSkill={(skill) => {
-              const level = selection[skill.id];
-              if (level === undefined) return null;
-              return (
-                <AppSegment
-                  options={PROFICIENCY_OPTIONS}
-                  value={level}
-                  onChange={(next) => setProficiency(skill.id, next)}
-                  disabled={busy}
-                  accessibilityLabel={`${skill.skill_name} proficiency`}
-                />
-              );
-            }}
-          />
+          <AppCard>
+            <Text style={styles.skillCount}>{selectedSkills.length} skills added</Text>
+            {selectedSkills.length === 0 ? (
+              <Text style={styles.value}>No skills added yet.</Text>
+            ) : (
+              <View style={styles.skillSummary}>
+                {selectedSkills.slice(0, 3).map((skill) => (
+                  <AppChip key={skill.id} label={skill.skill_name} variant="neutral" />
+                ))}
+                {selectedSkills.length > 3 ? (
+                  <Text style={styles.moreSkills}>+{selectedSkills.length - 3} more</Text>
+                ) : null}
+              </View>
+            )}
+          </AppCard>
           <AppButton
             variant="secondary"
-            label="+ Add Skills"
+            label="Manage Skills"
             onPress={openAddSkills}
             disabled={busy}
-            accessibilityLabel="Add Skills"
+            accessibilityLabel="Manage Skills"
           />
 
           <Modal
@@ -339,12 +335,34 @@ export default function WorkerProfile() {
                   { paddingTop: insets.top + spacing.lg, paddingBottom: Math.max(insets.bottom, spacing.lg) },
                 ]}
               >
-                <Text style={styles.modalTitle}>Add Skills</Text>
+                <Text style={styles.modalTitle}>Manage Skills</Text>
                 <ScrollView
                   style={styles.modalFlex}
                   contentContainerStyle={styles.modalContent}
                   keyboardShouldPersistTaps="handled"
                 >
+                  <SelectedSkillChips
+                    skills={selectedCatalogSkills(skills, Object.keys(modalWorkingSelection))}
+                    onRemove={(skillId) =>
+                      setModalWorkingSelection((current) => toggleSkillInSelection(current, skillId))
+                    }
+                    disabled={busy}
+                    renderAfterSkill={(skill) => {
+                      const level = modalWorkingSelection[skill.id];
+                      if (level === undefined) return null;
+                      return (
+                        <AppSegment
+                          options={PROFICIENCY_OPTIONS}
+                          value={level}
+                          onChange={(next) =>
+                            setModalWorkingSelection((current) => ({ ...current, [skill.id]: next }))
+                          }
+                          disabled={busy}
+                          accessibilityLabel={`${skill.skill_name} proficiency`}
+                        />
+                      );
+                    }}
+                  />
                   <SkillCatalogPicker
                     skills={skills}
                     query={modalQuery}
@@ -358,10 +376,10 @@ export default function WorkerProfile() {
                 </ScrollView>
                 <AppButton
                   variant="primary"
-                  label="Done"
-                  onPress={confirmAddSkills}
+                  label="Save"
+                  onPress={saveManagedSkills}
                   disabled={busy}
-                  accessibilityLabel="Done"
+                  accessibilityLabel="Save Skills"
                 />
                 <AppButton
                   variant="secondary"
@@ -513,11 +531,19 @@ const styles = StyleSheet.create({
     ...type.body,
     color: colors.textPrimary,
   },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-    color: colors.primary,
+  skillCount: {
+    ...type.cardTitle,
+    color: colors.textPrimary,
+  },
+  skillSummary: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  moreSkills: {
+    ...type.helper,
+    color: colors.textSecondary,
   },
   navRow: {
     minHeight: size.listRowMinHeight,

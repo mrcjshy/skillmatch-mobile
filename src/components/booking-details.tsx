@@ -2,6 +2,7 @@ import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
+  Linking,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -54,7 +55,7 @@ import {
 } from '@/lib/payments';
 import { CLIENT_PORTFOLIO_COPY, CLIENT_PORTFOLIO_PATH, isClientPortfolioVisible } from '@/lib/client-portfolio';
 import { COPY as RATING_COPY, fetchMyRatedBookingIds, isRateableStatus } from '@/lib/ratings';
-import { COPY as REPORT_COPY, isBookingReportableStatus } from '@/lib/reports';
+import { COPY as REPORT_COPY, isBookingReportableStatus, loadMyReportedBookingIds } from '@/lib/reports';
 import {
   COPY as JOB_LOCATION_COPY,
   JobLocationError,
@@ -75,6 +76,7 @@ import {
   bookingMessagesTopic,
   subscribeInvalidation,
 } from '@/lib/realtime';
+import { bookingDialUrl } from '@/lib/booking-call';
 
 const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
@@ -88,6 +90,8 @@ type DetailState = {
   jobPaymentMethod: JobPaymentMethod | null;
   jobPaymentReady: boolean;
   isRated: boolean;
+  reportReadSucceeded: boolean;
+  isReported: boolean;
   exactLocation:
     | { status: 'skipped' }
     | { status: 'ready'; location: AuthorizedJobLocation }
@@ -189,6 +193,16 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
       role === 'client' && isRateableStatus(booking.booking_status)
         ? await fetchMyRatedBookingIds([booking.booking_id])
         : new Set<string>();
+    let reportReadSucceeded = !isBookingReportableStatus(booking.booking_status);
+    let isReported = false;
+    if (isBookingReportableStatus(booking.booking_status)) {
+      try {
+        isReported = (await loadMyReportedBookingIds([booking.booking_id])).has(booking.booking_id);
+        reportReadSucceeded = true;
+      } catch {
+        reportReadSucceeded = false;
+      }
+    }
 
     let exactLocation: DetailState['exactLocation'] = { status: 'skipped' };
     let jobPhotos: DetailState['jobPhotos'] = { status: 'skipped' };
@@ -225,6 +239,8 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
       jobPaymentMethod,
       jobPaymentReady,
       isRated: rated.has(booking.booking_id),
+      reportReadSucceeded,
+      isReported,
       exactLocation,
       jobPhotos,
     });
@@ -392,6 +408,8 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     jobPaymentMethod,
     jobPaymentReady,
     isRated,
+    reportReadSucceeded,
+    isReported,
     exactLocation,
     jobPhotos,
   } = visibleDetail;
@@ -406,6 +424,13 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     booking.job_city
   );
   const released = protectedReleased && isCounterpartyReleased(booking.booking_status);
+  const counterpartyPhone =
+    role === 'worker' && isWorkerBooking(booking)
+      ? booking.client_phone
+      : role === 'client' && isClientBooking(booking)
+        ? booking.worker_phone
+        : null;
+  const dialUrl = bookingDialUrl(released, counterpartyPhone);
   const chatAvailable = protectedReleased && isBookingChatAvailable(booking.booking_status);
   const workerLocationSurface =
     protectedReleased
@@ -428,7 +453,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const showPayment = actionPresentation.showPayment;
   const paymentUnavailable = isPayableStatus(booking.booking_status) && !paymentReadSucceeded;
   const showRate = role === 'client' && isRateableStatus(booking.booking_status);
-  const showReport = isBookingReportableStatus(booking.booking_status);
+  const showReport = isBookingReportableStatus(booking.booking_status) && reportReadSucceeded;
   const showPortfolio =
     protectedReleased && role === 'client' && isClientPortfolioVisible(booking.booking_status);
   const showActions =
@@ -476,6 +501,14 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
           <JobPhotoGallery
             photos={jobPhotos.status === 'ready' ? jobPhotos.photos : []}
             error={jobPhotos.status === 'error'}
+          />
+        ) : null}
+        {dialUrl ? (
+          <AppButton
+            variant="secondary"
+            label="Call"
+            accessibilityLabel="Call booking counterpart"
+            onPress={() => void Linking.openURL(dialUrl)}
           />
         ) : null}
       </View>
@@ -549,14 +582,18 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
             />
           ) : null}
           {showReport ? (
-            <AppButton
-              variant="ghost"
-              label={REPORT_COPY.reportAction}
-              onPress={() => {
-                const pathname = role === 'worker' ? '/worker/report-booking' : '/client/report-booking';
-                router.push({ pathname, params: { bookingId: booking.booking_id } } as unknown as Href);
-              }}
-            />
+            isReported ? (
+              <Text style={styles.note}>Report submitted</Text>
+            ) : (
+              <AppButton
+                variant="ghost"
+                label={REPORT_COPY.reportAction}
+                onPress={() => {
+                  const pathname = role === 'worker' ? '/worker/report-booking' : '/client/report-booking';
+                  router.push({ pathname, params: { bookingId: booking.booking_id } } as unknown as Href);
+                }}
+              />
+            )
           ) : null}
           {showPortfolio ? (
             <AppButton
@@ -569,6 +606,15 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
             />
           ) : null}
         </View>
+      ) : null}
+
+      {role === 'client' ? (
+        <AppButton
+          variant="ghost"
+          label="← Home"
+          accessibilityLabel="Back to Client Home"
+          onPress={() => router.replace('/client' as Href)}
+        />
       ) : null}
     </ScrollView>
   );

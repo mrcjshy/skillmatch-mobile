@@ -7,6 +7,7 @@ import { AppChip } from '@/components/app-chip';
 import { InlineStatus } from '@/components/inline-status';
 import { WorkerOpportunityJobLocation } from '@/components/job-location-map';
 import { SectionHeader } from '@/components/section-header';
+import { GuidanceSection } from '@/components/skill-gap';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatOpportunityPaymentLine } from '@/lib/job-payment';
 import { loadWorkerBookings } from '@/lib/booking-records';
@@ -32,6 +33,7 @@ import {
   type JobOpportunity,
   type SkillRef,
 } from '@/lib/job-opportunities';
+import { computeSkillGap, loadMyWorkerSkills, type WorkerSkillRef } from '@/lib/skill-gap';
 import { createOpportunityLocationAccess, getMyOpportunityLocation, type OpportunityLocation } from '@/lib/opportunity-location';
 import { JOB_OPPORTUNITIES_CHANGED, subscribeInvalidation, workerOpportunitiesTopic } from '@/lib/realtime';
 import { useAccount } from '@/providers/account-provider';
@@ -43,7 +45,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 type RequirementsState =
   | { status: 'loading' }
-  | { status: 'ready'; skills: SkillRef[] }
+  | { status: 'ready'; skills: SkillRef[]; workerSkills: WorkerSkillRef[] }
   | { status: 'error' };
 
 export default function JobOpportunityDetails({ jobId }: { jobId: string | null }) {
@@ -163,15 +165,19 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
   const loadRequirements = useCallback(async (id: string) => {
     setRequirements({ status: 'loading' });
     try {
-      const skills = await loadOpportunityRequiredSkills(id);
-      setRequirements({ status: 'ready', skills });
+      if (!account) throw new Error('Worker account unavailable');
+      const [skills, workerSkills] = await Promise.all([
+        loadOpportunityRequiredSkills(id),
+        loadMyWorkerSkills(account),
+      ]);
+      setRequirements({ status: 'ready', skills, workerSkills: workerSkills ?? [] });
     } catch (error: unknown) {
       if (error instanceof Error && error.message) {
         console.warn('[V3-1 P3] required skills load failed:', error.message);
       }
       setRequirements({ status: 'error' });
     }
-  }, []);
+  }, [account]);
 
   const loadedJobId = opportunity?.job_id ?? null;
 
@@ -245,6 +251,10 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
   const budget = formatOpportunityBudget(opportunity.budget);
   const schedule = formatOpportunitySchedule(opportunity.scheduled_at);
   const acceptDisabled = isAccepting || accepted || isLoading || isRefreshing;
+  const skillGap =
+    requirements.status === 'ready'
+      ? computeSkillGap(requirements.skills, requirements.workerSkills)
+      : null;
 
   return (
     <ScrollView
@@ -281,19 +291,41 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
       </View>
 
       <View style={styles.section}>
-        <SectionHeader title="Required skills" />
+        <SectionHeader title="Skills for this Job" />
         {requirements.status === 'loading' ? (
           <InlineStatus variant="loading" message={JOB_OPPORTUNITY_COPY.loadingRequirements} />
         ) : requirements.status === 'error' ? (
           <Text style={styles.note}>{JOB_OPPORTUNITY_COPY.requirementsFailed}</Text>
         ) : requirements.skills.length === 0 ? (
           <Text style={styles.note}>{JOB_OPPORTUNITY_COPY.noRequirements}</Text>
-        ) : (
-          <View style={styles.skillWrap}>
-            {requirements.skills.map((skill) => (
-              <AppChip key={skill.id} label={skill.name} variant="neutral" />
-            ))}
-          </View>
+        ) : skillGap === null ? null : (
+          <>
+            <Text style={styles.detailLabel}>Matched</Text>
+            {skillGap.matchedSkills.length === 0 ? (
+              <Text style={styles.note}>No listed skills matched yet.</Text>
+            ) : (
+              <View style={styles.skillWrap}>
+                {skillGap.matchedSkills.map((skill) => (
+                  <AppChip key={skill.id} label={`✓ ${skill.name}`} variant="positive" />
+                ))}
+              </View>
+            )}
+            <Text style={styles.detailLabel}>Missing</Text>
+            {skillGap.missingSkills.length === 0 ? (
+              <Text style={styles.note}>You meet all listed skill requirements.</Text>
+            ) : (
+              <View style={styles.skillWrap}>
+                {skillGap.missingSkills.map((skill) => (
+                  <AppChip key={skill.id} label={skill.name} variant="warning" />
+                ))}
+              </View>
+            )}
+            <GuidanceSection
+              jobId={opportunity.job_id}
+              missingSkillNames={skillGap.missingSkills.map((skill) => skill.name)}
+              buttonLabel="View Skill Gap Guidance"
+            />
+          </>
         )}
       </View>
 

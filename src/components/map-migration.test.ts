@@ -50,7 +50,7 @@ function harness(file: string, nativeAvailable = true, dev = false) {
       useEffect(effect: () => unknown) { effects.push(effect); },
     },
     'react/jsx-runtime': { jsx, jsxs: jsx },
-    'react-native': { AppState: appState, View: 'View', Text: 'Text', Pressable: 'Pressable', ScrollView: 'ScrollView', ActivityIndicator: 'ActivityIndicator', useWindowDimensions: () => ({ height: 900 }), StyleSheet: { create: (s: unknown) => s, absoluteFill: {}, hairlineWidth: 1 } },
+    'react-native': { AppState: appState, View: 'View', Text: 'Text', TextInput: 'TextInput', Pressable: 'Pressable', ScrollView: 'ScrollView', ActivityIndicator: 'ActivityIndicator', useWindowDimensions: () => ({ height: 900 }), StyleSheet: { create: (s: unknown) => s, absoluteFill: {}, hairlineWidth: 1 } },
     tamagui: { Text: 'Text', YStack: 'YStack' },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24, bottom: 24 }) },
     '@/constants/theme': { SkillMatchTheme: { ui, border: {}, surface: {}, text: {}, feedback: {} } },
@@ -60,6 +60,8 @@ function harness(file: string, nativeAvailable = true, dev = false) {
     '@/lib/job-location': location,
     '@/lib/job-location-snap': snap,
     '@/lib/location-permission': permission,
+    '@/lib/location-search': { LOCATION_SEARCH_DEBOUNCE_MS: 400, LOCATION_SEARCH_MIN_LENGTH: 3, searchPhoton: vi.fn() },
+    '@/lib/recent-locations': { loadRecentLocations: vi.fn().mockResolvedValue([]), clearRecentLocations: vi.fn() },
     '@/lib/bookings': { formatLocation: () => 'Santa Ana, Pateros' },
     '@/components/app-button': { AppButton: 'AppButton' },
     '@/components/app-notice': { AppNotice: 'AppNotice' },
@@ -167,7 +169,7 @@ describe('migrated map source event contracts', () => {
     byType(render(), 'Map').props.onRegionDidChange(region(pin));
     await vi.waitFor(() => expect(h.geocoder.reverseGeocodeAsync).toHaveBeenCalledWith(pin));
     tree = render();
-    expect(all(tree, n => n.type === 'TextInput')).toHaveLength(0);
+    expect(all(tree, n => n.type === 'TextInput')).toHaveLength(1);
     expect(confirmButton(tree).props.disabled).toBe(false);
     expect(props.onConfirm).not.toHaveBeenCalled();
     confirmButton(tree).props.onPress();

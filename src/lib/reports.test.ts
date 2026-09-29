@@ -7,6 +7,7 @@ import {
   formatReportCategory,
   formatReportStatus,
   isBookingReportableStatus,
+  parseMyReportedBookingIds,
   remainingReportCharacters,
   reviewErrorCopy,
   submitBookingErrorCopy,
@@ -14,6 +15,7 @@ import {
   validateReportDescription,
   loadReportDisciplineState,
   resolveNoShowReportWithStrike,
+  sendReportOutcomeEmail,
   shouldShowStrikeAction,
 } from './reports';
 
@@ -21,8 +23,30 @@ vi.mock('./supabase', () => ({
   supabase: {
     rpc: vi.fn(),
     from: vi.fn(),
+    functions: { invoke: vi.fn() },
   },
 }));
+
+const invoke = vi.mocked(supabase.functions.invoke);
+
+describe('sendReportOutcomeEmail', () => {
+  it('sends only the report id and repeats the identical request on retry', async () => {
+    invoke.mockResolvedValueOnce({ data: { delivered: true }, error: null });
+    invoke.mockResolvedValueOnce({ data: { delivered: true }, error: null });
+    const reportId = '11111111-1111-4111-8111-111111111111';
+    await expect(sendReportOutcomeEmail(reportId)).resolves.toBe(true);
+    await expect(sendReportOutcomeEmail(reportId)).resolves.toBe(true);
+    expect(invoke.mock.calls[0][1]).toStrictEqual({ body: { report_id: reportId } });
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not make the review mutation fail when delivery is unavailable', async () => {
+    invoke.mockResolvedValueOnce({ data: { delivered: false }, error: null });
+    await expect(
+      sendReportOutcomeEmail('11111111-1111-4111-8111-111111111111')
+    ).resolves.toBe(false);
+  });
+});
 
 describe('isBookingReportableStatus', () => {
   beforeEach(() => {
@@ -129,6 +153,18 @@ describe('formatReportStatus', () => {
     expect(formatReportStatus('under_review')).toBe('Under review');
     expect(formatReportStatus('resolved')).toBe('Resolved');
     expect(formatReportStatus('dismissed')).toBe('Dismissed');
+  });
+});
+
+describe('parseMyReportedBookingIds', () => {
+  it('marks only requested Booking-bound reports, independent of status', () => {
+    const bookingId = '11111111-1111-4111-8111-111111111111';
+    const otherId = '22222222-2222-4222-8222-222222222222';
+    expect([...parseMyReportedBookingIds([
+      { booking_id: bookingId, status: 'resolved' },
+      { booking_id: otherId, status: 'submitted' },
+      { booking_id: null, status: 'submitted' },
+    ], [bookingId])]).toEqual([bookingId]);
   });
 });
 

@@ -430,12 +430,14 @@ function GapEquation({
  * Nothing here can change the equation above; it is a subordinate explanation
  * of an already-rendered deterministic result, and its failure is local.
  */
-function GuidanceSection({
+export function GuidanceSection({
   jobId,
   missingSkillNames,
+  buttonLabel = SKILL_GAP_GUIDANCE_COPY.get,
 }: {
   jobId: string;
   missingSkillNames: readonly string[];
+  buttonLabel?: string;
 }) {
   const [state, setState] = useState<GuidanceState>({ kind: 'idle' });
   const [runner] = useState(() =>
@@ -457,7 +459,7 @@ function GuidanceSection({
 
       {state.kind === 'idle' ? (
         <AppButton
-          label={SKILL_GAP_GUIDANCE_COPY.get}
+          label={buttonLabel}
           variant="primary"
           onPress={requestGuidance}
         />

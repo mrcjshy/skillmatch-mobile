@@ -27,6 +27,7 @@ import {
   remainingReportCharacters,
   reviewErrorCopy,
   reviewReport,
+  sendReportOutcomeEmail,
   resolveNoShowReportWithStrike,
   shouldShowStrikeAction,
   validateAdminResponse,
@@ -61,6 +62,7 @@ export default function AdminReportDetails() {
   const [response, setResponse] = useState('');
   const [reviewingStatus, setReviewingStatus] = useState<ReviewStatus | null>(null);
   const [isApplyingStrike, setIsApplyingStrike] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [evidence, setEvidence] = useState<ReportBookingMessage[] | null>(null);
@@ -191,9 +193,12 @@ export default function AdminReportDetails() {
     setNotice(null);
     try {
       await reviewReport(reportId, status, validated.response);
+      const emailDelivered = status === 'under_review'
+        ? true
+        : await sendReportOutcomeEmail(reportId);
       try {
         await load();
-        setNotice(COPY.reviewSaved);
+        setNotice(emailDelivered ? COPY.reviewSaved : COPY.emailFailed);
         setResponse('');
       } catch (e: unknown) {
         if (e instanceof Error && e.message) {
@@ -263,9 +268,10 @@ export default function AdminReportDetails() {
     setNotice(null);
     try {
       await resolveNoShowReportWithStrike(reportId, adminResponse);
+      const emailDelivered = await sendReportOutcomeEmail(reportId);
       try {
         await load();
-        setNotice(COPY.strikeSaved);
+        setNotice(emailDelivered ? COPY.strikeSaved : COPY.emailFailed);
         setResponse('');
       } catch (e: unknown) {
         if (e instanceof Error && e.message) {
@@ -282,6 +288,18 @@ export default function AdminReportDetails() {
       inFlight.current = false;
       setIsApplyingStrike(false);
     }
+  }
+
+  async function retryOutcomeEmail() {
+    if (inFlight.current || reportId === null) return;
+    inFlight.current = true;
+    setIsSendingEmail(true);
+    setReviewError(null);
+    setNotice(null);
+    const delivered = await sendReportOutcomeEmail(reportId);
+    setNotice(delivered ? COPY.emailSent : COPY.emailFailed);
+    setIsSendingEmail(false);
+    inFlight.current = false;
   }
 
   if (isLoading) {
@@ -308,7 +326,7 @@ export default function AdminReportDetails() {
   const reviewedAt = formatDetailDateTime(detail.reviewed_at);
   const reviewTargets = allowedReviewStatuses(detail.status);
   const remaining = remainingReportCharacters(response);
-  const busy = reviewingStatus !== null || isApplyingStrike;
+  const busy = reviewingStatus !== null || isApplyingStrike || isSendingEmail;
 
   return (
     <ScrollView
@@ -331,7 +349,13 @@ export default function AdminReportDetails() {
 
       {notice ? (
         <AppNotice
-          variant={notice === COPY.reviewSaved ? 'success' : 'warning'}
+          variant={
+            notice === COPY.reviewSaved ||
+            notice === COPY.strikeSaved ||
+            notice === COPY.emailSent
+              ? 'success'
+              : 'warning'
+          }
           message={notice}
         />
       ) : null}
@@ -423,6 +447,22 @@ export default function AdminReportDetails() {
               onPress={promptStrike}
             />
           ) : null}
+        </AppCard>
+      ) : null}
+
+      {detail.status === 'resolved' || detail.status === 'dismissed' ? (
+        <AppCard>
+          <Text style={styles.sectionTitle}>Outcome email</Text>
+          <Text style={styles.body}>
+            Send or retry the privacy-safe outcome email without changing this report review.
+          </Text>
+          <AppButton
+            variant="secondary"
+            label={isSendingEmail ? COPY.emailing : COPY.retryEmail}
+            loading={isSendingEmail}
+            disabled={busy}
+            onPress={retryOutcomeEmail}
+          />
         </AppCard>
       ) : null}
     </ScrollView>

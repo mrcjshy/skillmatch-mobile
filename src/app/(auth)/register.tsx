@@ -15,6 +15,7 @@ import { AppButton } from '@/components/app-button';
 import { AppField } from '@/components/app-field';
 import { SkillMatchTheme } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { formatPhilippineMobileInput, normalizePhilippineMobile } from '@/lib/philippine-phone';
 import {
   CONSENT_COPY,
   hasRequiredLegalAcceptance,
@@ -61,14 +62,14 @@ export default function RegisterScreen() {
     setErrorMessage(null);
 
     const trimmedFullName = fullName.trim();
-    const trimmedPhone = phone.trim();
+    const normalizedPhone = normalizePhilippineMobile(phone);
     const trimmedEmail = email.trim();
     if (!trimmedFullName) {
       setErrorMessage('Please enter your full name.');
       return;
     }
-    if (!trimmedPhone) {
-      setErrorMessage('Please enter your phone number.');
+    if (!normalizedPhone) {
+      setErrorMessage('Enter a valid Philippine mobile number, such as +63 917 123 4567.');
       return;
     }
     if (!trimmedEmail) {
@@ -104,7 +105,7 @@ export default function RegisterScreen() {
         options: {
           data: {
             registration_full_name: trimmedFullName,
-            registration_phone: trimmedPhone,
+            registration_phone: normalizedPhone,
             registration_role_intent: selectedRole,
           },
         },
@@ -162,14 +163,15 @@ export default function RegisterScreen() {
           />
 
           <AppField
-            label="Phone"
+            label="Phone Number"
             value={phone}
             onChangeText={setPhone}
-            placeholder="Phone"
+            onBlur={() => setPhone(formatPhilippineMobileInput(phone))}
+            placeholder="+63 | 917 123 4567"
             keyboardType="phone-pad"
             autoCorrect={false}
             disabled={isSubmitting}
-            accessibilityLabel="Phone"
+            accessibilityLabel="Phone Number"
           />
 
           <AppField

@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase';
 import { getMyConsent, isCurrentLegalConsent, type UserConsent } from '@/lib/user-consent';
 import { getMyIdentitySubmission, type WorkerIdentitySubmission } from '@/lib/worker-identity';
 import { loadWorkerOnboarding, type WorkerOnboardingState } from '@/lib/worker-onboarding';
+import { isPhoneVerificationRequiredForBootstrap } from '@/lib/phone-verification';
 import { useSession } from '@/providers/session-provider';
 
 /**
@@ -55,6 +56,8 @@ export type AccountBootstrapErrorCode =
   | 'account_fetch_failed'
   /** Row is missing and signup metadata / session email are unusable. */
   | 'bootstrap_input_invalid'
+  /** Row is missing and the intended phone is not verified in Supabase Auth. */
+  | 'phone_verification_required'
   /** Row is missing and the single INSERT attempt failed. */
   | 'account_insert_failed'
   /** A row was returned but does not satisfy the application contract. */
@@ -214,7 +217,9 @@ function resolveFromRow(row: unknown, userId: string): BootstrapResult {
 async function bootstrapAccount(
   userId: string,
   userEmail: string | undefined,
-  userMetadata: unknown
+  userMetadata: unknown,
+  authPhone: string | undefined,
+  phoneConfirmedAt: string | undefined
 ): Promise<BootstrapResult> {
   // 1. Authoritative own-row SELECT.
   const first = await selectOwnAccountRow(userId);
@@ -232,6 +237,17 @@ async function bootstrapAccount(
     return fail(
       'bootstrap_input_invalid',
       'Your registration details are incomplete or invalid, so your account could not be set up.'
+    );
+  }
+
+  if (isPhoneVerificationRequiredForBootstrap({
+    registrationPhone: input.phone,
+    authPhone,
+    phoneConfirmedAt,
+  })) {
+    return fail(
+      'phone_verification_required',
+      'Verify your phone number before account setup can continue.'
     );
   }
 
@@ -334,7 +350,13 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     setWorkerOnboardingState('loading');
     setStatus('pending');
 
-    bootstrapAccount(userId, userEmail, userMetadata)
+    bootstrapAccount(
+      userId,
+      userEmail,
+      userMetadata,
+      session.user.phone,
+      session.user.phone_confirmed_at
+    )
       .then(async (result) => {
         if (cancelled) return;
         if (result.ok) {

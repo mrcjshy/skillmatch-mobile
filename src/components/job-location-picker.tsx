@@ -1,5 +1,5 @@
 import { Component, useCallback, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
-import { ActivityIndicator, AppState, Linking, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, Text } from 'react-native';
+import { ActivityIndicator, AppState, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { CameraRef, MapRef, ViewStateChangeEvent } from '@maplibre/maplibre-react-native';
 import type { NativeSyntheticEvent } from 'react-native';
@@ -20,6 +20,8 @@ import { findNearbyMappedFeatures, findNearbySnap, SNAP_MIN_ZOOM, type NearbyMap
 import { AppButton } from '@/components/app-button';
 import { AppNotice } from '@/components/app-notice';
 import { inspectLocationPermission, type LocationPermissionState } from '@/lib/location-permission';
+import { LOCATION_SEARCH_DEBOUNCE_MS, LOCATION_SEARCH_MIN_LENGTH, searchPhoton, type LocationSuggestion } from '@/lib/location-search';
+import { clearRecentLocations, loadRecentLocations, type RecentLocation } from '@/lib/recent-locations';
 
 const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
@@ -82,6 +84,11 @@ export function JobLocationPicker({
   const [mapLoaded, setMapLoaded] = useState(false);
   const [locating, setLocating] = useState(false);
   const [permission, setPermission] = useState<LocationPermissionState | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchUnavailable, setSearchUnavailable] = useState(false);
+  const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([]);
   const mapAvailable = classifyMapAvailability(mapReady && mapsRuntime !== null);
   const busy = disabled || locating;
   const Map = mapsRuntime?.Map;
@@ -102,6 +109,36 @@ export function JobLocationPicker({
     lifetime.current = true;
     return () => { lifetime.current = false; selection.cancel(); };
   }, [selection]);
+
+  useEffect(() => {
+    void loadRecentLocations().then((rows) => {
+      if (lifetime.current) setRecentLocations(rows);
+    }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < LOCATION_SEARCH_MIN_LENGTH) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setSearching(true);
+      setSearchUnavailable(false);
+      void searchPhoton(query, controller.signal)
+        .then((rows) => { if (!controller.signal.aborted) setSuggestions(rows); })
+        .catch(() => { if (!controller.signal.aborted) { setSuggestions([]); setSearchUnavailable(true); } })
+        .finally(() => { if (!controller.signal.aborted) setSearching(false); });
+    }, LOCATION_SEARCH_DEBOUNCE_MS);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [searchQuery]);
+
+  function handleSearchQueryChange(value: string): void {
+    setSearchQuery(value);
+    if (value.trim().length < LOCATION_SEARCH_MIN_LENGTH) {
+      setSuggestions([]);
+      setSearching(false);
+      setSearchUnavailable(false);
+    }
+  }
   const resolveAddress = useCallback(async (): Promise<void> => {
     const epoch = lookupEpoch.current;
     selection.select(selection.snapshot().pin);
@@ -245,6 +282,13 @@ export function JobLocationPicker({
     cameraRef.current.easeTo({ center: pinToLngLat(item.pin), zoom: SNAP_MIN_ZOOM, duration: 300 });
   }
 
+  function moveToCandidate(pin: JobPin): void {
+    if (busy || !cameraRef.current) return;
+    beginMove();
+    currentMoveRef.current = true;
+    cameraRef.current.easeTo({ center: pinToLngLat(pin), zoom: SNAP_MIN_ZOOM, duration: 300 });
+  }
+
   const addressCopy = showInitialAddress && initialAddress ? initialAddress : selectionState.address ?? (
     moving ? 'Move the map to position the center pin.' :
     checkingSnap ? 'Checking nearby mapped features...' :
@@ -317,6 +361,44 @@ export function JobLocationPicker({
         <View style={styles.handle} />
         <ScrollView style={styles.sheetBody} contentContainerStyle={styles.sheetContent} nestedScrollEnabled>
           <Text style={styles.sheetTitle}>Service location</Text>
+          <TextInput
+            value={searchQuery}
+            onChangeText={handleSearchQueryChange}
+            placeholder="Search for location"
+            placeholderTextColor={colors.textDisabled}
+            style={styles.searchInput}
+            editable={!busy}
+            accessibilityLabel="Search for location"
+          />
+          {searching ? <ActivityIndicator accessibilityLabel="Searching locations" /> : null}
+          {searchUnavailable ? (
+            <AppNotice message="Search unavailable. Choose the location on the map instead." />
+          ) : null}
+          {suggestions.map((item) => (
+            <Pressable key={`${item.label}:${item.pin.latitude}:${item.pin.longitude}`}
+              style={styles.searchRow} onPress={() => moveToCandidate(item.pin)}
+              accessibilityRole="button" accessibilityLabel={`Search result ${item.label}`}>
+              <Text style={styles.nearbyLabel}>{item.label}</Text>
+            </Pressable>
+          ))}
+          {recentLocations.length > 0 ? (
+            <View style={styles.nearbyBlock} accessibilityLabel="Recent locations">
+              <View style={styles.recentHeader}>
+                <Text style={styles.nearbyTitle}>Recent</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel="Clear recent locations"
+                  onPress={() => void clearRecentLocations().then(() => setRecentLocations([]))}>
+                  <Text style={styles.clearText}>Clear</Text>
+                </Pressable>
+              </View>
+              {recentLocations.map((item) => (
+                <Pressable key={`${item.timestamp}:${item.pin.latitude}:${item.pin.longitude}`}
+                  style={styles.searchRow} onPress={() => moveToCandidate(item.pin)}
+                  accessibilityRole="button" accessibilityLabel={`Recent location ${item.address}`}>
+                  <Text style={styles.nearbyLabel}>{item.address}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           <View style={styles.addressCard} accessibilityLabel="Selected location address">
             <Text style={styles.addressText}>{addressCopy}</Text>
           </View>
@@ -421,6 +503,23 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   addressText: { ...type.bodyEmphasis, color: colors.textPrimary },
+  searchInput: {
+    minHeight: 48,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSubtle,
+    color: colors.textPrimary,
+    paddingHorizontal: spacing.md,
+    ...type.body,
+  },
+  searchRow: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    borderBottomColor: colors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  recentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  clearText: { ...type.helper, color: colors.primary },
   nearbyBlock: { gap: spacing.xs },
   nearbyTitle: { ...type.bodyEmphasis, color: colors.primary },
   nearbyRow: {

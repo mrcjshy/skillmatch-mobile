@@ -79,7 +79,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'account',
     question: 'Paano mag-register sa SkillMatch?',
     answer:
-      'Buksan ang app at piliin ang Register. I-fill up ang Full Name, Phone, Email, Password, at Confirm Password, tapos piliin kung Worker ka o Client. I-check ang dalawang checkbox — Terms and Conditions at Privacy Policy — dahil naka-record ang consent bago ka makapasok sa app. Worker pa: kailangan mag-submit ng valid ID bago ang Worker app. Client: after consent, pasok na sa Client app. Hindi na kailangang mag-log in ulit. Ang service area ay Santa Ana, Pateros lang, kaya hindi na hinihingi ang barangay at city sa registration.',
+      'Buksan ang app at piliin ang Register. I-fill up ang Full Name, valid Philippine mobile number, Email, Password, at Confirm Password, tapos piliin kung Worker ka o Client. I-verify ang Email gamit ang verification code. Vina-validate at sine-save ang phone sa +639XXXXXXXXX format; SMS ownership verification ay kailangan lang kapag enabled ang phone verification. Hindi ibig sabihin na verified ang ownership dahil lang naka-save ang number. I-check ang dalawang checkbox — Terms and Conditions at Privacy Policy — dahil naka-record ang consent bago ka makapasok sa app. Worker pa: kailangan mag-submit ng valid ID bago ang Worker app. Client: after consent, pasok na sa Client app. Ang service area ay Santa Ana, Pateros lang, kaya hindi na hinihingi ang barangay at city sa registration.',
     keywords: ['register', 'sign up', 'signup', 'gumawa', 'account', 'bago', 'paano magsimula', 'magparehistro', 'consent', 'checkbox', 'terms', 'privacy'],
   },
   {
@@ -157,7 +157,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'job-posting',
     question: 'Paano mag-post ng trabaho?',
     answer:
-      'Sa Client Home, piliin ang primary skill para sa Post a Job — hindi na magta-type ng title ang Client; ang backend ang magge-generate nito — tapos ilagay ang description, address, date at time, budget, at iba pang kailangang skills. Santa Ana, Pateros lang ang service area. Kung nasa loob ka ng area, i-tap ang Use Current Location para ma-autofill ang address. Pagka-post, magiging open ito para sa mga qualified Worker.',
+      'Sa Client Home, piliin ang primary skill para sa Post a Job — hindi na magta-type ng title ang Client; ang backend ang magge-generate nito — tapos ilagay ang description, location, date at time, budget, at iba pang kailangang skills. Ang location search text ay maaaring ipadala sa configured third-party place-search service para sa suggestions; puwede pa ring pumili nang manual sa map kapag unavailable ang search. Ang recent confirmed Job destinations ay local lang sa device at puwedeng i-clear. Santa Ana, Pateros lang ang service area. Pagka-post, magiging open ito para sa mga qualified Worker.',
     keywords: ['post', 'mag-post', 'trabaho', 'job', 'gumawa ng trabaho', 'client', 'budget', 'hire', 'primary skill', 'title', 'current location', 'santa ana', 'pateros', 'autofill'],
   },
   {
@@ -183,7 +183,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'opportunities',
     question: 'Paano tumanggap ng job opportunity?',
     answer:
-      'Sa Home, buksan ang trabaho at i-tap ang Accept. Isang Worker lang ang makakatanggap ng bawat trabaho; kapag natanggap na ito ng iba, hindi na ito lalabas sa listahan mo.',
+      'Sa Home, buksan ang trabaho at i-tap ang Accept. Ang authenticated, active, verified, at kasalukuyang eligible na Worker ay maaaring makatanggap ng authorized exact Job destination bago tumanggap habang available pa ang opportunity. Isang Worker lang ang makakatanggap ng bawat trabaho; kapag natanggap na ito ng iba, mawawala ang access at hindi na ito lalabas sa listahan mo.',
     keywords: ['accept', 'tanggap', 'tumanggap', 'kunin', 'opportunity', 'apply', 'mag-apply', 'home'],
   },
   {
@@ -237,6 +237,14 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     answer:
       'Karaniwang kusang lumalabas agad ang bagong message habang bukas ang confirmed na conversation. Kapag mahina o naputol ang internet, maaaring ma-delay ito — i-refresh lang o buksan ulit ang conversation.',
     keywords: ['bagong message', 'new message', 'hindi lumalabas', 'refresh', 'delay', 'live', 'instant'],
+  },
+  {
+    id: 'msg-call',
+    category: 'messaging',
+    question: 'Paano tawagan ang Client o Worker?',
+    answer:
+      'Ang Call ay nagbubukas ng phone o dialer app ng device gamit ang authorized counterpart number. Hindi nagbibigay ng voice calling ang SkillMatch at hindi nito nire-record ang tawag. Maaaring may carrier o load charges.',
+    keywords: ['call', 'tawag', 'tumawag', 'dialer', 'phone', 'load', 'carrier'],
   },
 
   /* ---------------- 8. Ratings ---------------- */
@@ -315,7 +323,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'notifications',
     question: 'May SMS o text notification ba?',
     answer:
-      'Wala. Sa kasalukuyang bersyon, nasa in-app Notifications inbox lang ang mga abiso. Buksan ang app para makita ang mga ito.',
+      'Vina-validate ng SkillMatch ang Philippine mobile-number format. Maaaring kailanganin ang SMS ownership verification kapag enabled at configured ang phone verification; hindi ito garantiya na gumagana na ang hosted SMS delivery. Hindi nagpapadala ang SkillMatch ng ordinary booking o chat updates sa SMS; tingnan ang in-app Notifications inbox. Kapag enabled at configured ang report outcome email delivery, maaaring magpadala ng privacy-safe resolution, dismissal, reviewed no-show strike, o account-suspension notice. Hindi sinasabi sa reported user kung sino ang nag-report.',
     keywords: ['sms', 'text', 'push', 'email notification', 'abiso', 'wala'],
   },
 

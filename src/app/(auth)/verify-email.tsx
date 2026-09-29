@@ -22,6 +22,7 @@ import {
   resendSignupEmailOtp,
   verifySignupEmailOtp,
 } from '@/lib/email-verification';
+import { isPhoneOtpEnabled } from '@/lib/phone-verification';
 import { supabase } from '@/lib/supabase';
 import { persistCurrentLegalConsentAfterSignup } from '@/lib/user-consent';
 import { useAccount } from '@/providers/account-provider';
@@ -32,6 +33,7 @@ export default function VerifyEmailScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ email?: string | string[] }>();
   const { retryAccountBootstrap } = useAccount();
+  const phoneOtpEnabled = isPhoneOtpEnabled();
   const email = useMemo(
     () =>
       typeof params.email === 'string'
@@ -101,7 +103,12 @@ export default function VerifyEmailScreen() {
         }
         setHasVerifiedSession(true);
       }
-      await finishAccountSetup();
+      if (phoneOtpEnabled) {
+        setSuccessMessage('Email verified. Continue with phone verification.');
+        retryAccountBootstrap();
+      } else {
+        await finishAccountSetup();
+      }
     } finally {
       verifyInFlight.current = false;
       setIsVerifying(false);
@@ -196,7 +203,7 @@ export default function VerifyEmailScreen() {
                 label={hasVerifiedSession ? 'Finish Account Setup' : 'Verify Email'}
                 onPress={handleVerify}
                 loading={isVerifying}
-                disabled={isResending}
+                disabled={isResending || (hasVerifiedSession && phoneOtpEnabled)}
               />
               {!hasVerifiedSession ? (
                 <AppButton

@@ -52,6 +52,8 @@ import {
 } from '@/lib/job-payment';
 import { combineJobSchedule, postingScheduleError } from '@/lib/job-posting-schedule';
 import { type CatalogSkill } from '@/lib/skill-catalog';
+import { validatePostJobWizardStep, type PostJobWizardStep } from '@/lib/post-job-wizard';
+import { saveRecentLocation } from '@/lib/recent-locations';
 import { useAccount } from '@/providers/account-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
 
@@ -145,6 +147,7 @@ export default function ClientHome() {
   const [modalAdditionalIds, setModalAdditionalIds] = useState<string[]>([]);
   const [jobPhotos, setJobPhotos] = useState<JobPhotoDraft[]>([]);
   const [jobPhotoPickerKey, setJobPhotoPickerKey] = useState(0);
+  const [wizardStep, setWizardStep] = useState<PostJobWizardStep>(1);
 
   const [isPosting, setIsPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
@@ -233,6 +236,38 @@ export default function ClientHome() {
     setBudgetText(next);
     const matched = FEE_PRESETS.find((preset) => next.trim() === String(preset.value));
     setFeePreset(matched ? matched.value : 'custom');
+  }
+
+  function wizardDraft() {
+    const trimmedBudget = budgetText.trim();
+    const budgetIsValid = trimmedBudget === '' || /^\d+(\.\d{1,2})?$/.test(trimmedBudget);
+    const budget = trimmedBudget === '' || !budgetIsValid ? null : Number(trimmedBudget);
+    return {
+      hasPrimarySkill: primarySkillId !== null && knownSkillIds.has(primarySkillId),
+      descriptionError: postingDescriptionError(description),
+      locationError: postingLocationError(address.trim(), pin),
+      scheduleError: postingScheduleError(scheduleDate, scheduleTime),
+      budgetError:
+        !budgetIsValid || (budget !== null && (!Number.isFinite(budget) || budget < 0))
+          ? 'Budget must be a number of 0 or more.'
+          : null,
+      paymentError: postingPaymentError(paymentMethod, budget),
+    };
+  }
+
+  function goToNextStep() {
+    const error = validatePostJobWizardStep(wizardStep, wizardDraft());
+    if (error) {
+      setPostError(error);
+      return;
+    }
+    setPostError(null);
+    setWizardStep((wizardStep + 1) as PostJobWizardStep);
+  }
+
+  function goToPreviousStep() {
+    setPostError(null);
+    setWizardStep((wizardStep - 1) as PostJobWizardStep);
   }
 
   async function handlePost() {
@@ -382,6 +417,7 @@ export default function ClientHome() {
       setSkillsModalVisible(false);
       setJobPhotos([]);
       setJobPhotoPickerKey((value) => value + 1);
+      setWizardStep(1);
     } finally {
       setIsPosting(false);
     }
@@ -437,7 +473,8 @@ export default function ClientHome() {
             <InlineStatus variant="error" message={loadError} />
           ) : (
             <>
-              <View style={styles.section} accessibilityLabel="Job Details">
+              <Text style={styles.wizardProgress}>Step {wizardStep} / 4</Text>
+              {wizardStep === 1 ? <View style={styles.section} accessibilityLabel="Job Details">
                 <SectionHeader title="Job Details" />
                 <AppField
                   label="Description"
@@ -450,10 +487,10 @@ export default function ClientHome() {
                   disabled={busy}
                   accessibilityLabel="Description"
                 />
-              </View>
+              </View> : null}
 
-              <View style={styles.section} accessibilityLabel="Where">
-                <SectionHeader title="Where" />
+              {wizardStep === 2 ? <View style={styles.section} accessibilityLabel="Location and Photos">
+                <SectionHeader title="Location & Photos" />
                 <AppCard>
                   <Text style={styles.fieldLabel}>Service Location</Text>
                   <Text accessibilityLabel="Confirmed job address" style={styles.locationAddress}>
@@ -466,10 +503,10 @@ export default function ClientHome() {
                     onPress={() => { setLocationNote(null); setLocationPickerVisible(true); }}
                   />
                 </AppCard>
-              </View>
+              </View> : null}
 
-              <View style={styles.section} accessibilityLabel="Schedule">
-                <SectionHeader title="Schedule" />
+              {wizardStep === 3 ? <View style={styles.section} accessibilityLabel="Schedule">
+                <SectionHeader title="Schedule & Payment" />
                 <JobSchedulePicker
                   date={scheduleDate}
                   time={scheduleTime}
@@ -477,10 +514,9 @@ export default function ClientHome() {
                   onChangeTime={setScheduleTime}
                   disabled={busy}
                 />
-              </View>
+              </View> : null}
 
-              <View style={styles.section} accessibilityLabel="Budget and Payment">
-                <SectionHeader title="Budget & Payment" />
+              {wizardStep === 3 ? <View style={styles.section} accessibilityLabel="Budget and Payment">
                 <Text style={styles.fieldLabel}>Budget (Optional)</Text>
                 <View
                   accessibilityRole="radiogroup"
@@ -570,9 +606,9 @@ export default function ClientHome() {
                 {paymentMethod === 'qrph' ? (
                   <Text style={styles.help}>QR Ph needs a budget of at least ₱1.00.</Text>
                 ) : null}
-              </View>
+              </View> : null}
 
-              <View style={styles.section} accessibilityLabel="Required Skills">
+              {wizardStep === 1 ? <View style={styles.section} accessibilityLabel="Required Skills">
                 <SectionHeader title="Required Skills" />
                 <Text style={styles.fieldLabel}>Primary skill</Text>
                 <Text style={styles.help}>
@@ -619,18 +655,49 @@ export default function ClientHome() {
                   disabled={busy}
                   accessibilityLabel={hasSelectedSkills ? 'Edit Skills' : 'Choose Skills'}
                 />
-              </View>
+              </View> : null}
 
-              <View style={styles.section} accessibilityLabel="Job Photos">
+              {wizardStep === 2 ? <View style={styles.section} accessibilityLabel="Job Photos">
                 <SectionHeader title="Photos (Optional)" />
                 <JobPhotoPicker
                   key={jobPhotoPickerKey}
                   disabled={busy}
                   onPhotosChange={setJobPhotos}
                 />
+              </View> : null}
+
+              {wizardStep === 4 ? (
+                <View style={styles.section} accessibilityLabel="Review and Post">
+                  <SectionHeader title="Review & Post" />
+                  <AppCard>
+                    <Text style={styles.fieldLabel}>Skills</Text>
+                    <Text style={styles.reviewValue}>{selectedSkills.map((skill) => skill.skill_name).join(', ')}</Text>
+                    <Text style={styles.fieldLabel}>Description</Text>
+                    <Text style={styles.reviewValue}>{description.trim()}</Text>
+                    <Text style={styles.fieldLabel}>Location</Text>
+                    <Text style={styles.reviewValue}>{address.trim()}</Text>
+                    <Text style={styles.fieldLabel}>Photos</Text>
+                    <Text style={styles.reviewValue}>{jobPhotos.length} selected</Text>
+                    <Text style={styles.fieldLabel}>Schedule</Text>
+                    <Text style={styles.reviewValue}>{combineJobSchedule(scheduleDate, scheduleTime)?.toLocaleString() ?? 'Not selected'}</Text>
+                    <Text style={styles.fieldLabel}>Budget</Text>
+                    <Text style={styles.reviewValue}>{budgetText.trim() ? `₱${budgetText.trim()}` : 'Not specified'}</Text>
+                    <Text style={styles.fieldLabel}>Payment</Text>
+                    <Text style={styles.reviewValue}>{paymentMethod === 'cod' ? 'Cash' : paymentMethod === 'qrph' ? 'QR Ph' : 'Not selected'}</Text>
+                  </AppCard>
+                </View>
+              ) : null}
+
+              <View style={styles.wizardActions}>
+                {wizardStep > 1 ? (
+                  <AppButton variant="secondary" label="Back" onPress={goToPreviousStep} disabled={busy} />
+                ) : null}
+                {wizardStep < 4 ? (
+                  <AppButton variant="primary" label="Next" onPress={goToNextStep} disabled={busy} />
+                ) : null}
               </View>
 
-              <View style={styles.submitBlock} accessibilityLabel="Post Job">
+              {wizardStep === 4 ? <View style={styles.submitBlock} accessibilityLabel="Post Job">
                 {postError ? <InlineStatus variant="error" message={postError} /> : null}
                 {postSuccess ? <Text style={styles.success}>{postSuccess}</Text> : null}
                 <AppButton
@@ -643,7 +710,7 @@ export default function ClientHome() {
                   disabled={busy}
                   accessibilityLabel="Post Job"
                 />
-              </View>
+              </View> : postError ? <InlineStatus variant="error" message={postError} /> : null}
             </>
           )}
         </View>
@@ -661,6 +728,7 @@ export default function ClientHome() {
               setPin(location.pin);
               setAddress(location.address);
               setLocationPickerVisible(false);
+              void saveRecentLocation(location).catch(() => undefined);
             }}
           />
         ) : null}
@@ -772,6 +840,18 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: spacing.md,
+  },
+  wizardProgress: {
+    ...type.helper,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  wizardActions: {
+    gap: spacing.sm,
+  },
+  reviewValue: {
+    ...type.body,
+    color: colors.textPrimary,
   },
   fieldLabel: {
     fontSize: 13,

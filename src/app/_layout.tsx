@@ -7,6 +7,7 @@ import { tamaguiConfig } from '../../tamagui.config';
 import { PushNotificationInboxIntent } from '@/components/push-notification-inbox-intent';
 import { IncomingMessageBannerHost } from '@/components/incoming-message-banner-host';
 import { isRecoverySurfaceActive } from '@/lib/auth-recovery';
+import { isPhoneOtpEnabled } from '@/lib/phone-verification';
 import { canEnterWorkerApp } from '@/lib/worker-onboarding';
 import {
   AccountProvider,
@@ -38,6 +39,7 @@ export type AccessState =
   | 'signed-out'
   | 'password-recovery'
   | 'account-pending'
+  | 'needs-phone-verification'
   | 'blocked'
   | 'needs-consent'
   | 'worker-identity'
@@ -59,8 +61,9 @@ export function deriveAccessState(
   >,
   accountValue: Pick<
     AccountContextValue,
-    'account' | 'status' | 'hasCurrentConsent' | 'workerOnboardingState'
-  >
+    'account' | 'status' | 'accountError' | 'hasCurrentConsent' | 'workerOnboardingState'
+  >,
+  phoneOtpEnabled = isPhoneOtpEnabled()
 ): AccessState {
   const { session, isSessionLoading, sessionError, recoveryStatus } = sessionValue;
   const { account, status, hasCurrentConsent, workerOnboardingState } =
@@ -74,6 +77,13 @@ export function deriveAccessState(
   if (status === 'idle' || status === 'pending') return 'account-pending';
   if (status === 'resolved' && account !== null && account.id !== session.user.id) {
     return 'account-pending';
+  }
+  if (
+    phoneOtpEnabled &&
+    status === 'error' &&
+    accountValue.accountError?.code === 'phone_verification_required'
+  ) {
+    return 'needs-phone-verification';
   }
 
   const resolved = status === 'resolved' && account !== null;
@@ -101,6 +111,7 @@ export function deriveAccessState(
 export const ACCESS_ROUTE: Partial<Record<AccessState, Href>> = {
   'signed-out': '/login',
   'password-recovery': '/update-password',
+  'needs-phone-verification': '/verify-phone' as Href,
   blocked: '/blocked',
   'needs-consent': '/legal-consent',
   'worker-identity': '/verify-identity',
@@ -154,6 +165,7 @@ function RootNavigator() {
       <Stack.Protected
         guard={
           access === 'signed-out' ||
+          access === 'needs-phone-verification' ||
           access === 'needs-consent' ||
           access === 'worker-identity'
         }

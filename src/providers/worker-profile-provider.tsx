@@ -154,7 +154,7 @@ type WorkerProfileContextValue = {
   refreshPersistedAvailability: () => Promise<void>;
   toggleSkill: (skillId: string) => void;
   setProficiency: (skillId: string, level: Proficiency) => void;
-  handleSave: () => Promise<void>;
+  handleSave: (skillDraft?: Record<string, string>) => Promise<boolean>;
 };
 
 const WorkerProfileContext = createContext<WorkerProfileContextValue | undefined>(undefined);
@@ -303,21 +303,24 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
     setSelection(cleaned);
   }
 
-  async function handleSave() {
-    if (isSaving || !userId) return;
+  async function handleSave(skillDraft?: Record<string, string>): Promise<boolean> {
+    if (isSaving || !userId) return false;
+    const requestedSelection = skillDraft ?? selection;
     setSaveError(null);
     setSaveSuccess(null);
 
     if (!isAvailability(availability)) {
       setSaveError('Please choose an availability status.');
-      return;
+      return false;
     }
     const knownSkillIds = new Set(skills.map((skill) => skill.id));
-    for (const [skillId, level] of Object.entries(selection)) {
+    const selectionToSave: SkillSelection = {};
+    for (const [skillId, level] of Object.entries(requestedSelection)) {
       if (!knownSkillIds.has(skillId) || !isProficiency(level)) {
         setSaveError('Please choose a valid proficiency for each selected skill.');
-        return;
+        return false;
       }
+      selectionToSave[skillId] = level;
     }
 
     setIsSaving(true);
@@ -368,10 +371,10 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const removed = Object.keys(persistedSelection).filter((id) => !selection[id]);
-      const added = Object.keys(selection).filter((id) => !persistedSelection[id]);
-      const changed = Object.keys(selection).filter(
-        (id) => persistedSelection[id] && persistedSelection[id] !== selection[id]
+      const removed = Object.keys(persistedSelection).filter((id) => !selectionToSave[id]);
+      const added = Object.keys(selectionToSave).filter((id) => !persistedSelection[id]);
+      const changed = Object.keys(selectionToSave).filter(
+        (id) => persistedSelection[id] && persistedSelection[id] !== selectionToSave[id]
       );
 
       if (removed.length > 0) {
@@ -392,7 +395,7 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
       for (const skillId of changed) {
         const updateResult = await supabase
           .from('worker_skills')
-          .update({ proficiency_level: selection[skillId] })
+          .update({ proficiency_level: selectionToSave[skillId] })
           .eq('worker_id', currentProfileId)
           .eq('skill_id', skillId);
         if (updateResult.error) {
@@ -409,7 +412,7 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
           added.map((skillId) => ({
             worker_id: currentProfileId,
             skill_id: skillId,
-            proficiency_level: selection[skillId],
+            proficiency_level: selectionToSave[skillId],
           }))
         );
         if (insertResult.error) {
@@ -425,11 +428,13 @@ export function WorkerProfileProvider({ children }: { children: ReactNode }) {
       const reloaded = await loadWorkerData(userId);
       applyLoaded(reloaded);
       setSaveSuccess('Profile saved.');
+      return true;
     } catch (error: unknown) {
       setSaveError(
         (error instanceof Error ? error.message : COPY.saveGeneric) +
           ' Some changes may not have been saved — please review and try again.'
       );
+      return false;
     } finally {
       setIsSaving(false);
     }

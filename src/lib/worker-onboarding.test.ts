@@ -73,6 +73,7 @@ vi.mock('@/lib/worker-identity', async () => await import('./worker-identity'));
 vi.mock('@/lib/worker-onboarding', async () => await import('./worker-onboarding'));
 vi.mock('@/providers/session-provider', async () => await import('../providers/session-provider'));
 vi.mock('@/lib/auth-recovery', async () => await import('./auth-recovery'));
+vi.mock('@/lib/phone-verification', async () => await import('./phone-verification'));
 
 vi.mock('expo-linking', () => ({
   addEventListener: () => ({ remove: () => {} }),

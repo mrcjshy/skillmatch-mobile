@@ -48,6 +48,7 @@ function account(overrides: Props = {}) {
       is_active: true,
     },
     status: 'resolved',
+    accountError: null,
     hasCurrentConsent: true,
     workerOnboardingState: 'needs-submission',
     ...overrides,
@@ -81,6 +82,7 @@ function routingModule() {
     '@/lib/auth-recovery': {
       isRecoverySurfaceActive: (status: string) => status === 'active',
     },
+    '@/lib/phone-verification': { isPhoneOtpEnabled: () => false },
     '@/lib/worker-onboarding': { canEnterWorkerApp },
     '@/providers/account-provider': { AccountProvider: 'AccountProvider', useAccount: vi.fn() },
     '@/providers/session-provider': { SessionProvider: 'SessionProvider', useSession: vi.fn() },
@@ -131,7 +133,8 @@ describe('Worker onboarding route protection', () => {
   const routing = routingModule();
   const deriveAccessState = routing.deriveAccessState as (
     sessionValue: Props,
-    accountValue: Props
+    accountValue: Props,
+    phoneOtpEnabled?: boolean
   ) => string;
 
   it('maps the incomplete and complete states to separate route surfaces', () => {
@@ -139,6 +142,19 @@ describe('Worker onboarding route protection', () => {
       'worker-identity': '/verify-identity',
       worker: '/worker',
     });
+  });
+
+  it('routes an unverified phone only when phone OTP is enabled', () => {
+    expect(routing.ACCESS_ROUTE).toMatchObject({
+      'needs-phone-verification': '/verify-phone',
+    });
+    const phoneRequiredAccount = account({
+      account: null,
+      status: 'error',
+      accountError: { code: 'phone_verification_required' },
+    });
+    expect(deriveAccessState(session, phoneRequiredAccount, true)).toBe('needs-phone-verification');
+    expect(deriveAccessState(session, phoneRequiredAccount, false)).toBe('account-failure');
   });
 
   it.each([

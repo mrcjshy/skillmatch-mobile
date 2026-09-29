@@ -165,6 +165,10 @@ export const COPY = {
   dismiss: 'Dismiss',
   reviewing: 'Saving…',
   reviewSaved: 'Review saved.',
+  emailFailed: 'Review saved. Email could not be sent.',
+  emailSent: 'Outcome email sent.',
+  retryEmail: 'Send / Retry Outcome Email',
+  emailing: 'Sending email…',
   strikeAction: 'Resolve + Apply Strike',
   striking: 'Applying strike…',
   strikeConfirmTitle: 'Apply reviewed no-show strike?',
@@ -438,6 +442,27 @@ export async function loadAdminReport(reportId: string): Promise<AdminReportDeta
   return detail;
 }
 
+export function parseMyReportedBookingIds(data: unknown, bookingIds: readonly string[]): Set<string> {
+  const uniqueIds = [...new Set(bookingIds.filter((id) => UUID_PATTERN.test(id)))];
+  const rows = Array.isArray(data) ? data : [];
+  return new Set(
+    rows
+      .map((row) => typeof row === 'object' && row !== null ? (row as { booking_id?: unknown }).booking_id : null)
+      .filter((id): id is string => typeof id === 'string' && uniqueIds.includes(id))
+  );
+}
+
+export async function loadMyReportedBookingIds(bookingIds: readonly string[]): Promise<Set<string>> {
+  const uniqueIds = [...new Set(bookingIds.filter((id) => UUID_PATTERN.test(id)))];
+  if (uniqueIds.length === 0) return new Set();
+  const result = await supabase
+    .from('reports')
+    .select('booking_id')
+    .in('booking_id', uniqueIds);
+  if (result.error) throwRpcError(result.error);
+  return parseMyReportedBookingIds(result.data, uniqueIds);
+}
+
 export async function loadReportDisciplineState(
   reportId: string
 ): Promise<ReportDisciplineState> {
@@ -510,6 +535,17 @@ export async function reviewReport(
     p_admin_response: adminResponse,
   });
   if (res.error) throwRpcError(res.error);
+}
+
+export async function sendReportOutcomeEmail(reportId: string): Promise<boolean> {
+  try {
+    const result = await supabase.functions.invoke('report-outcome-email', {
+      body: { report_id: reportId },
+    });
+    return result.error === null && result.data?.delivered === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function resolveNoShowReportWithStrike(
