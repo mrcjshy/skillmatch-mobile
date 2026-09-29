@@ -162,7 +162,7 @@ export default function ClientHome() {
         clientId,
         loadBookings: loadClientBookings,
         onBookings: setBookings,
-        onNavigate: (bookingId) => router.replace({
+        onNavigate: (bookingId) => router.push({
           pathname: '/client/booking-details',
           params: { bookingId },
         } as unknown as Href),

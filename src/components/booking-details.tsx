@@ -608,14 +608,6 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
         </View>
       ) : null}
 
-      {role === 'client' ? (
-        <AppButton
-          variant="ghost"
-          label="← Home"
-          accessibilityLabel="Back to Client Home"
-          onPress={() => router.replace('/client' as Href)}
-        />
-      ) : null}
     </ScrollView>
   );
 }
