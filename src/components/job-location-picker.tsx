@@ -102,16 +102,13 @@ export function JobLocationPicker({
     lifetime.current = true;
     return () => { lifetime.current = false; selection.cancel(); };
   }, [selection]);
-  const resolveAddress = useCallback(async (explicitRequest = false): Promise<void> => {
+  const resolveAddress = useCallback(async (): Promise<void> => {
     const epoch = lookupEpoch.current;
     selection.select(selection.snapshot().pin);
     setShowInitialAddress(false);
     try {
       const location = await import('expo-location');
-      const nextPermission = await inspectLocationPermission(location, explicitRequest);
       if (!lifetime.current || epoch !== lookupEpoch.current || movingRef.current) return;
-      setPermission(nextPermission);
-      if (nextPermission !== 'granted') return;
       if (!selection.snapshot().pin) return;
       await selection.resolve(location);
     } catch {
@@ -217,12 +214,11 @@ export function JobLocationPicker({
     const requestEpoch = lookupEpoch.current;
     try {
       const location = await import('expo-location');
-      const nextPermission = await inspectLocationPermission(location);
+      const nextPermission = await inspectLocationPermission(location, true);
       if (!lifetime.current || requestEpoch !== lookupEpoch.current) return;
       setPermission(nextPermission);
       if (nextPermission !== 'granted') {
-        selection.select(selection.snapshot().pin);
-        setShowInitialAddress(false);
+        onNote(COPY.permissionDenied);
         return;
       }
       const result = await resolveCurrentLocationPin(location);
@@ -254,7 +250,6 @@ export function JobLocationPicker({
     checkingSnap ? 'Checking nearby mapped features...' :
     selectionState.status === 'resolving' ? 'Finding address…' :
     selectionState.error === 'outside' ? 'This location is outside Barangay Santa Ana.' :
-    selectionState.error === 'geocode' ? 'Unable to determine the address. Move the map slightly and try again.' :
     'Move the map to choose a service location.'
   );
 
@@ -344,12 +339,14 @@ export function JobLocationPicker({
               ))}
             </View>
           ) : null}
-          {selectionState.error === 'geocode' ? <AppButton label="Retry address lookup" variant="ghost" onPress={() => void resolveAddress()} disabled={busy} /> : null}
+          {selectionState.error === 'geocode' ? (
+            <AppNotice message={COPY.geocodeUnavailable} />
+          ) : null}
           {permission && permission !== 'granted' ? (
             <View>
-              <AppNotice variant="warning" message="Location permission is required to translate your selected Job pin into its address. SkillMatch does not track your movement." />
-              <AppButton label={permission === 'settings' ? 'Open Settings' : 'Enable Location to Confirm Address'}
-                onPress={() => { if (permission === 'settings') void Linking.openSettings().catch(() => onNote('Unable to open Settings. Open Android app settings manually.')); else void resolveAddress(true); }} disabled={busy || moving} />
+              <AppNotice message="Device location is optional. You can choose and confirm a location by moving the map." />
+              <AppButton label={permission === 'settings' ? 'Open Settings' : 'Enable Current Location'}
+                onPress={() => { if (permission === 'settings') void Linking.openSettings().catch(() => onNote('Unable to open Settings. Open Android app settings manually.')); else void handleUseCurrentLocation(); }} disabled={busy || moving} />
             </View>
           ) : null}
           {note ? <AppNotice variant="warning" message={note} /> : null}

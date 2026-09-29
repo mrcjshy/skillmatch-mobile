@@ -79,12 +79,12 @@ describe('coordinate validation', () => {
 });
 
 describe('posting location validation', () => {
-  it('requires both a confirmed derived address and a selected exact pin', () => {
+  it('requires nonblank display metadata and a selected exact pin', () => {
     expect(postingLocationError('', SANTA_ANA_PATEROS_INTERIOR_TEST_PIN)).toBe(
-      'Please confirm the address derived from your selected job pin.'
+      'Please confirm your selected job location.'
     );
     expect(postingLocationError('   ', SANTA_ANA_PATEROS_INTERIOR_TEST_PIN)).toBe(
-      'Please confirm the address derived from your selected job pin.'
+      'Please confirm your selected job location.'
     );
     expect(postingLocationError('123 Test Street', null)).toBe(
       'Please select a location on the map.'
@@ -185,7 +185,7 @@ describe('formatReverseGeocodeAddress', () => {
 
   it('keeps Current Location autofill recoverable when reverse geocode is empty', () => {
     expect(COPY.geocodeUnavailable).toBe(
-      "Couldn't find the address for this pin. Retry before confirming the location."
+      "Street address couldn't be identified. The selected map location will be used."
     );
   });
 });

@@ -56,15 +56,16 @@ it('rejects an outside pin without geocoding or confirmation', async () => {
   expect(geocode).not.toHaveBeenCalled();
 });
 
-it.each(['reject', 'empty'])('retains the valid pin but blocks confirmation on %s geocoding', async (failure) => {
+it.each(['reject', 'empty', 'blank'])('confirms the valid pin with display fallback on %s geocoding', async (failure) => {
   const selection = createCanonicalLocationSelection();
   selection.select(pin);
   await selection.resolve({ reverseGeocodeAsync: async () => {
     if (failure === 'reject') throw new Error('offline');
+    if (failure === 'blank') return [{ formattedAddress: '  ', street: '', city: null }];
     return [];
   } });
-  expect(selection.snapshot()).toMatchObject({ pin, address: null, error: 'geocode' });
-  expect(selection.confirm()).toBeNull();
+  expect(selection.snapshot()).toMatchObject({ pin, status: 'ready', error: 'geocode' });
+  expect(selection.confirm()).toEqual({ pin, address: 'Selected Job location — Santa Ana, Pateros' });
   await selection.resolve({ reverseGeocodeAsync: async () => [{ formattedAddress: 'Retry street' }] });
   expect(selection.confirm()).toEqual({ pin, address: 'Retry street' });
 });
@@ -82,4 +83,36 @@ it('discards an old geocoder response after pin replacement or unmount', async (
   expect(selection.confirm()).toBeNull();
   selection.cancel();
   expect(selection.snapshot().pin).toBeNull();
+});
+
+it.each(['success', 'failure'])('ignores a stale %s after a newer pin is ready', async (outcome) => {
+  const selection = createCanonicalLocationSelection();
+  let finish!: () => void;
+  selection.select(pin);
+  const pending = selection.resolve({ reverseGeocodeAsync: () => new Promise((resolve, reject) => {
+    finish = () => outcome === 'success' ? resolve([{ formattedAddress: 'Old street' }]) : reject(new Error('old failure'));
+  }) });
+  await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+  const nextPin = { latitude: 14.54446, longitude: 121.07206 };
+  selection.select(nextPin);
+  await selection.resolve({ reverseGeocodeAsync: async () => [{ formattedAddress: 'New street' }] });
+  finish();
+  await pending;
+  expect(selection.confirm()).toEqual({ pin: nextPin, address: 'New street' });
+  expect(selection.snapshot().error).toBeNull();
+});
+
+it.each(['denied', 'unavailable'])('keeps manual confirmation available when Current Location is %s', async (kind) => {
+  const selection = createCanonicalLocationSelection();
+  selection.select(pin);
+  await selection.resolve({ reverseGeocodeAsync: async () => { throw new Error('No native geocoder'); } });
+  const requestPermission = vi.fn();
+  const result = await resolveCurrentLocationPin({
+    getForegroundPermissionsAsync: async () => ({ status: kind === 'denied' ? 'denied' : 'granted' }),
+    requestForegroundPermissionsAsync: requestPermission,
+    getCurrentPositionAsync: async () => { throw new Error('No position'); },
+  });
+  expect(result.kind).toBe(kind);
+  expect(requestPermission).not.toHaveBeenCalled();
+  expect(selection.confirm()).toEqual({ pin, address: 'Selected Job location — Santa Ana, Pateros' });
 });

@@ -56,7 +56,7 @@ const FORBIDDEN = '42501';
 const INVALID_INPUT = '22023';
 
 export const COPY = {
-  missingAddress: 'Please confirm the address derived from your selected job pin.',
+  missingAddress: 'Please confirm your selected job location.',
   missingDescription: 'Please describe the work needed.',
   missingPin: 'Please select a location on the map.',
   invalidPin: 'Please select a valid location on the map.',
@@ -71,8 +71,8 @@ export const COPY = {
   permissionDenied:
     'Location permission is off. You can still move the map under the center pin.',
   locationUnavailable: "Couldn't read your current location. Move the map under the center pin instead.",
-  geocodeUnavailable: "Couldn't find the address for this pin. Retry before confirming the location.",
-  mapUnavailable: 'Map is unavailable. Posting requires a selected pin and its confirmed address.',
+  geocodeUnavailable: "Street address couldn't be identified. The selected map location will be used.",
+  mapUnavailable: 'Map is unavailable. Posting requires a confirmed location pin.',
   forbidden: "You don't have permission to post a job.",
   invalid: 'Check the job details and selected location, then try again.',
   generic: "Couldn't post your job. Please try again.",
@@ -276,7 +276,7 @@ export async function resolveCurrentLocationPin(
   const current = classifyForegroundPermission(
     (await location.getForegroundPermissionsAsync()).status
   );
-  // Permission prompting belongs only to the explicit address-confirmation action.
+  // Permission prompting belongs only to the explicit Use Current Location action.
   if (current !== 'granted') return { kind: 'denied' };
   try {
     const position = await location.getCurrentPositionAsync();

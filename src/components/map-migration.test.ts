@@ -92,7 +92,7 @@ const region = (center: { longitude: number; latitude: number }, userInteraction
 });
 
 describe('migrated map source event contracts', () => {
-  it('rechecks permission and resolves the retained candidate after returning from Settings', async () => {
+  it('resolves the retained candidate on foreground without requiring permission', async () => {
     const h = harness('components/job-location-picker.tsx');
     let change!: (state: string) => void;
     h.appState.addEventListener.mockImplementation((_event, listener) => { change = listener; return { remove: vi.fn() }; });
@@ -101,7 +101,7 @@ describe('migrated map source event contracts', () => {
     const initial = render();
     h.effects.forEach(effect => effect());
     byType(initial, 'Map').props.onRegionDidChange(region(pin));
-    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Open Settings')).toHaveLength(1));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
     change('background');
     h.geocoder.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
     change('active');
@@ -109,30 +109,29 @@ describe('migrated map source event contracts', () => {
     expect(h.geocoder.reverseGeocodeAsync).toHaveBeenCalledWith(pin);
     expect(h.geocoder.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
   });
-  it('keeps a denied-permission pin unconfirmed until the explicit address action grants permission', async () => {
+  it('confirms manual placement with fallback despite denied permission', async () => {
     const h = harness('components/job-location-picker.tsx');
     h.geocoder.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied', canAskAgain: true });
     h.geocoder.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
+    h.geocoder.reverseGeocodeAsync.mockRejectedValue(new Error('Permission denied'));
     const props = { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() };
     const render = () => h.render(h.exports.JobLocationPicker, props);
     byType(render(), 'Map').props.onRegionDidChange(region(pin));
-    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Enable Location to Confirm Address')).toHaveLength(1));
-    expect(h.geocoder.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
-    expect(h.geocoder.reverseGeocodeAsync).not.toHaveBeenCalled();
-    expect(confirmButton(render()).props.disabled).toBe(true);
-    all(render(), n => n.props.label === 'Enable Location to Confirm Address')[0].props.onPress();
     await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
-    expect(h.geocoder.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1);
+    expect(h.geocoder.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(h.geocoder.getForegroundPermissionsAsync).not.toHaveBeenCalled();
     confirmButton(render()).props.onPress();
-    expect(props.onConfirm).toHaveBeenCalledWith({ pin, address: 'Canonical selected address' });
+    expect(props.onConfirm).toHaveBeenCalledWith({ pin, address: 'Selected Job location — Santa Ana, Pateros' });
   });
-  it('shows Settings guidance for permanent denial without calling the prompt', async () => {
+  it('preserves manual confirmation and shows Settings when optional Current Location is permanently denied', async () => {
     const h = harness('components/job-location-picker.tsx');
     h.geocoder.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied', canAskAgain: false });
     const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
     byType(render(), 'Map').props.onRegionDidChange(region(pin));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    await all(render(), n => n.props.accessibilityLabel === location.COPY.useCurrentLocation)[0].props.onPress();
     await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Open Settings')).toHaveLength(1));
-    expect(confirmButton(render()).props.disabled).toBe(true);
+    expect(confirmButton(render()).props.disabled).toBe(false);
     expect(h.geocoder.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
   });
   it('shows a prior confirmed address on reopen and lets Back discard temporary movement', () => {
@@ -175,7 +174,7 @@ describe('migrated map source event contracts', () => {
     expect(props.onConfirm).toHaveBeenCalledWith({ pin, address: 'Canonical selected address' });
   });
 
-  it('invalidates the old address on movement and blocks outside-area or failed geocoding', async () => {
+  it('invalidates old text on movement, blocks outside-area pins, and confirms geocoder fallback', async () => {
     const h = harness('components/job-location-picker.tsx');
     const props = { pin: null, resetKey: 0, note: null, onNote: vi.fn(), onConfirm: vi.fn(), onInvalidate: vi.fn() };
     const render = () => h.render(h.exports.JobLocationPicker, props);
@@ -193,8 +192,25 @@ describe('migrated map source event contracts', () => {
     h.geocoder.reverseGeocodeAsync.mockRejectedValueOnce(new Error('Unavailable'));
     byType(render(), 'Map').props.onRegionWillChange(region(moved));
     byType(render(), 'Map').props.onRegionDidChange(region(moved));
-    await vi.waitFor(() => expect(all(render(), n => n.type === 'Text' && n.props.children === 'Unable to determine the address. Move the map slightly and try again.')).toHaveLength(1));
-    expect(confirmButton(render()).props.disabled).toBe(true);
+    await vi.waitFor(() => expect(all(render(), n => n.type === 'Text' && n.props.children === 'Selected Job location — Santa Ana, Pateros')).toHaveLength(1));
+    expect(confirmButton(render()).props.disabled).toBe(false);
+    expect(all(render(), n => n.props.message === "Street address couldn't be identified. The selected map location will be used.")).toHaveLength(1);
+    confirmButton(render()).props.onPress();
+    expect(props.onConfirm).toHaveBeenCalledWith({ pin: moved, address: 'Selected Job location — Santa Ana, Pateros' });
+  });
+
+  it('preserves a manually confirmed candidate when optional Current Location is unavailable', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    h.geocoder.getCurrentPositionAsync.mockRejectedValue(new Error('Unavailable'));
+    const props = { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() };
+    const render = () => h.render(h.exports.JobLocationPicker, props);
+    byType(render(), 'Map').props.onRegionDidChange(region(pin));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    await all(render(), n => n.props.accessibilityLabel === location.COPY.useCurrentLocation)[0].props.onPress();
+    await vi.waitFor(() => expect(props.onNote).toHaveBeenCalledWith(location.COPY.locationUnavailable));
+    expect(confirmButton(render()).props.disabled).toBe(false);
+    confirmButton(render()).props.onPress();
+    expect(props.onConfirm).toHaveBeenCalledWith({ pin, address: 'Canonical selected address' });
   });
 
   it('discards an old reverse-geocode reply after the map settles at a newer center', async () => {

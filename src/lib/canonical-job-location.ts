@@ -1,6 +1,7 @@
 import { formatReverseGeocodeAddress, reviewJobPinPlacement, type JobPin, type ReverseGeocodeLike } from './job-location';
 
 export type CanonicalJobLocation = { pin: JobPin; address: string };
+export const JOB_LOCATION_DISPLAY_FALLBACK = 'Selected Job location — Santa Ana, Pateros';
 export type LocationSelectionState = {
   pin: JobPin | null;
   address: string | null;
@@ -32,9 +33,9 @@ export function createCanonicalLocationSelection(onChange?: (state: LocationSele
       try {
         const address = formatReverseGeocodeAddress(await geocoder.reverseGeocodeAsync(pin!));
         if (token !== generation) return;
-        publish({ pin, address, status: address ? 'ready' : 'error', error: address ? null : 'geocode' });
+        publish({ pin, address: address ?? JOB_LOCATION_DISPLAY_FALLBACK, status: 'ready', error: address ? null : 'geocode' });
       } catch {
-        if (token === generation) publish({ pin, address: null, status: 'error', error: 'geocode' });
+        if (token === generation) publish({ pin, address: JOB_LOCATION_DISPLAY_FALLBACK, status: 'ready', error: 'geocode' });
       }
     },
     confirm(): CanonicalJobLocation | null {
