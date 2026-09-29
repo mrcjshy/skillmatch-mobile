@@ -38,6 +38,30 @@ export const BOOKING_STATUSES = [
 
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 
+/** Existing V4 #19 cancellation vocabulary; FT-05 adds no category. */
+export const CANCELLATION_REASON_CODES = [
+  'schedule_conflict',
+  'unable_to_continue',
+  'location_issue',
+  'payment_issue',
+  'other',
+] as const;
+
+export type CancellationReasonCode = (typeof CANCELLATION_REASON_CODES)[number];
+export const CANCELLATION_DETAIL_MAX = 300;
+
+export const CANCELLATION_REASON_LABELS: Record<CancellationReasonCode, string> = {
+  schedule_conflict: 'Schedule conflict',
+  unable_to_continue: 'Unable to continue',
+  location_issue: 'Location issue',
+  payment_issue: 'Payment issue',
+  other: 'Other',
+};
+
+export function cancellationDetailLength(value: string): number {
+  return Array.from(value.trim()).length;
+}
+
 const BOOKING_STATUS_LABEL: Record<BookingStatus, string> = {
   pending: 'Pending',
   confirmed: 'Confirmed',

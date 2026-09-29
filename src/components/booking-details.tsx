@@ -47,6 +47,7 @@ import {
 import { listJobPhotos, type SignedJobPhoto } from '@/lib/job-photos';
 import {
   BookingPayment as BookingPaymentState,
+  bookingActionPresentation,
   fetchBookingPayments,
   isPayableStatus,
 } from '@/lib/payments';
@@ -82,6 +83,7 @@ const UNAVAILABLE = 'This booking is unavailable.';
 type DetailState = {
   booking: RoleBooking;
   payment: BookingPaymentState | undefined;
+  paymentReadSucceeded: boolean;
   jobPaymentMethod: JobPaymentMethod | null;
   jobPaymentReady: boolean;
   isRated: boolean;
@@ -153,10 +155,22 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     }
 
     const payable = isPayableStatus(booking.booking_status);
-    const payments = payable ? await fetchBookingPayments([booking.booking_id]) : new Map();
+    let payments = new Map<string, BookingPaymentState>();
+    let paymentReadSucceeded = !payable;
+    if (payable) {
+      try {
+        payments = await fetchBookingPayments([booking.booking_id]);
+        paymentReadSucceeded = payments.has(booking.booking_id);
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message) {
+          console.warn('[FT-05] booking payment read failed:', error.message);
+        }
+        paymentReadSucceeded = false;
+      }
+    }
     let jobPaymentMethod: JobPaymentMethod | null = null;
     let jobPaymentReady = !payable;
-    if (payable) {
+    if (payable && paymentReadSucceeded) {
       try {
         jobPaymentMethod = await fetchJobPaymentMethod(booking.job_id);
         jobPaymentReady = true;
@@ -203,6 +217,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     setDetail({
       booking,
       payment: payments.get(booking.booking_id),
+      paymentReadSucceeded,
       jobPaymentMethod,
       jobPaymentReady,
       isRated: rated.has(booking.booking_id),
@@ -352,7 +367,16 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     );
   }
 
-  const { booking, payment, jobPaymentMethod, jobPaymentReady, isRated, exactLocation, jobPhotos } = visibleDetail;
+  const {
+    booking,
+    payment,
+    paymentReadSucceeded,
+    jobPaymentMethod,
+    jobPaymentReady,
+    isRated,
+    exactLocation,
+    jobPhotos,
+  } = visibleDetail;
   const schedule = formatDetailDateTime(booking.job_scheduled_at);
   const bookedAt = formatDetailDateTime(booking.booked_at);
   const completedAt = formatDetailDateTime(booking.completed_at);
@@ -373,13 +397,24 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
           mapAvailable: classifyMapAvailability(nativeJobMapsLoaded()),
         })
       : null;
-  const showLifecycle = protectedReleased && isLifecycleActionableStatus(booking.booking_status);
-  const showPayment = isPayableStatus(booking.booking_status);
+  const actionPresentation = bookingActionPresentation(
+    role,
+    booking.booking_status,
+    payment,
+    paymentReadSucceeded
+  );
+  const showLifecycle =
+    protectedReleased &&
+    isLifecycleActionableStatus(booking.booking_status) &&
+    (actionPresentation.showCompletion || actionPresentation.showCancellation);
+  const showPayment = actionPresentation.showPayment;
+  const paymentUnavailable = isPayableStatus(booking.booking_status) && !paymentReadSucceeded;
   const showRate = role === 'client' && isRateableStatus(booking.booking_status);
   const showReport = isBookingReportableStatus(booking.booking_status);
   const showPortfolio =
     protectedReleased && role === 'client' && isClientPortfolioVisible(booking.booking_status);
-  const showActions = showLifecycle || showPayment || showRate || chatAvailable || showReport || showPortfolio;
+  const showActions =
+    showLifecycle || showPayment || paymentUnavailable || showRate || chatAvailable || showReport || showPortfolio;
 
   return (
     <ScrollView
@@ -456,9 +491,6 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
 
       {showActions ? (
         <View style={styles.section}>
-          {showLifecycle ? (
-            <BookingLifecycle role={role} bookingId={booking.booking_id} onChanged={load} />
-          ) : null}
           {showPayment ? (
             jobPaymentReady ? (
               <BookingPayment
@@ -471,6 +503,18 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
             ) : (
               <Text style={styles.note}>Could not load the agreed payment method.</Text>
             )
+          ) : null}
+          {paymentUnavailable ? (
+            <Text style={styles.note}>Could not load the authoritative payment state. Payment and lifecycle actions are unavailable.</Text>
+          ) : null}
+          {showLifecycle ? (
+            <BookingLifecycle
+              role={role}
+              bookingId={booking.booking_id}
+              showCompletion={actionPresentation.showCompletion}
+              showCancellation={actionPresentation.showCancellation}
+              onChanged={load}
+            />
           ) : null}
           {showRate ? (
             isRated ? <Text style={styles.note}>{RATING_COPY.rated}</Text> : <RateWorker bookingId={booking.booking_id} onRated={load} />

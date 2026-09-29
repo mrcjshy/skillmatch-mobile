@@ -51,7 +51,7 @@ export function formatClientPostedPaymentLine(method: JobPaymentMethod | null): 
 
 export function formatOpportunityPaymentLine(method: JobPaymentMethod | null): string {
   return method === null
-    ? 'Payment method: Client selects after completion (legacy job)'
+    ? 'Payment method: Client selects before final completion (legacy job)'
     : `Payment method: ${JOB_LABEL[method]}`;
 }
 

@@ -209,7 +209,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'booking',
     question: 'Paano mamarkahan na tapos na ang serbisyo?',
     answer:
-      'Ang Client lang ang maaaring mag-complete ng Booking pagkatapos ng serbisyo. Hindi ito maaaring gawin ng Worker. Pagkatapos ma-complete, saka lang lalabas ang payment options.',
+      'Pagkatapos ng serbisyo, kailangang ma-settle muna ang Cash o QR Ph payment habang confirmed pa ang Booking. Kapag paid na, ang Client lang ang maaaring gumawa ng final completion. Hindi ito maaaring gawin ng Worker.',
     keywords: ['complete', 'completed', 'tapos', 'done', 'finish', 'markahan', 'mark'],
   },
   {
@@ -263,7 +263,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'cash',
     question: 'Paano gumagana ang Cash Payment?',
     answer:
-      'Pagkatapos ma-complete ang Booking, pipiliin ng Client ang Cash Payment. Ibibigay ang cash nang personal sa Worker, tapos ang Worker ang magko-confirm sa app na natanggap na niya ang cash. Saka lang ito magiging paid.',
+      'Habang confirmed ang Booking, pipiliin ng Client ang Cash Payment. Ibibigay ang cash nang personal sa Worker, tapos ang Worker ang magko-confirm sa app na natanggap na niya ang cash. Kapag paid na, maaari nang gawin ng Client ang final completion.',
     keywords: ['cash', 'cash payment', 'bayad', 'magbayad', 'pera', 'cod', 'personal', 'paano magbayad'],
   },
   {
@@ -281,7 +281,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'qrph',
     question: 'Paano gumagana ang QR Ph payment?',
     answer:
-      'Pagkatapos ma-complete ang Booking, pipiliin ng Client ang QR Ph. Gagawa ang app ng QR code para sa eksaktong halaga ng trabaho. Magiging paid lang ang Booking kapag kinumpirma ng payment provider sa server ang bayad. Sa kasalukuyang demo, TEST mode ito at hindi totoong pera ang ginagamit.',
+      'Habang confirmed ang Booking, maaaring simulan ng Client ang QR Ph payment. Gagawa ang app ng QR code para sa eksaktong halaga ng trabaho. Magiging paid lang ang Booking kapag kinumpirma ng payment provider sa server ang bayad; saka maaaring gawin ng Client ang final completion. Sa kasalukuyang demo, TEST mode ito at hindi totoong pera ang ginagamit.',
     keywords: ['qr', 'qr ph', 'qrph', 'qr code', 'online', 'paymongo', 'scan', 'digital', 'bayad', 'magbayad'],
   },
   {

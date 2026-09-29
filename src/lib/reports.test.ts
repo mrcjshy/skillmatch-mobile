@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { supabase } from './supabase';
 import {
   BOOKING_REPORT_CATEGORIES,
   ReportError,
@@ -11,6 +12,9 @@ import {
   submitBookingErrorCopy,
   validateAdminResponse,
   validateReportDescription,
+  loadReportDisciplineState,
+  resolveNoShowReportWithStrike,
+  shouldShowStrikeAction,
 } from './reports';
 
 vi.mock('./supabase', () => ({
@@ -221,5 +225,61 @@ describe('R3 error mapping', () => {
     const copy = reviewErrorCopy(new ReportError('this report is not available for review', 'SM409'));
     expect(copy).toBe('This report is not available for review.');
     expect(copy.toLowerCase()).not.toContain('already');
+  });
+});
+
+describe('FT-05 Admin-reviewed no-show discipline', () => {
+  const rpc = vi.mocked(supabase.rpc);
+
+  beforeEach(() => {
+    rpc.mockReset();
+  });
+
+  it('accepts only the narrow server-derived discipline read shape', async () => {
+    rpc.mockResolvedValueOnce({
+      data: [{ eligible: true, current_strike_count: 2, would_suspend: true }],
+      error: null,
+    } as never);
+
+    await expect(loadReportDisciplineState('11111111-1111-4111-8111-111111111111'))
+      .resolves.toEqual({ eligible: true, currentStrikeCount: 2, wouldSuspend: true });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('get_report_discipline_state', {
+      p_report_id: '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
+  it('fails closed for malformed or ineligible discipline state', async () => {
+    rpc.mockResolvedValueOnce({
+      data: [{ eligible: 'yes', current_strike_count: 2, would_suspend: false }],
+      error: null,
+    } as never);
+    await expect(loadReportDisciplineState('11111111-1111-4111-8111-111111111111'))
+      .rejects.toBeInstanceOf(ReportError);
+    expect(shouldShowStrikeAction(null)).toBe(false);
+    expect(shouldShowStrikeAction({
+      eligible: false,
+      currentStrikeCount: null,
+      wouldSuspend: false,
+    })).toBe(false);
+  });
+
+  it('shows the strike action only from an eligible server result', () => {
+    expect(shouldShowStrikeAction({
+      eligible: true,
+      currentStrikeCount: 1,
+      wouldSuspend: false,
+    })).toBe(true);
+  });
+
+  it('sends only report id and Admin response to the dedicated RPC', async () => {
+    rpc.mockResolvedValueOnce({ data: [], error: null } as never);
+    await resolveNoShowReportWithStrike(
+      '11111111-1111-4111-8111-111111111111',
+      'Reviewed evidence confirms the no-show.'
+    );
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('resolve_no_show_report_with_strike', {
+      p_report_id: '11111111-1111-4111-8111-111111111111',
+      p_admin_response: 'Reviewed evidence confirms the no-show.',
+    });
   });
 });

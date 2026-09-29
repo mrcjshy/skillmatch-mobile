@@ -26,8 +26,8 @@ import {
 const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 /**
- * The payment section of one completed Booking card (BL-01D-UI, extended by
- * PM-01D with QR Ph).
+ * The payment section of one confirmed forward-lifecycle or completed legacy
+ * Booking card (BL-01D-UI, extended by PM-01D with QR Ph).
  *
  * Shared by the Client and Worker screens because the two roles read the SAME
  * payment tuple and must never disagree about what it means; only the control
@@ -362,7 +362,7 @@ export default function BookingPayment({
       ) : isAwaitingCash(payment) ? (
         <>
           <Text style={styles.line}>{COPY.awaitingWorker}</Text>
-          {/* Offered only for a completed COD Booking still awaiting cash, and
+          {/* Offered only for an eligible COD Booking still awaiting cash, and
               never for qrph/gcash/maya — the server refuses those too. */}
           <AppButton
             label={isBusy ? COPY.confirming : COPY.confirmCash}

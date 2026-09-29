@@ -58,7 +58,7 @@ describe('Job payment display labels', () => {
     expect(formatOpportunityPaymentLine('cod')).toBe('Payment method: Cash');
     expect(formatOpportunityPaymentLine('qrph')).toBe('Payment method: QR Ph');
     expect(formatOpportunityPaymentLine(null)).toBe(
-      'Payment method: Client selects after completion (legacy job)'
+      'Payment method: Client selects before final completion (legacy job)'
     );
   });
 });

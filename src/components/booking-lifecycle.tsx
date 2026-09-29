@@ -1,17 +1,24 @@
-import { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
+import { AppChip } from '@/components/app-chip';
+import { AppField } from '@/components/app-field';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
+  CANCELLATION_DETAIL_MAX,
+  CANCELLATION_REASON_OPTIONS,
   cancelBooking,
   cancelErrorCopy,
   completeClientBooking,
   completeErrorCopy,
   COPY,
+  remainingCancellationDetailCharacters,
+  validateCancellationInput,
 } from '@/lib/booking-lifecycle';
+import type { CancellationReasonCode } from '@/lib/bookings';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
+const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 /**
  * The lifecycle action section of one CONFIRMED Booking card (BL-01A-UI).
@@ -50,10 +57,14 @@ type LifecycleAction = 'complete' | 'cancel';
 export default function BookingLifecycle({
   role,
   bookingId,
+  showCompletion,
+  showCancellation,
   onChanged,
 }: {
   role: LifecycleRole;
   bookingId: string;
+  showCompletion: boolean;
+  showCancellation: boolean;
   onChanged: () => Promise<void>;
 }) {
   /**
@@ -64,8 +75,14 @@ export default function BookingLifecycle({
    */
   const [busyAction, setBusyAction] = useState<LifecycleAction | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [reasonCode, setReasonCode] = useState<CancellationReasonCode | null>(null);
+  const [reasonDetail, setReasonDetail] = useState('');
+  const actionInFlight = useRef(false);
 
   const isBusy = busyAction !== null;
+  const cancellationInput = validateCancellationInput(reasonCode, reasonDetail);
+  const remainingDetailCharacters = remainingCancellationDetailCharacters(reasonDetail);
 
   /**
    * `busyAction` is the in-flight guard, so a double tap cannot fire twice.
@@ -79,7 +96,8 @@ export default function BookingLifecycle({
     call: () => Promise<void>,
     copyFor: (e: unknown) => string
   ) {
-    if (isBusy) return;
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
     setBusyAction(action);
     setError(null);
     try {
@@ -97,14 +115,14 @@ export default function BookingLifecycle({
       }
       setError(copyFor(e));
     } finally {
+      actionInFlight.current = false;
       setBusyAction(null);
     }
   }
 
   /**
-   * Completion is not destructive, but it IS one-way and it unlocks payment, so
-   * it is confirmed too — and the prompt says explicitly that completing does
-   * not mean payment has been received.
+   * Final completion is one-way and appears only after the authoritative
+   * payment read says paid, so it receives an explicit confirmation.
    */
   function promptComplete() {
     if (isBusy) return;
@@ -124,19 +142,47 @@ export default function BookingLifecycle({
    * not automatically reopen. The prompt states that rather than leaving the
    * user to discover it.
    */
-  function promptCancel() {
+  function openCancelModal() {
     if (isBusy) return;
-    Alert.alert(COPY.cancelConfirmTitle, COPY.cancelConfirmBody, [
-      { text: COPY.dismiss, style: 'cancel' },
-      {
-        text: COPY.cancelConfirmAction,
-        style: 'destructive',
-        onPress: () => {
-          void run('cancel', () => cancelBooking(bookingId), cancelErrorCopy);
-        },
-      },
-    ]);
+    setError(null);
+    setCancelModalOpen(true);
   }
+
+  function closeCancelModal() {
+    if (isBusy) return;
+    setCancelModalOpen(false);
+    setReasonCode(null);
+    setReasonDetail('');
+  }
+
+  function reviewCancellation() {
+    if (isBusy || !cancellationInput.ok) return;
+    const selectedReason = cancellationInput.reasonCode;
+    Alert.alert(
+      COPY.cancelConfirmTitle,
+      `${COPY.cancelConfirmBody}\n\nReason: ${
+        CANCELLATION_REASON_OPTIONS.find((option) => option.value === selectedReason)?.label ??
+        selectedReason
+      }`,
+      [
+        { text: COPY.dismiss, style: 'cancel' },
+        {
+          text: COPY.cancelConfirmAction,
+          style: 'destructive',
+          onPress: () => {
+            setCancelModalOpen(false);
+            void run(
+              'cancel',
+              () => cancelBooking(bookingId, selectedReason, reasonDetail),
+              cancelErrorCopy
+            );
+          },
+        },
+      ]
+    );
+  }
+
+  if (!showCompletion && !showCancellation) return null;
 
   return (
     <View style={styles.section}>
@@ -149,7 +195,7 @@ export default function BookingLifecycle({
         is the filled primary here. The Worker sees no primary at all rather
         than a manufactured one -- there is no Worker action in this state.
       */}
-      {role === 'client' ? (
+      {role === 'client' && showCompletion ? (
         <AppButton
           variant="primary"
           label={busyAction === 'complete' ? COPY.completing : COPY.complete}
@@ -165,15 +211,80 @@ export default function BookingLifecycle({
         sit at the same weight as the action the participant actually came to
         perform. The confirmation dialog is unchanged.
       */}
-      <AppButton
-        variant="destructive"
-        label={busyAction === 'cancel' ? COPY.cancelling : COPY.cancel}
-        onPress={promptCancel}
-        loading={busyAction === 'cancel'}
-        disabled={isBusy}
-      />
+      {showCancellation ? (
+        <AppButton
+          variant="destructive"
+          label={busyAction === 'cancel' ? COPY.cancelling : COPY.cancel}
+          onPress={openCancelModal}
+          loading={busyAction === 'cancel'}
+          disabled={isBusy}
+        />
+      ) : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      <Modal visible={cancelModalOpen} transparent animationType="fade" onRequestClose={closeCancelModal}>
+        <View style={styles.overlay}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close cancellation reason"
+            style={StyleSheet.absoluteFill}
+            onPress={closeCancelModal}
+            disabled={isBusy}
+          />
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{COPY.cancelReasonTitle}</Text>
+            <Text style={styles.modalBody}>{COPY.cancelReasonBody}</Text>
+            <View style={styles.reasonOptions} accessibilityRole="radiogroup">
+              {CANCELLATION_REASON_OPTIONS.map((option) => {
+                const selected = reasonCode === option.value;
+                return (
+                  <Pressable
+                    key={option.value}
+                    accessibilityRole="radio"
+                    accessibilityLabel={option.label}
+                    accessibilityState={{ selected, disabled: isBusy }}
+                    disabled={isBusy}
+                    onPress={() => setReasonCode(option.value)}
+                  >
+                    <AppChip label={option.label} variant={selected ? 'selected' : 'neutral'} />
+                  </Pressable>
+                );
+              })}
+            </View>
+            <AppField
+              label={COPY.cancelDetailLabel}
+              accessibilityLabel={COPY.cancelDetailLabel}
+              value={reasonDetail}
+              onChangeText={setReasonDetail}
+              placeholder={
+                reasonCode === 'other'
+                  ? COPY.cancelDetailOtherPlaceholder
+                  : COPY.cancelDetailPlaceholder
+              }
+              multiline
+              editable={!isBusy}
+              errorText={
+                cancellationInput.ok || cancellationInput.reason === 'reason_required'
+                  ? undefined
+                  : cancellationInput.reason === 'detail_required'
+                    ? COPY.cancelDetailRequired
+                    : COPY.cancelDetailTooLong
+              }
+            />
+            <Text style={remainingDetailCharacters < 0 ? styles.counterOver : styles.counter}>
+              {remainingDetailCharacters} / {CANCELLATION_DETAIL_MAX}
+            </Text>
+            {reasonCode === null ? <Text style={styles.helper}>{COPY.cancelReasonRequired}</Text> : null}
+            <AppButton
+              label={COPY.cancelReview}
+              onPress={reviewCancellation}
+              disabled={!cancellationInput.ok || isBusy}
+            />
+            <AppButton label={COPY.dismiss} variant="ghost" onPress={closeCancelModal} disabled={isBusy} />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -190,4 +301,22 @@ const styles = StyleSheet.create({
     ...type.helper,
     color: colors.danger,
   },
+  overlay: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.gutter,
+    backgroundColor: colors.overlay,
+  },
+  modalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalTitle: { ...type.sectionTitle, color: colors.textPrimary },
+  modalBody: { ...type.body, color: colors.textSecondary },
+  reasonOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  counter: { ...type.caption, color: colors.textSecondary },
+  counterOver: { ...type.caption, color: colors.danger, fontWeight: '600' },
+  helper: { ...type.helper, color: colors.danger },
 });

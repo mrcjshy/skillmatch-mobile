@@ -1,7 +1,8 @@
 /**
  * BL-01D-UI COD payment contract.
  *
- * Payment happens AFTER completion (docs/DECISIONS.md, "Payment sequencing").
+ * Payment settles while a Booking is confirmed, before Client completion.
+ * Historically completed/pending Bookings remain payable for compatibility.
  * The Client chooses Cash on Delivery; the assigned Worker alone confirms that
  * cash actually changed hands. Those are two different actors and two different
  * server functions, and this module keeps that split intact on the client side.
@@ -59,12 +60,43 @@ export type BookingPayment = {
 };
 
 /**
- * Payment only exists after the service is finished. This gates every control;
- * both RPCs re-check `status = 'completed'` server-side and are what actually
- * decide.
+ * Forward-lifecycle confirmed and legacy completed Bookings may expose payment.
+ * Server RPCs re-check the lifecycle and remain authoritative.
  */
 export function isPayableStatus(bookingStatus: string): boolean {
-  return bookingStatus === 'completed';
+  return bookingStatus === 'confirmed' || bookingStatus === 'completed';
+}
+
+export type BookingActionPresentation = {
+  showPayment: boolean;
+  showCompletion: boolean;
+  showCancellation: boolean;
+};
+
+/**
+ * Fail-closed action projection from an authoritative payment read.
+ * QR Ph pending is already provider-bound by the database tuple invariant.
+ */
+export function bookingActionPresentation(
+  role: 'client' | 'worker',
+  bookingStatus: string,
+  payment: BookingPayment | undefined,
+  paymentReadSucceeded: boolean
+): BookingActionPresentation {
+  if (!paymentReadSucceeded || payment === undefined || !isPayableStatus(bookingStatus)) {
+    return { showPayment: false, showCompletion: false, showCancellation: false };
+  }
+  const confirmed = bookingStatus === 'confirmed';
+  const paid = payment.payment_status === 'paid';
+  const cancellable =
+    confirmed &&
+    payment.payment_status === 'pending' &&
+    (payment.payment_method === null || payment.payment_method === 'cod');
+  return {
+    showPayment: true,
+    showCompletion: role === 'client' && confirmed && paid,
+    showCancellation: cancellable,
+  };
 }
 
 /** The Client may still choose COD: no method picked, nothing settled. */

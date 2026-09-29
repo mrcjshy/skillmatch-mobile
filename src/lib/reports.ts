@@ -165,6 +165,14 @@ export const COPY = {
   dismiss: 'Dismiss',
   reviewing: 'Saving…',
   reviewSaved: 'Review saved.',
+  strikeAction: 'Resolve + Apply Strike',
+  striking: 'Applying strike…',
+  strikeConfirmTitle: 'Apply reviewed no-show strike?',
+  strikeConfirmBody:
+    'This resolves the report and adds one no-show strike to the reported Worker.',
+  strikeSuspendBody:
+    'This resolves the report, adds the third no-show strike, and suspends the Worker account.',
+  strikeSaved: 'No-show strike applied.',
   bookingForbidden: "You don't have permission to submit this report.",
   bookingConflict: 'This report cannot be submitted right now.',
   bookingInvalid: 'Description must be between 1 and 2000 characters.',
@@ -270,6 +278,18 @@ export type AdminReportDetail = {
   reviewed_at: string | null;
   created_at: string | null;
 };
+
+export type ReportDisciplineState = {
+  eligible: boolean;
+  currentStrikeCount: number | null;
+  wouldSuspend: boolean;
+};
+
+export function shouldShowStrikeAction(
+  state: ReportDisciplineState | null
+): state is ReportDisciplineState & { eligible: true } {
+  return state?.eligible === true;
+}
 
 function toNullableText(v: unknown): string | null {
   return typeof v === 'string' && v.trim() !== '' ? v : null;
@@ -418,6 +438,36 @@ export async function loadAdminReport(reportId: string): Promise<AdminReportDeta
   return detail;
 }
 
+export async function loadReportDisciplineState(
+  reportId: string
+): Promise<ReportDisciplineState> {
+  const res = await supabase.rpc('get_report_discipline_state', {
+    p_report_id: reportId,
+  });
+  if (res.error) throwRpcError(res.error);
+  const rows = Array.isArray(res.data) ? res.data : [];
+  const raw = rows[0] as Record<string, unknown> | undefined;
+  if (
+    raw === undefined ||
+    typeof raw.eligible !== 'boolean' ||
+    typeof raw.would_suspend !== 'boolean' ||
+    !(
+      raw.current_strike_count === null ||
+      (typeof raw.current_strike_count === 'number' &&
+        Number.isInteger(raw.current_strike_count) &&
+        raw.current_strike_count >= 0 &&
+        raw.current_strike_count <= 3)
+    )
+  ) {
+    throw new ReportError('this report discipline state is unavailable', CONFLICT);
+  }
+  return {
+    eligible: raw.eligible,
+    currentStrikeCount: raw.current_strike_count as number | null,
+    wouldSuspend: raw.would_suspend,
+  };
+}
+
 export type ReportBookingMessage = {
   message_id: string;
   sender_role: 'worker' | 'client';
@@ -457,6 +507,17 @@ export async function reviewReport(
   const res = await supabase.rpc('review_report', {
     p_report_id: reportId,
     p_status: status,
+    p_admin_response: adminResponse,
+  });
+  if (res.error) throwRpcError(res.error);
+}
+
+export async function resolveNoShowReportWithStrike(
+  reportId: string,
+  adminResponse: string
+): Promise<void> {
+  const res = await supabase.rpc('resolve_no_show_report_with_strike', {
+    p_report_id: reportId,
     p_admin_response: adminResponse,
   });
   if (res.error) throwRpcError(res.error);

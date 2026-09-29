@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
 import { AppCard, type AppCardTone } from '@/components/app-card';
@@ -15,16 +15,20 @@ import {
   REPORT_DESCRIPTION_MAX,
   ReportBookingMessage,
   ReportError,
+  ReportDisciplineState,
   ReviewStatus,
   allowedReviewStatuses,
   formatReportCategory,
   formatReportStatus,
   loadAdminReport,
+  loadReportDisciplineState,
   loadAdminReportErrorCopy,
   loadReportBookingMessages,
   remainingReportCharacters,
   reviewErrorCopy,
   reviewReport,
+  resolveNoShowReportWithStrike,
+  shouldShowStrikeAction,
   validateAdminResponse,
   isReportId,
 } from '@/lib/reports';
@@ -50,11 +54,13 @@ export default function AdminReportDetails() {
   const inFlight = useRef(false);
 
   const [detail, setDetail] = useState<AdminReportDetail | null>(null);
+  const [discipline, setDiscipline] = useState<ReportDisciplineState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [response, setResponse] = useState('');
   const [reviewingStatus, setReviewingStatus] = useState<ReviewStatus | null>(null);
+  const [isApplyingStrike, setIsApplyingStrike] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [evidence, setEvidence] = useState<ReportBookingMessage[] | null>(null);
@@ -68,7 +74,16 @@ export default function AdminReportDetails() {
       return;
     }
     const row = await loadAdminReport(reportId);
+    let nextDiscipline: ReportDisciplineState | null = null;
+    try {
+      nextDiscipline = await loadReportDisciplineState(reportId);
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message) {
+        console.warn('[FT-05] discipline state read failed:', e.message);
+      }
+    }
     setDetail(row);
+    setDiscipline(nextDiscipline);
     setLoadError(null);
   }, [reportId]);
 
@@ -197,6 +212,78 @@ export default function AdminReportDetails() {
     }
   }
 
+  function promptStrike() {
+    if (
+      inFlight.current ||
+      isApplyingStrike ||
+      reportId === null ||
+      !shouldShowStrikeAction(discipline)
+    ) {
+      return;
+    }
+    const validated = validateAdminResponse('resolved', response);
+    if (!validated.ok) {
+      setReviewError(
+        validated.reason === 'too_long' ? COPY.responseTooLong : COPY.responseRequired
+      );
+      return;
+    }
+    if (validated.response === null) {
+      setReviewError(COPY.responseRequired);
+      return;
+    }
+    const adminResponse = validated.response;
+    Alert.alert(
+      COPY.strikeConfirmTitle,
+      discipline.wouldSuspend ? COPY.strikeSuspendBody : COPY.strikeConfirmBody,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: COPY.strikeAction,
+          style: 'destructive',
+          onPress: () => {
+            void applyStrike(adminResponse);
+          },
+        },
+      ]
+    );
+  }
+
+  async function applyStrike(adminResponse: string) {
+    if (
+      inFlight.current ||
+      reportId === null ||
+      !shouldShowStrikeAction(discipline)
+    ) {
+      return;
+    }
+    inFlight.current = true;
+    setIsApplyingStrike(true);
+    setReviewError(null);
+    setNotice(null);
+    try {
+      await resolveNoShowReportWithStrike(reportId, adminResponse);
+      try {
+        await load();
+        setNotice(COPY.strikeSaved);
+        setResponse('');
+      } catch (e: unknown) {
+        if (e instanceof Error && e.message) {
+          console.warn('[FT-05] post-strike refresh failed:', e.message);
+        }
+        setNotice(COPY.refreshFailed);
+      }
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message) {
+        console.warn('[FT-05] strike RPC failed:', e.message);
+      }
+      setReviewError(reviewErrorCopy(e));
+    } finally {
+      inFlight.current = false;
+      setIsApplyingStrike(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <View style={styles.center}>
@@ -221,7 +308,7 @@ export default function AdminReportDetails() {
   const reviewedAt = formatDetailDateTime(detail.reviewed_at);
   const reviewTargets = allowedReviewStatuses(detail.status);
   const remaining = remainingReportCharacters(response);
-  const busy = reviewingStatus !== null;
+  const busy = reviewingStatus !== null || isApplyingStrike;
 
   return (
     <ScrollView
@@ -327,6 +414,15 @@ export default function AdminReportDetails() {
               />
             );
           })}
+          {shouldShowStrikeAction(discipline) ? (
+            <AppButton
+              variant="destructive"
+              label={isApplyingStrike ? COPY.striking : COPY.strikeAction}
+              loading={isApplyingStrike}
+              disabled={busy}
+              onPress={promptStrike}
+            />
+          ) : null}
         </AppCard>
       ) : null}
     </ScrollView>
