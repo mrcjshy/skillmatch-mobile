@@ -37,12 +37,20 @@ export function isProtectedProjectionReleased(
  * address/contact/actions. A completed snapshot is already suppressed.
  * Manual refresh and SUBSCRIBED reconnect also clear protected presentation
  * before reauthorization; an old confirmed snapshot is not fresh authority.
+ *
+ * The one exception is the first SUBSCRIBED catch-up of a subscription opened
+ * right after this screen's own authoritative confirmed read. That snapshot was
+ * just read, and the channel has not been lost, so blanking it only makes the
+ * contact and location flash away and return. The catch-up still re-reads; a
+ * Broadcast event, a lost channel, a focus return or a manual refresh still hide.
  */
 export function shouldSuppressProtectedBeforeRefresh(input: {
   reason: DetailsRefreshReason;
   displayedStatus: string | null;
+  initialCatchUp?: boolean;
 }): boolean {
   if (input.reason === 'status-changed') return true;
+  if (input.reason === 'subscribed' && input.initialCatchUp === true) return false;
   return input.displayedStatus === 'confirmed';
 }
 

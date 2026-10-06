@@ -136,8 +136,8 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     };
   }, [bookingId, role]);
 
-  const load = useCallback(async () => {
-    hideProtectedProjection();
+  const load = useCallback(async (options?: { preserveProtected?: boolean }) => {
+    if (options?.preserveProtected !== true) hideProtectedProjection();
     if (!focused.current || AppState.currentState !== 'active') return;
     const token = loadGate.current.start();
     if (bookingId === null || !UUID_PATTERN.test(bookingId)) {
@@ -320,16 +320,22 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     if (bookingId === null || !UUID_PATTERN.test(bookingId)) return;
     if (!isBookingStatusChangedListenStatus(listenStatus)) return;
 
-    const run = { cancelled: false, inFlight: false, pending: false };
+    const run = { cancelled: false, inFlight: false, pending: false, initialCatchUp: true };
     const revalidate = () => {
       if (run.cancelled) return;
-      hideProtectedProjection();
+      const preserveProtected = !shouldSuppressProtectedBeforeRefresh({
+        reason: 'subscribed',
+        displayedStatus: displayedStatusRef.current,
+        initialCatchUp: run.initialCatchUp,
+      });
+      run.initialCatchUp = false;
+      if (!preserveProtected) hideProtectedProjection();
       if (run.inFlight) {
         run.pending = true;
         return;
       }
       run.inFlight = true;
-      load()
+      load({ preserveProtected })
         .catch((error: unknown) => {
           if (error instanceof Error && error.message) {
             console.warn('[R6-8D-FIX] booking detail revalidate failed:', error.message);
