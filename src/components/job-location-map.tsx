@@ -117,6 +117,7 @@ export function WorkerOpportunityJobLocation({ location }: { location: Opportuni
       <Text style={styles.heading}>Job location</Text>
       <Text style={styles.body}>{location.address ?? 'Address unavailable for this saved job.'}</Text>
       <Text style={styles.help}>{formatLocation(location.barangay, location.city)}</Text>
+      <Text style={styles.help}>You can see this exact location because you currently qualify. Access may end if your eligibility changes.</Text>
       <WorkerJobLocationMapLibre key={`${location.pin.longitude}:${location.pin.latitude}`} pin={location.pin} />
     </View>
   );

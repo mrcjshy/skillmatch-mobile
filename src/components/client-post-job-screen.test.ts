@@ -12,6 +12,7 @@ import * as schedule from '../lib/job-posting-schedule';
 import * as wizard from '../lib/post-job-wizard';
 import * as skillSelection from '../lib/post-job-skill-selection';
 import * as submission from '../lib/client-post-job-submission';
+import * as canonicalLocation from '../lib/canonical-job-location';
 import { SANTA_ANA_PATEROS_INTERIOR_TEST_PIN } from '../lib/santa-ana-service-area';
 import { supabase } from '../lib/supabase';
 vi.mock('../lib/supabase', () => ({ supabase: { rpc: vi.fn(), storage: { from: vi.fn() } } }));
@@ -27,8 +28,9 @@ function harness(existing?: ReturnType<typeof createClientPostJobDraftOwner>) {
   let prevention: { enabled: boolean; callback: (value: any) => void };
   const jobs = { isLoading: false, loadError: null as string | null,
     skills: [{ id: 'primary', skill_name: 'Plumbing' }, { id: 'extra', skill_name: 'Electrical' }], refresh: vi.fn(async () => {}) };
-  const navigation = { dispatch: vi.fn() }, recent = vi.fn(async () => {});
-  const native: Props = { StyleSheet: { create: (value: any) => value }, Platform: { OS: 'android', select: (value: Props) => value.android ?? value.default } };
+  const navigation = { dispatch: vi.fn() }, recent = vi.fn(async (..._args: any[]) => {});
+  const session = { sessionLifetime: { ownerId: owner.ownerId, isCurrent: () => true }, sessionRevision: 0, isSessionRevisionCurrent: () => true };
+  const native: Props = { AppState: { currentState: 'active' }, StyleSheet: { create: (value: any) => value }, Platform: { OS: 'android', select: (value: Props) => value.android ?? value.default } };
   for (const name of ['KeyboardAvoidingView', 'Modal', 'Pressable', 'ScrollView', 'Text', 'TextInput', 'View']) native[name] = name;
   const jsx = (type: any, props: Props) => ({ type, props });
   function load(file: string, modules: Props) {
@@ -40,8 +42,8 @@ function harness(existing?: ReturnType<typeof createClientPostJobDraftOwner>) {
   }
   const theme = load('src/constants/theme.ts', { 'react-native': native, '@/global.css': {} });
   const modules: Props = {
-    react: { useState: (initial: any) => { const i = cursor++; if (!(i in state)) state[i] = initial;
-      return [state[i], (next: any) => { state[i] = typeof next === 'function' ? next(state[i]) : next; }]; }, useCallback: (fn: any) => fn },
+    react: { useState: (initial: any) => { const i = cursor++; if (!(i in state)) state[i] = typeof initial === 'function' ? initial() : initial;
+      return [state[i], (next: any) => { state[i] = typeof next === 'function' ? next(state[i]) : next; }]; }, useCallback: (fn: any) => fn, useLayoutEffect: (fn: any) => fn() },
     'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' }, 'react-native': native,
     'expo-router': { useNavigation: () => navigation, useFocusEffect: (fn: any) => { if (!cleanup) cleanup = fn(); } },
     'expo-router/react-navigation': { useHeaderHeight: () => 80, useIsFocused: () => focused, usePreventRemove: (enabled: boolean, callback: any) => { prevention = { enabled, callback }; } },
@@ -49,6 +51,9 @@ function harness(existing?: ReturnType<typeof createClientPostJobDraftOwner>) {
     '@/constants/theme': theme, '@/lib/date-time': dateTime, '@/lib/job-location': location, '@/lib/job-payment': payment,
     '@/lib/job-posting-schedule': schedule, '@/lib/post-job-wizard': wizard, '@/lib/post-job-skill-selection': skillSelection,
     '@/lib/client-post-job-submission': submission, '@/lib/recent-locations': { saveRecentLocation: recent },
+    '@/lib/canonical-job-location': canonicalLocation,
+    '@/providers/session-provider': { useSession: () => session },
+    '@/components/job-skill-suggestions-panel': { JobSkillSuggestionsPanel: 'JobSkillSuggestionsPanel' },
     '@/providers/client-post-job-draft-provider': { useClientPostJobDraft: () => owner },
     '@/providers/client-jobs-provider': { useClientJobs: () => jobs },
   };
@@ -61,7 +66,7 @@ function harness(existing?: ReturnType<typeof createClientPostJobDraftOwner>) {
   const find = (label: string) => all(render(), node => typeof node.props?.onPress === 'function' && (node.props.accessibilityLabel === label || node.props.label === label))[0];
   const control = (type: string) => all(render(), node => node.type === type)[0];
   const press = (label: string) => { const node = find(label); expect(node, label).toBeDefined(); return node.props.onPress(); };
-  return { owner, jobs, render, find, control, press, recent, navigation, theme,
+  return { owner, jobs, render, find, control, press, recent, navigation, theme, session,
     back: (type = 'GO_BACK') => { render(); const action = { type, payload: { count: 1 } }; if (prevention.enabled) prevention.callback({ data: { action } }); return { action, prevented: prevention.enabled }; },
     blur: () => { focused = false; cleanup?.(); render(); }, focus: () => { focused = true; render(); }, unmount: () => cleanup?.(),
     load, modules };
@@ -148,7 +153,7 @@ it('commits confirmed address and pin together and keeps old pair on picker Canc
   stale.props.onCancel(); expect(h.owner.draft.pin).toEqual(valid.pin); expect(h.owner.draft.address).toBe(valid.address);
   h.press('Change location'); const locationPicker = h.control('JobLocationPicker');
   const next = { address: 'New confirmed address', pin: { latitude: 14.5445, longitude: 121.0721 } };
-  locationPicker.props.onConfirm(next); expect(h.owner.draft).toMatchObject(next); expect(h.recent).toHaveBeenCalledWith(next);
+  locationPicker.props.onConfirm(next); expect(h.owner.draft).toMatchObject(next); expect(h.recent).toHaveBeenCalledWith(expect.objectContaining({userId: h.owner.ownerId, isCurrent: expect.any(Function)}), next);
   h.owner.dispose(); locationPicker.props.onConfirm(valid); expect(h.recent).toHaveBeenCalledTimes(1);
 });
 it('native Back decrements steps, busy consumes it, step one exits and non-Back preserves supplied action', () => {
@@ -285,3 +290,9 @@ it('A11Y-04: the location row names its action and carries the confirmed address
   // The address Text no longer carries its own (ignored) label; the row speaks for it.
   expect(all(row, node => node.props?.accessibilityLabel === 'Confirmed job address')).toHaveLength(0);
 });
+it('places explicit suggestions between description and manual skills only on Step 1', () => { const h=harness(); const tree=all(h.render(),node => ['AppField','JobSkillSuggestionsPanel','SkillCatalogPicker'].includes(node.type)); expect(tree.map(node=>node.type)).toEqual(['AppField','JobSkillSuggestionsPanel','SkillCatalogPicker']); expect(h.control('JobSkillSuggestionsPanel').props.owner.updateDraft).toBe(h.owner.updateDraft); h.owner.updateDraft({...valid,wizardStep:2}); expect(h.control('JobSkillSuggestionsPanel')).toBeUndefined(); });
+it('invalidates suggestion authority synchronously before description ABA and manual picker open/toggle/Done', () => { const h=harness(); h.owner.updateDraft(valid); h.owner.updateDraft({wizardStep:1}); const authority=h.control('JobSkillSuggestionsPanel').props.authority; const description=h.control('AppField').props.onChangeText; let previous=authority.revision; description('Other work'); description(valid.description); expect(authority.revision).toBeGreaterThan(previous); previous=authority.revision; h.press('Edit skills'); expect(authority.revision).toBeGreaterThan(previous); previous=authority.revision; h.control('SkillCatalogPicker').props.onToggleSkill('extra'); expect(authority.revision).toBeGreaterThan(previous); previous=authority.revision; h.press('Done'); expect(authority.revision).toBeGreaterThan(previous); expect(supabase.rpc).not.toHaveBeenCalled(); });
+it('invalidates suggestion authority synchronously before leaving Step 1 and on blur', () => { const h=harness(); h.owner.updateDraft(valid); const authority=h.control('JobSkillSuggestionsPanel').props.authority; let previous=authority.revision; h.press('Next'); expect(authority.revision).toBeGreaterThan(previous); previous=authority.revision; h.blur(); expect(authority.revision).toBeGreaterThan(previous); });
+it('scopes confirmed recents to captured lifetime and refuses an old scope after blur or session replacement', () => { const h=harness(); h.owner.updateDraft({...valid,wizardStep:2}); h.press('Change location'); h.control('JobLocationPicker').props.onConfirm({pin:valid.pin,address:canonicalLocation.JOB_LOCATION_DISPLAY_FALLBACK}); const scope=h.recent.mock.calls[0][0] as any; expect(scope.userId).toBe(h.owner.ownerId); expect(scope.isCurrent()).toBe(true); h.blur(); expect(scope.isCurrent()).toBe(false); h.focus(); expect(scope.isCurrent()).toBe(false); });
+it('discloses current eligible Worker access and labels fallback as general area rather than confirmed street', () => { const h=harness(); h.owner.updateDraft({...valid,wizardStep:2,address:canonicalLocation.JOB_LOCATION_DISPLAY_FALLBACK}); const subtitles=all(h.render(),node=>node.type==='SectionHeader').map(node=>node.props.subtitle).join(' '); expect(subtitles).toContain('currently qualify'); expect(subtitles).toContain('removed'); expect(h.find('Change location').props.accessibilityValue.text).toContain('General area'); });
+it('does not let retained confirmation write after focus ABA or foreground loss', () => { const h=harness(); h.owner.updateDraft({...valid,wizardStep:2}); h.press('Change location'); const old=h.control('JobLocationPicker').props.onConfirm; h.blur(); h.focus(); old({pin:valid.pin,address:'Stale replacement'}); expect(h.owner.draft.address).toBe(valid.address); expect(h.recent).not.toHaveBeenCalled(); h.press('Change location'); const current=h.control('JobLocationPicker').props.onConfirm; h.modules['react-native'].AppState.currentState='background'; current({pin:valid.pin,address:'Background replacement'}); expect(h.owner.draft.address).toBe(valid.address); expect(h.recent).not.toHaveBeenCalled(); });

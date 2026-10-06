@@ -71,12 +71,12 @@ export const COPY = {
   permissionDenied:
     'Location permission is off. You can still move the map under the center pin.',
   locationUnavailable: "Couldn't read your current location. Move the map under the center pin instead.",
-  geocodeUnavailable: "Street address couldn't be identified. The selected map location will be used.",
+  geocodeUnavailable: "Couldn't identify a street address. The selected pin will be saved with the general-area label shown above.",
   mapUnavailable: 'Map is unavailable. Posting requires a confirmed location pin.',
   forbidden: "You don't have permission to post a job.",
   invalid: 'Check the job details and selected location, then try again.',
   generic: "Couldn't post your job. Please try again.",
-  useCurrentLocation: 'Use current location',
+  useCurrentLocation: 'Use My Location',
   approximateHeading: 'Approximate job area',
   approximateCopy:
     'Approximate job area. Exact location becomes available after acceptance.',

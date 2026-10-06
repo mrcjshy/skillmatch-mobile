@@ -5,7 +5,7 @@ type PermissionSource = {
 };
 export type LocationPermissionState = 'granted' | 'request' | 'settings';
 
-/** Inspection never prompts. Only the explicit address-permission action may request. */
+/** Inspection never prompts. Only explicit Use My Location may request foreground permission. */
 export async function inspectLocationPermission(
   source: PermissionSource,
   explicitRequest = false,

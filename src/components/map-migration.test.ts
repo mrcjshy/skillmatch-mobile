@@ -23,7 +23,14 @@ function harness(file: string, nativeAvailable = true, dev = false) {
   const slots: unknown[] = [];
   let cursor = 0;
   const effects: (() => unknown)[] = [];
-  const appState = { currentState: 'active', addEventListener: vi.fn() };
+  const layoutEffects: (() => unknown)[] = [];
+  const timers: { callback: () => void; milliseconds: number; cancelled?: boolean }[] = [];
+  const userId = '11111111-1111-4111-8111-111111111111';
+  const authority: Props = {
+    session: { session: { user: { id: userId } }, sessionLifetime: { ownerId: userId, isCurrent: () => true }, sessionRevision: 1, isSessionRevisionCurrent: () => true, isSessionLoading: false, sessionError: null, recoveryStatus: 'idle', subscribeSessionLifecycle: vi.fn(() => () => undefined) },
+    account: { account: { id: userId, role: 'client', is_active: true }, status: 'resolved', hasCurrentConsent: true },
+  };
+  const appState = { currentState: 'active', addEventListener: vi.fn((_event: string, _listener: (state: string) => void) => ({ remove: vi.fn() })) };
   const geocoder = {
     reverseGeocodeAsync: vi.fn().mockResolvedValue([{ formattedAddress: 'Canonical selected address' }]),
     getForegroundPermissionsAsync: vi.fn().mockResolvedValue({ status: 'granted' }),
@@ -39,18 +46,32 @@ function harness(file: string, nativeAvailable = true, dev = false) {
       useState(initial: unknown) {
         const slot = cursor++;
         if (!(slot in slots)) slots[slot] = typeof initial === 'function' ? initial() : initial;
-        return [slots[slot], (value: unknown) => { slots[slot] = value; }];
+        return [slots[slot], (value: unknown) => { slots[slot] = typeof value === 'function' ? value(slots[slot]) : value; }];
       },
       useRef(initial: unknown) {
         const slot = cursor++;
         if (!(slot in slots)) slots[slot] = { current: initial };
         return slots[slot];
       },
-      useCallback: (callback: unknown) => callback,
-      useEffect(effect: () => unknown) { effects.push(effect); },
+      useCallback(callback: unknown, dependencies: unknown[]) {
+        const slot = cursor++;
+        const previous = slots[slot] as { dependencies: unknown[]; callback: unknown } | undefined;
+        if (!previous || dependencies.some((value, index) => value !== previous.dependencies[index])) slots[slot] = { dependencies, callback };
+        return (slots[slot] as { callback: unknown }).callback;
+      },
+      useEffect(effect: () => unknown, dependencies?: unknown[]) {
+        const slot = cursor++;
+        const previous = slots[slot] as { dependencies?: unknown[]; cleanup?: () => void } | undefined;
+        if (!previous || !dependencies || dependencies.some((value, index) => value !== previous.dependencies?.[index])) {
+          const current = { dependencies, cleanup: undefined as (() => void) | undefined };
+          slots[slot] = current;
+          effects.push(() => { previous?.cleanup?.(); current.cleanup = effect() as (() => void) | undefined; });
+        }
+      },
+      useLayoutEffect(effect: () => unknown) { layoutEffects.push(effect); },
     },
     'react/jsx-runtime': { jsx, jsxs: jsx },
-    'react-native': { AppState: appState, View: 'View', Text: 'Text', TextInput: 'TextInput', Pressable: 'Pressable', ScrollView: 'ScrollView', ActivityIndicator: 'ActivityIndicator', useWindowDimensions: () => ({ height: 900 }), StyleSheet: { create: (s: unknown) => s, absoluteFill: {}, hairlineWidth: 1 } },
+    'react-native': { AppState: appState, Linking: { openSettings: vi.fn().mockResolvedValue(undefined) }, View: 'View', Text: 'Text', TextInput: 'TextInput', Pressable: 'Pressable', ScrollView: 'ScrollView', ActivityIndicator: 'ActivityIndicator', useWindowDimensions: () => ({ height: 900 }), StyleSheet: { create: (s: unknown) => s, absoluteFill: {}, hairlineWidth: 1 } },
     tamagui: { Text: 'Text', YStack: 'YStack' },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24, bottom: 24 }) },
     '@/constants/theme': { SkillMatchTheme: { ui, border: {}, surface: {}, text: {}, feedback: {} } },
@@ -61,7 +82,9 @@ function harness(file: string, nativeAvailable = true, dev = false) {
     '@/lib/job-location-snap': snap,
     '@/lib/location-permission': permission,
     '@/lib/location-search': { LOCATION_SEARCH_DEBOUNCE_MS: 400, LOCATION_SEARCH_MIN_LENGTH: 3, searchPhoton: vi.fn() },
-    '@/lib/recent-locations': { loadRecentLocations: vi.fn().mockResolvedValue([]), clearRecentLocations: vi.fn() },
+    '@/lib/recent-locations': { loadRecentLocations: vi.fn().mockResolvedValue([]), clearRecentLocations: vi.fn().mockResolvedValue(undefined) },
+    '@/providers/session-provider': { useSession: () => authority.session },
+    '@/providers/account-provider': { useAccount: () => authority.account },
     '@/lib/bookings': { formatLocation: () => 'Santa Ana, Pateros' },
     '@/components/app-button': { AppButton: 'AppButton' },
     '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
@@ -75,13 +98,13 @@ function harness(file: string, nativeAvailable = true, dev = false) {
   const compiled = ts.transpileModule(readFileSync(resolve('src', file), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  runInNewContext(compiled, { exports, setTimeout: vi.fn(), clearTimeout: vi.fn(), __DEV__: dev, require: (name: string) => {
+  runInNewContext(compiled, { exports, AbortController, setTimeout: (callback: () => void, milliseconds: number) => { const timer = { callback, milliseconds }; timers.push(timer); return timer; }, clearTimeout: (timer: { cancelled?: boolean }) => { if (timer) timer.cancelled = true; }, __DEV__: dev, require: (name: string) => {
       if (name === '@/components/refinement-theme') return { useUiTheme: () => (modules['@/constants/theme'] as { SkillMatchTheme: { ui: unknown } }).SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children };
     if (!nativeAvailable && name === '@maplibre/maplibre-react-native') throw new Error('Native module unavailable');
     if (!(name in modules)) throw new Error(`Unexpected import: ${name}`);
     return modules[name];
   } });
-  return { exports, geocoder, effects, appState, render: (component: (props: Props) => Element, props: Props) => { cursor = 0; return component(props); } };
+  return { exports, geocoder, effects, appState, modules, authority, flushEffects: () => { effects.splice(0).forEach(effect => effect()); }, runSearchTimers: () => { timers.splice(0).filter(timer => timer.milliseconds === 400 && !timer.cancelled).forEach(timer => timer.callback()); }, render: (component: (props: Props) => Element, props: Props) => { cursor = 0; const tree = component(props); layoutEffects.splice(0).forEach(effect => effect()); return tree; } };
 }
 
 function all(tree: Element | null, predicate: (node: Element) => boolean): Element[] {
@@ -96,6 +119,274 @@ const region = (center: { longitude: number; latitude: number }, userInteraction
 });
 
 describe('migrated map source event contracts', () => {
+  it.each([
+    ['cross-account', 'success'], ['cross-account', 'failure'],
+    ['new-lifetime', 'success'], ['new-lifetime', 'failure'],
+    ['sign-out-relogin', 'success'], ['sign-out-relogin', 'failure'],
+  ])('keeps prior search input/request private after %s and late %s, while successor search works', async (replacement, outcome) => {
+    const h = harness('components/job-location-picker.tsx');
+    const search = (h.modules['@/lib/location-search'] as Props).searchPhoton;
+    let finish!: () => void;
+    search.mockImplementationOnce(() => new Promise((resolve, reject) => { finish = () => outcome === 'success' ? resolve([{ label: 'Prior owner result', pin }]) : reject(new Error('Prior owner failure')); }));
+    search.mockResolvedValue([{ label: 'Successor result', pin }]);
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    byType(render(), 'TextInput').props.onChangeText('Private account A destination');
+    render(); h.flushEffects(); h.runSearchTimers();
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    const originalSession = h.authority.session;
+    if (replacement === 'sign-out-relogin') {
+      h.authority.session = { ...originalSession, session: null, sessionLifetime: null, sessionRevision: 2 };
+      h.authority.account = { ...h.authority.account, account: null, status: 'idle' };
+      expect(byType(render(), 'TextInput').props.value).toBe('');
+      h.flushEffects();
+    }
+    const nextId = replacement === 'cross-account' ? '22222222-2222-4222-8222-222222222222' : originalSession.session.user.id;
+    h.authority.session = { ...originalSession, session: { user: { id: nextId } }, sessionLifetime: { ownerId: nextId, isCurrent: () => true }, sessionRevision: replacement === 'sign-out-relogin' ? 3 : 2 };
+    h.authority.account = { ...h.authority.account, account: { id: nextId, role: 'client', is_active: true }, status: 'resolved' };
+    const transitionedInput = byType(render(), 'TextInput');
+    h.flushEffects(); h.runSearchTimers();
+    await Promise.resolve(); await Promise.resolve();
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(transitionedInput.props.value).toBe('');
+    expect(byType(render(), 'TextInput').props.value).toBe('');
+    finish(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(all(render(), n => n.props.accessibilityLabel === 'Search result Prior owner result')).toHaveLength(0);
+    expect(all(render(), n => n.props.label === 'Retry search')).toHaveLength(0);
+    byType(render(), 'TextInput').props.onChangeText('Successor destination');
+    render(); h.flushEffects(); h.runSearchTimers();
+    await vi.waitFor(() => expect(all(render(), n => n.props.accessibilityLabel === 'Search result Successor result')).toHaveLength(1));
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(search.mock.calls[1][0]).toBe('Successor destination');
+    expect(byType(render(), 'TextInput').props.value).toBe('Successor destination');
+  });
+  it.each(['cross-account', 'new-lifetime', 'later-pin', 'away-and-back'])('never revives a retained Choose after %s and lets the current action confirm', async replacement => {
+    const h = harness('components/job-location-picker.tsx');
+    const onConfirmA = vi.fn();
+    const onConfirmB = vi.fn();
+    let props = { pin: null, note: null, onNote: vi.fn(), onConfirm: onConfirmA };
+    const render = () => h.render(h.exports.JobLocationPicker, props);
+    render(); h.flushEffects();
+    byType(render(), 'Map').props.onRegionDidChange(region(pin));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    const oldChoose = confirmButton(render());
+    props = { ...props, onConfirm: onConfirmB };
+    if (replacement === 'cross-account' || replacement === 'new-lifetime') {
+      const nextId = replacement === 'cross-account' ? '22222222-2222-4222-8222-222222222222' : h.authority.session.session.user.id;
+      h.authority.session = { ...h.authority.session, session: { user: { id: nextId } }, sessionLifetime: { ownerId: nextId, isCurrent: () => true }, sessionRevision: 2 };
+      h.authority.account = { ...h.authority.account, account: { id: nextId, role: 'client', is_active: true } };
+    }
+    render(); h.flushEffects();
+    const nextPin = { ...pin, longitude: pin.longitude + 0.0003 };
+    byType(render(), 'Map').props.onRegionDidChange(region(nextPin));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    let expectedPin = nextPin;
+    if (replacement === 'away-and-back') {
+      byType(render(), 'Map').props.onRegionDidChange(region(pin));
+      await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+      expectedPin = pin;
+    }
+    oldChoose.props.onPress();
+    expect(onConfirmA).not.toHaveBeenCalled();
+    expect(onConfirmB).not.toHaveBeenCalled();
+    confirmButton(render()).props.onPress();
+    expect(onConfirmB).toHaveBeenCalledExactlyOnceWith({ pin: expectedPin, address: 'Canonical selected address' });
+  });
+  it.each(['success', 'failure'])('ignores an obsolete search %s after query replacement or shortening', async outcome => {
+    const h = harness('components/job-location-picker.tsx');
+    const search = (h.modules['@/lib/location-search'] as Props).searchPhoton;
+    let finish!: () => void;
+    search.mockImplementationOnce(() => new Promise((resolve, reject) => { finish = () => outcome === 'success' ? resolve([{ label: 'Obsolete', pin }]) : reject(new Error('Obsolete failure')); }));
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    byType(render(), 'TextInput').props.onChangeText('first'); render(); h.flushEffects(); h.runSearchTimers();
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    byType(render(), 'TextInput').props.onChangeText('ab'); render();
+    finish(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(all(render(), n => n.props.accessibilityLabel === 'Search result Obsolete')).toHaveLength(0);
+    expect(all(render(), n => n.props.label === 'Retry search')).toHaveLength(0);
+    expect(all(render(), n => n.props.accessibilityLabel === 'Searching locations')).toHaveLength(0);
+  });
+
+  it('hides suggestions and rejects old search row callbacks when authenticated authority changes', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    (h.modules['@/lib/location-search'] as Props).searchPhoton.mockResolvedValueOnce([{ label: 'Account A query result', pin }]);
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    const easeTo = vi.fn();
+    byType(render(), 'Camera').props.ref.current = { easeTo };
+    byType(render(), 'TextInput').props.onChangeText('first'); render(); h.flushEffects(); h.runSearchTimers();
+    await vi.waitFor(() => expect(all(render(), n => n.props.accessibilityLabel === 'Search result Account A query result')).toHaveLength(1));
+    const oldRow = all(render(), n => n.props.accessibilityLabel === 'Search result Account A query result')[0];
+    h.authority.session = { ...h.authority.session, sessionLifetime: { ownerId: h.authority.session.session.user.id, isCurrent: () => true }, sessionRevision: 2 };
+    expect(all(render(), n => n.props.accessibilityLabel === 'Search result Account A query result')).toHaveLength(0);
+    h.flushEffects();
+    oldRow.props.onPress();
+    expect(easeTo).not.toHaveBeenCalled();
+  });
+  it('rejects account A loads and captured Clear callbacks after switching to account B', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    const storage = h.modules['@/lib/recent-locations'] as Props;
+    storage.loadRecentLocations.mockResolvedValueOnce([{ pin, address: 'Account A destination', timestamp: Date.now() }]);
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    render(); h.flushEffects();
+    await vi.waitFor(() => expect(all(render(), n => n.props.accessibilityLabel === 'Recent location Account A destination')).toHaveLength(1));
+    const oldClear = all(render(), n => n.props.accessibilityLabel === 'Clear recent locations')[0];
+    const bId = '22222222-2222-4222-8222-222222222222';
+    h.authority.session = { ...h.authority.session, session: { user: { id: bId } }, sessionLifetime: { ownerId: bId, isCurrent: () => true }, sessionRevision: 2 };
+    h.authority.account = { ...h.authority.account, account: { id: bId, role: 'client', is_active: true } };
+    expect(all(render(), n => n.props.accessibilityLabel === 'Recent location Account A destination')).toHaveLength(0);
+    h.flushEffects();
+    oldClear.props.onPress();
+    expect(storage.clearRecentLocations).not.toHaveBeenCalled();
+    expect(storage.loadRecentLocations.mock.calls.at(-1)[0].userId).toBe(bId);
+  });
+  it('opens without foreground permission or GPS and requests only on explicit Use My Location', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    h.geocoder.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied', canAskAgain: true });
+    h.geocoder.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'denied', canAskAgain: true });
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    render(); h.flushEffects();
+    expect(h.geocoder.getForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(h.geocoder.getCurrentPositionAsync).not.toHaveBeenCalled();
+    all(render(), n => n.props.accessibilityLabel === 'Use My Location')[0].props.onPress();
+    await vi.waitFor(() => expect(h.geocoder.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(1));
+    expect(h.geocoder.getCurrentPositionAsync).not.toHaveBeenCalled();
+    byType(render(), 'Map').props.onRegionDidChange(region(pin));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+  });
+
+  it('hides recents immediately on Clear, reports deletion failure and supports owner-scoped retry', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    const storage = h.modules['@/lib/recent-locations'] as Props;
+    storage.loadRecentLocations.mockResolvedValueOnce([{ pin, address: 'Saved destination', timestamp: Date.now() }]);
+    storage.clearRecentLocations.mockRejectedValueOnce(new Error('Deletion unavailable'));
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    render(); h.flushEffects();
+    await vi.waitFor(() => expect(all(render(), n => n.props.accessibilityLabel === 'Recent location Saved destination')).toHaveLength(1));
+    all(render(), n => n.props.accessibilityLabel === 'Clear recent locations')[0].props.onPress();
+    expect(all(render(), n => n.props.accessibilityLabel === 'Recent location Saved destination')).toHaveLength(0);
+    await vi.waitFor(() => expect(all(render(), n => n.props.message === "Couldn't clear saved recents. Try again.")).toHaveLength(1));
+    all(render(), n => n.props.label === 'Retry clear')[0].props.onPress();
+    await Promise.resolve();
+    expect(storage.clearRecentLocations).toHaveBeenCalledTimes(2);
+    expect(storage.clearRecentLocations.mock.calls[0][0].userId).toBe('11111111-1111-4111-8111-111111111111');
+    expect(all(render(), n => n.props.message === "Couldn't clear saved recents. Try again.")).toHaveLength(0);
+  });
+
+  it('selects a recent pin through fresh geocoding without treating its saved label as canonical', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    (h.modules['@/lib/recent-locations'] as Props).loadRecentLocations.mockResolvedValueOnce([{ pin, address: 'Old street', timestamp: Date.now() }]);
+    h.geocoder.reverseGeocodeAsync.mockRejectedValueOnce(new Error('Unavailable'));
+    const props = { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() };
+    const render = () => h.render(h.exports.JobLocationPicker, props);
+    const easeTo = vi.fn();
+    byType(render(), 'Camera').props.ref.current = { easeTo };
+    h.flushEffects();
+    await vi.waitFor(() => expect(all(render(), n => n.props.accessibilityLabel === 'Recent location Old street')).toHaveLength(1));
+    all(render(), n => n.props.accessibilityLabel === 'Recent location Old street')[0].props.onPress();
+    expect(easeTo).toHaveBeenCalledWith({ center: [pin.longitude, pin.latitude], zoom: snap.SNAP_MIN_ZOOM, duration: 300 });
+    expect(props.onConfirm).not.toHaveBeenCalled();
+    byType(render(), 'Map').props.onRegionDidChange(region(pin, false));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    confirmButton(render()).props.onPress();
+    expect(props.onConfirm).toHaveBeenCalledWith({ pin, address: 'Selected Job location — Santa Ana, Pateros' });
+  });
+
+  it('does not let an old ready selection confirm after account replacement before effects', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    const props = { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() };
+    const render = () => h.render(h.exports.JobLocationPicker, props);
+    byType(render(), 'Map').props.onRegionDidChange(region(pin));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    const oldChoose = confirmButton(render());
+    h.authority.session = { ...h.authority.session, sessionLifetime: { ownerId: h.authority.session.session.user.id, isCurrent: () => true }, sessionRevision: 2 };
+    render();
+    oldChoose.props.onPress();
+    expect(props.onConfirm).not.toHaveBeenCalled();
+  });
+  it('rejects a delayed GPS success after the Client lifetime changes before effects run', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    let finish!: (value: { coords: typeof pin }) => void;
+    h.geocoder.getCurrentPositionAsync.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    const easeTo = vi.fn();
+    byType(render(), 'Camera').props.ref.current = { easeTo };
+    all(render(), n => n.props.accessibilityLabel === location.COPY.useCurrentLocation)[0].props.onPress();
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    h.authority.session = { ...h.authority.session, sessionLifetime: { ownerId: h.authority.session.session.user.id, isCurrent: () => true }, sessionRevision: 2 };
+    render();
+    finish({ coords: pin });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(easeTo).not.toHaveBeenCalled();
+  });
+  it('discloses current eligible exact access only while the Worker opportunity location exists', () => {
+    const h = harness('components/job-location-map.tsx');
+    const props = { location: { pin, address: 'Authorized', barangay: 'Santa Ana', city: 'Pateros' } };
+    const copy = 'You can see this exact location because you currently qualify. Access may end if your eligibility changes.';
+    expect(all(h.render(h.exports.WorkerOpportunityJobLocation, props), n => n.props.children === copy)).toHaveLength(1);
+    expect(all(h.render(h.exports.WorkerOpportunityJobLocation, { location: null }), n => n.props.children === copy)).toHaveLength(0);
+  });
+  it('rejects an account A recent load after A logs in again under a new lifetime', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    const storage = h.modules['@/lib/recent-locations'] as Props;
+    let finish!: (rows: unknown[]) => void;
+    storage.loadRecentLocations.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    render(); h.flushEffects();
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    const oldScope = storage.loadRecentLocations.mock.calls[0][0];
+    expect(oldScope?.userId).toBe('11111111-1111-4111-8111-111111111111');
+    expect(oldScope.isCurrent()).toBe(true);
+    h.authority.session = { ...h.authority.session, sessionLifetime: { ownerId: h.authority.session.session.user.id, isCurrent: () => true }, sessionRevision: 2 };
+    render(); h.flushEffects();
+    finish([{ pin, address: 'Old lifetime destination', timestamp: Date.now() }]);
+    await Promise.resolve(); await Promise.resolve();
+    expect(oldScope.isCurrent()).toBe(false);
+    expect(all(render(), n => n.props.accessibilityLabel === 'Recent location Old lifetime destination')).toHaveLength(0);
+  });
+  it('clears old suggestions immediately and retries unavailable search without altering the confirmed candidate', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    const search = (h.modules['@/lib/location-search'] as Props).searchPhoton;
+    search.mockResolvedValueOnce([{ label: 'Old result', pin }]);
+    const props = { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() };
+    const render = () => h.render(h.exports.JobLocationPicker, props);
+    byType(render(), 'Map').props.onRegionDidChange(region(pin));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    byType(render(), 'TextInput').props.onChangeText('first'); render(); h.flushEffects(); h.runSearchTimers();
+    await vi.waitFor(() => expect(all(render(), n => n.props.accessibilityLabel === 'Search result Old result')).toHaveLength(1));
+    byType(render(), 'TextInput').props.onChangeText('second');
+    expect(all(render(), n => n.props.accessibilityLabel === 'Search result Old result')).toHaveLength(0);
+    search.mockRejectedValueOnce(new Error('Unavailable'));
+    render(); h.flushEffects(); h.runSearchTimers();
+    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Retry search')).toHaveLength(1));
+    search.mockResolvedValueOnce([{ label: 'Fresh result', pin }]);
+    all(render(), n => n.props.label === 'Retry search')[0].props.onPress();
+    render(); h.flushEffects(); h.runSearchTimers();
+    await vi.waitFor(() => expect(all(render(), n => n.props.accessibilityLabel === 'Search result Fresh result')).toHaveLength(1));
+    confirmButton(render()).props.onPress();
+    expect(props.onConfirm).toHaveBeenCalledWith({ pin, address: 'Canonical selected address' });
+    expect(h.geocoder.getForegroundPermissionsAsync).not.toHaveBeenCalled();
+  });
+  it('retries the same fallback pin without permission and explains the general-area metadata', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    h.geocoder.reverseGeocodeAsync.mockRejectedValueOnce(new Error('Unavailable'));
+    const props = { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() };
+    const render = () => h.render(h.exports.JobLocationPicker, props);
+    byType(render(), 'Map').props.onRegionDidChange(region(pin));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    expect(all(render(), n => n.props.message === "Couldn't identify a street address. The selected pin will be saved with the general-area label shown above.")).toHaveLength(1);
+    const retry = all(render(), n => n.props.label === 'Retry address')[0];
+    expect(retry).toBeDefined();
+    let reply!: (rows: { formattedAddress: string }[]) => void;
+    h.geocoder.reverseGeocodeAsync.mockImplementationOnce(() => new Promise(resolve => { reply = resolve; }));
+    retry.props.onPress();
+    await vi.waitFor(() => expect(reply).toBeTypeOf('function'));
+    expect(confirmButton(render()).props.disabled).toBe(true);
+    reply([{ formattedAddress: 'Retry street' }]);
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    confirmButton(render()).props.onPress();
+    expect(props.onConfirm).toHaveBeenCalledWith({ pin, address: 'Retry street' });
+    expect(h.geocoder.getForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(h.geocoder.getCurrentPositionAsync).not.toHaveBeenCalled();
+  });
   it('resolves the retained candidate on foreground without requiring permission', async () => {
     const h = harness('components/job-location-picker.tsx');
     let change!: (state: string) => void;
@@ -135,6 +426,8 @@ describe('migrated map source event contracts', () => {
     await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
     await all(render(), n => n.props.accessibilityLabel === location.COPY.useCurrentLocation)[0].props.onPress();
     await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Open settings')).toHaveLength(1));
+    all(render(), n => n.props.label === 'Open settings')[0].props.onPress();
+    expect((h.modules['react-native'] as Props).Linking.openSettings).toHaveBeenCalledTimes(1);
     expect(confirmButton(render()).props.disabled).toBe(false);
     expect(h.geocoder.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
   });
@@ -198,7 +491,7 @@ describe('migrated map source event contracts', () => {
     byType(render(), 'Map').props.onRegionDidChange(region(moved));
     await vi.waitFor(() => expect(all(render(), n => n.type === 'Text' && n.props.children === 'Selected Job location — Santa Ana, Pateros')).toHaveLength(1));
     expect(confirmButton(render()).props.disabled).toBe(false);
-    expect(all(render(), n => n.props.message === "Street address couldn't be identified. The selected map location will be used.")).toHaveLength(1);
+    expect(all(render(), n => n.props.message === "Couldn't identify a street address. The selected pin will be saved with the general-area label shown above.")).toHaveLength(1);
     confirmButton(render()).props.onPress();
     expect(props.onConfirm).toHaveBeenCalledWith({ pin: moved, address: 'Selected Job location — Santa Ana, Pateros' });
   });

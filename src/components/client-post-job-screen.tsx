@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useLayoutEffect, useState } from 'react';
 import {
+  AppState,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -21,6 +22,7 @@ import { AppSymbol } from '@/components/app-symbol';
 import { FactRow } from '@/components/fact-row';
 import { InlineStatus } from '@/components/inline-status';
 import { JobPhotoPicker } from '@/components/job-photo-picker';
+import { JobSkillSuggestionsPanel } from '@/components/job-skill-suggestions-panel';
 import { JobLocationPicker } from '@/components/job-location-picker';
 import { JobSchedulePicker } from '@/components/job-schedule-picker';
 import { RadioRow } from '@/components/radio-row';
@@ -41,6 +43,8 @@ import { canAddPostJobSkill, orderedPostJobSkillIds, postJobSkillRole, togglePos
 import { type CatalogSkill } from '@/lib/skill-catalog';
 import { validatePostJobWizardStep, type PostJobWizardStep } from '@/lib/post-job-wizard';
 import { saveRecentLocation } from '@/lib/recent-locations';
+import { JOB_LOCATION_DISPLAY_FALLBACK } from '@/lib/canonical-job-location';
+import { useSession } from '@/providers/session-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
 
 /** Dedicated posting UI; committed values and operation lifetime belong to the Client draft provider. */
@@ -100,6 +104,7 @@ function orderedSelectedSkills(
 
 export function ClientPostJobScreen() {
   const owner = useClientPostJobDraft();
+  const session = useSession();
   const { draft, isPosting } = owner;
   const { description, address, pin, locationNote, scheduleDate, scheduleTime, budgetText, feePreset, paymentMethod, primarySkillId, additionalSkillIds, modalQuery, modalPrimaryId, modalAdditionalIds, jobPhotos, wizardStep, postError, postSuccess, photoError } = draft;
   const navigation = useNavigation();
@@ -109,10 +114,14 @@ export function ClientPostJobScreen() {
   const { isLoading, loadError, skills, refresh } = useClientJobs();
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [skillsModalVisible, setSkillsModalVisible] = useState(false);
+  const [suggestionAuthority] = useState(() => ({ revision: 0 }));
+  const [locationAuthority] = useState(() => ({ focused: true, generation: 0, owner, session }));
+  useLayoutEffect(() => { locationAuthority.focused = isFocused; locationAuthority.owner = owner; locationAuthority.session = session; }, [locationAuthority, isFocused, owner, session]);
+  function invalidateSuggestions() { suggestionAuthority.revision++; }
   function setField<K extends keyof ClientPostJobDraft>(key: K, value: ClientPostJobDraft[K] | ((previous: ClientPostJobDraft[K]) => ClientPostJobDraft[K])) {
     owner.updateDraft(previous => ({ [key]: typeof value === 'function' ? value(previous[key]) : value }));
   }
-  const setDescription = (value: ClientPostJobDraft['description'] | ((previous: ClientPostJobDraft['description']) => ClientPostJobDraft['description'])) => setField('description', value);
+  const setDescription = (value: ClientPostJobDraft['description'] | ((previous: ClientPostJobDraft['description']) => ClientPostJobDraft['description'])) => { invalidateSuggestions(); setField('description', value); };
   const setLocationNote = (value: ClientPostJobDraft['locationNote'] | ((previous: ClientPostJobDraft['locationNote']) => ClientPostJobDraft['locationNote'])) => setField('locationNote', value);
   const setScheduleDate = (value: ClientPostJobDraft['scheduleDate'] | ((previous: ClientPostJobDraft['scheduleDate']) => ClientPostJobDraft['scheduleDate'])) => setField('scheduleDate', value);
   const setScheduleTime = (value: ClientPostJobDraft['scheduleTime'] | ((previous: ClientPostJobDraft['scheduleTime']) => ClientPostJobDraft['scheduleTime'])) => setField('scheduleTime', value);
@@ -120,13 +129,16 @@ export function ClientPostJobScreen() {
   const setFeePreset = (value: ClientPostJobDraft['feePreset'] | ((previous: ClientPostJobDraft['feePreset']) => ClientPostJobDraft['feePreset'])) => setField('feePreset', value);
   const setPaymentMethod = (value: ClientPostJobDraft['paymentMethod'] | ((previous: ClientPostJobDraft['paymentMethod']) => ClientPostJobDraft['paymentMethod'])) => setField('paymentMethod', value);
   const setModalQuery = (value: ClientPostJobDraft['modalQuery'] | ((previous: ClientPostJobDraft['modalQuery']) => ClientPostJobDraft['modalQuery'])) => setField('modalQuery', value);
-  const setJobPhotos = (value: ClientPostJobDraft['jobPhotos'] | ((previous: ClientPostJobDraft['jobPhotos']) => ClientPostJobDraft['jobPhotos'])) => setField('jobPhotos', value);
+  const setJobPhotos = (value: ClientPostJobDraft['jobPhotos'] | ((previous: ClientPostJobDraft['jobPhotos']) => ClientPostJobDraft['jobPhotos'])) => { invalidateSuggestions(); setField('jobPhotos', value); };
   const setWizardStep = (value: ClientPostJobDraft['wizardStep'] | ((previous: ClientPostJobDraft['wizardStep']) => ClientPostJobDraft['wizardStep'])) => setField('wizardStep', value);
   const setPostError = (value: ClientPostJobDraft['postError'] | ((previous: ClientPostJobDraft['postError']) => ClientPostJobDraft['postError'])) => setField('postError', value);
   useFocusEffect(useCallback(() => () => {
+    suggestionAuthority.revision++;
+    locationAuthority.focused = false;
+    locationAuthority.generation++;
     setLocationPickerVisible(false);
     setSkillsModalVisible(false);
-  }, []));
+  }, [suggestionAuthority, locationAuthority]));
   usePreventRemove(isFocused && owner.isOwnerCurrent() && (wizardStep > 1 || isPosting) && !locationPickerVisible && !skillsModalVisible, ({ data }) => {
     if (!owner.isOwnerCurrent() || (data.action.type !== 'GO_BACK' && data.action.type !== 'POP')) {
       navigation.dispatch(data.action);
@@ -143,6 +155,7 @@ export function ClientPostJobScreen() {
   const modalSelection = { primarySkillId: modalPrimaryId, additionalSkillIds: modalAdditionalIds };
 
   function openSkillsModal() {
+    invalidateSuggestions();
     owner.updateDraft({
       modalPrimaryId: primarySkillId,
       modalAdditionalIds: uniqueSkillIds(additionalSkillIds, knownSkillIds, primarySkillId),
@@ -152,11 +165,13 @@ export function ClientPostJobScreen() {
   }
 
   function closeSkillsModal() {
+    invalidateSuggestions();
     setSkillsModalVisible(false);
     setModalQuery('');
   }
 
   function confirmSkillsModal() {
+    invalidateSuggestions();
     const ordered = orderedPostJobSkillIds(modalSelection).filter((id) => knownSkillIds.has(id));
     owner.updateDraft({ primarySkillId: ordered[0] ?? null, additionalSkillIds: ordered.slice(1) });
     closeSkillsModal();
@@ -164,6 +179,7 @@ export function ClientPostJobScreen() {
 
   /** One list: the first skill chosen is the primary, the next the secondary, no third; tapping again removes. */
   function toggleModalSkill(skillId: string) {
+    invalidateSuggestions();
     owner.updateDraft((previous) => {
       const next = togglePostJobSkill({ primarySkillId: previous.modalPrimaryId, additionalSkillIds: previous.modalAdditionalIds }, skillId);
       return { modalPrimaryId: next.primarySkillId, modalAdditionalIds: next.additionalSkillIds };
@@ -208,22 +224,26 @@ export function ClientPostJobScreen() {
       return;
     }
     setPostError(null);
+    invalidateSuggestions();
     setWizardStep((wizardStep + 1) as PostJobWizardStep);
   }
 
   function goToPreviousStep() {
     if (busy || !owner.isOwnerCurrent() || wizardStep <= 1) return;
+    invalidateSuggestions();
     owner.updateDraft({ postError: null, wizardStep: (wizardStep - 1) as PostJobWizardStep });
   }
 
   async function handlePost() {
     if (isLoading || loadError || !isFocused || !owner.isOwnerCurrent()) return;
+    invalidateSuggestions();
     await submitClientPostJob({ owner, skills, refresh });
   }
 
   const busy = isPosting;
   const budgetLabel = budgetText.trim() ? `₱${budgetText.trim()}` : 'Not specified';
   const showDock = wizardStep === 4 && !isLoading && !loadError;
+  const locationGeneration = locationAuthority.generation;
 
   return (
     <KeyboardAvoidingView style={styles.flex} behavior="padding" keyboardVerticalOffset={headerHeight}>
@@ -254,9 +274,7 @@ export function ClientPostJobScreen() {
                 <Text accessibilityRole="header" style={styles.stepTitle}>{STEP_TITLES[wizardStep]}</Text>
               </View>
 
-              {/* Step 1. The description, then the skills it implies. A future
-                  description -> optional photo -> suggested-skill block belongs between
-                  these two sections; the manual skill choice below stays authoritative. */}
+              {/* Step 1 retains manual skill authority after optional reviewed suggestions. */}
               {wizardStep === 1 ? <View style={styles.section} accessibilityLabel="Job details">
                 <SectionHeader title="Describe the job" />
                 <AppField
@@ -271,6 +289,8 @@ export function ClientPostJobScreen() {
                   accessibilityLabel="Description"
                 />
               </View> : null}
+
+              {wizardStep === 1 ? <JobSkillSuggestionsPanel owner={owner} skills={skills} focused={isFocused} authority={suggestionAuthority} /> : null}
 
               {wizardStep === 1 ? <View style={styles.section} accessibilityLabel="Required skills">
                 <SectionHeader title="Required skills" subtitle="Choose up to two skills. The first is the primary skill and the second the secondary." />
@@ -305,7 +325,7 @@ export function ClientPostJobScreen() {
               {/* Step 2. Location surface: a later map region (centre pin, recenter,
                   explicit confirm) sits above this row without changing the step. */}
               {wizardStep === 2 ? <View style={styles.section} accessibilityLabel="Location and Photos">
-                <SectionHeader title="Service location" subtitle="Workers see only the general area until they accept." />
+                <SectionHeader title="Service location" subtitle="The exact service location is shared with workers who currently qualify for this job so they can decide whether to accept it. Access is removed if they are no longer eligible." />
                 <SurfaceGroup>
                   <Pressable
                     style={({ pressed }) => [styles.choiceRow, pressed && styles.choiceRowPressed]}
@@ -315,12 +335,12 @@ export function ClientPostJobScreen() {
                     accessibilityLabel={pin && address ? 'Change location' : 'Choose location'}
                     // The label names the action; the value carries what the row shows, so the
                     // confirmed address is heard ("Change location, Confirmed address: …").
-                    accessibilityValue={{ text: address ? `Confirmed address: ${address}` : 'No location selected' }}
+                    accessibilityValue={{ text: address ? `${address === JOB_LOCATION_DISPLAY_FALLBACK ? 'General area' : 'Confirmed address'}: ${address}` : 'No location selected' }}
                     accessibilityState={{ disabled: busy }}
                   >
                     <AppSymbol name={{ android: 'location_on', ios: 'mappin' }} size={size.icon} tintColor={colors.accent} />
                     <View style={styles.choiceCopy}>
-                      <Text style={styles.choiceLabel}>Confirmed address</Text>
+                      <Text style={styles.choiceLabel}>{address === JOB_LOCATION_DISPLAY_FALLBACK ? 'General area (selected pin confirmed)' : 'Confirmed address'}</Text>
                       <Text style={address ? styles.choiceValue : styles.choicePlaceholder}>
                         {address || 'No location selected'}
                       </Text>
@@ -504,9 +524,20 @@ export function ClientPostJobScreen() {
             onNote={setLocationNote}
             onCancel={() => setLocationPickerVisible(false)}
             onConfirm={(location) => {
-              if (!isFocused || !owner.updateDraft({ pin: location.pin, address: location.address })) return;
+              if (!isFocused || !locationAuthority.focused || locationAuthority.generation !== locationGeneration || AppState.currentState !== 'active' ||
+                locationAuthority.owner.updateDraft !== owner.updateDraft || locationAuthority.session.sessionLifetime !== session.sessionLifetime ||
+                session.sessionLifetime?.isCurrent() !== true || !(session.isSessionRevisionCurrent?.(session.sessionRevision ?? 0) ?? false) ||
+                !owner.updateDraft({ pin: location.pin, address: location.address })) return;
               setLocationPickerVisible(false);
-              void saveRecentLocation(location).catch(() => undefined);
+              const captured = { ownerId: owner.ownerId, updateDraft: owner.updateDraft, epoch: owner.draftEpoch,
+                lifetime: session.sessionLifetime, revision: session.sessionRevision ?? 0, generation: locationAuthority.generation };
+              void saveRecentLocation({ userId: captured.ownerId, isCurrent: () => {
+                const current = locationAuthority;
+                return AppState.currentState === 'active' && current.focused && current.generation === captured.generation && current.owner.ownerId === captured.ownerId &&
+                  current.owner.updateDraft === captured.updateDraft && current.owner.draftEpoch === captured.epoch && current.owner.isOwnerCurrent() &&
+                  current.session.sessionLifetime === captured.lifetime && captured.lifetime?.isCurrent() === true &&
+                  (current.session.isSessionRevisionCurrent?.(captured.revision) ?? false);
+              } }, location).catch(() => undefined);
             }}
           />
         ) : null}

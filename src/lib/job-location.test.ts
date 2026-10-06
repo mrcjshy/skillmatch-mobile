@@ -185,7 +185,7 @@ describe('formatReverseGeocodeAddress', () => {
 
   it('keeps Current Location autofill recoverable when reverse geocode is empty', () => {
     expect(COPY.geocodeUnavailable).toBe(
-      "Street address couldn't be identified. The selected map location will be used."
+      "Couldn't identify a street address. The selected pin will be saved with the general-area label shown above."
     );
   });
 });

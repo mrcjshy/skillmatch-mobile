@@ -15,6 +15,7 @@ export function parsePhotonSuggestions(data: unknown): LocationSuggestion[] {
     if (!Array.isArray(coordinates) || coordinates.length < 2) continue;
     const [longitude, latitude] = coordinates;
     if (typeof latitude !== 'number' || typeof longitude !== 'number') continue;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) continue;
     const p = f.properties ?? {};
     const label = [p.name, p.street, p.locality, p.city, p.state, p.country]
       .filter((value, index, values): value is string => typeof value === 'string' && value.trim() !== '' && values.indexOf(value) === index)
