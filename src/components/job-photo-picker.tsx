@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -21,6 +21,12 @@ export type JobPhotoDraft = {
 
 type JobPhotoPickerProps = {
   disabled?: boolean;
+  photos: JobPhotoDraft[];
+  error: string | null;
+  ownerKey: string;
+  resetEpoch: number;
+  isOwnerCurrent: () => boolean;
+  onErrorChange: (error: string | null) => void;
   onPhotosChange: (photos: JobPhotoDraft[]) => void;
 };
 
@@ -36,24 +42,46 @@ function toDraft(asset: ImagePicker.ImagePickerAsset): JobPhotoDraft | null {
   };
 }
 
-export function JobPhotoPicker({ disabled = false, onPhotosChange }: JobPhotoPickerProps) {
-  const [photos, setPhotos] = useState<JobPhotoDraft[]>([]);
-  const [error, setError] = useState<string | null>(null);
+export function JobPhotoPicker({ disabled = false, photos, error, ownerKey, resetEpoch,
+  isOwnerCurrent, onErrorChange, onPhotosChange }: JobPhotoPickerProps) {
+  const mounted = useRef(true);
+  const request = useRef(0);
+  const signature = JSON.stringify(photos);
+  const latest = useRef({ disabled, ownerKey, resetEpoch, signature, isOwnerCurrent });
+  // Publish only committed props; abandoned renders cannot cancel live work.
+  // Layout effects run before asynchronous gallery completions can publish.
+  useLayoutEffect(() => {
+    let ownerCurrent = false;
+    try { ownerCurrent = isOwnerCurrent() === true; } catch { /* Revoke without exposing owner errors. */ }
+    // A committed blur/revocation ends this request even if focus returns later.
+    if (!ownerCurrent || latest.current.disabled !== disabled || latest.current.ownerKey !== ownerKey ||
+        latest.current.resetEpoch !== resetEpoch || latest.current.signature !== signature) {
+      request.current += 1;
+    }
+    latest.current = { disabled, ownerKey, resetEpoch, signature, isOwnerCurrent };
+  });
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; request.current += 1; };
+  }, []);
   const remaining = MAX_JOB_PHOTOS - photos.length;
 
   function replacePhotos(next: JobPhotoDraft[]) {
-    setPhotos(next);
+    request.current += 1;
     onPhotosChange(next);
   }
-
   async function pickPhotos() {
-    if (disabled || remaining <= 0) return;
-    setError(null);
+    if (disabled || !isOwnerCurrent() || remaining <= 0) return;
+    const id = ++request.current;
+    const current = () => mounted.current && request.current === id &&
+      !latest.current.disabled && latest.current.isOwnerCurrent();
+    onErrorChange(null);
 
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!current()) return;
       if (!permission.granted) {
-        setError('Allow photo-library access to select job photos.');
+        onErrorChange('Allow photo-library access to select job photos.');
         return;
       }
 
@@ -64,38 +92,39 @@ export function JobPhotoPicker({ disabled = false, onPhotosChange }: JobPhotoPic
         allowsEditing: false,
         legacy: false,
       });
-      if (result.canceled) return;
+      if (!current() || result.canceled) return;
 
       const candidates = result.assets.map(toDraft);
       if (candidates.some((photo) => photo === null)) {
-        setError('One or more selected photos could not be read. Choose them again.');
+        onErrorChange('One or more selected photos could not be read. Choose them again.');
         return;
       }
       const selected = candidates.filter((photo): photo is JobPhotoDraft => photo !== null);
       if (selected.length > remaining) {
-        setError('You can add up to 3 job photos.');
+        onErrorChange('You can add up to 3 job photos.');
         return;
       }
 
       replacePhotos([...photos, ...selected]);
     } catch {
-      setError('The photo gallery is unavailable right now. Try again.');
+      if (!current()) return;
+      onErrorChange('The photo gallery is unavailable right now. Try again.');
     }
   }
 
   function removePhoto(index: number) {
-    if (disabled) return;
-    setError(null);
+    if (disabled || !isOwnerCurrent()) return;
+    onErrorChange(null);
     replacePhotos(photos.filter((_, currentIndex) => currentIndex !== index));
   }
 
   function movePhoto(index: number, direction: -1 | 1) {
-    if (disabled) return;
+    if (disabled || !isOwnerCurrent()) return;
     const target = index + direction;
     if (target < 0 || target >= photos.length) return;
     const next = [...photos];
     [next[index], next[target]] = [next[target], next[index]];
-    setError(null);
+    onErrorChange(null);
     replacePhotos(next);
   }
 

@@ -1,7 +1,9 @@
-import { Platform, StyleSheet, Text, type TextProps } from 'react-native';
+import { StyleSheet, Text, type TextProps } from 'react-native';
 
-import { Fonts, ThemeColor } from '@/constants/theme';
+import { Fonts, SkillMatchTheme, ThemeColor } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+
+const { colors, type: typography } = SkillMatchTheme.ui;
 
 export type ThemedTextProps = TextProps & {
   type?: 'default' | 'title' | 'small' | 'smallBold' | 'subtitle' | 'link' | 'linkPrimary' | 'code';
@@ -14,7 +16,6 @@ export function ThemedText({ style, type = 'default', themeColor, ...rest }: The
   return (
     <Text
       style={[
-        { color: theme[themeColor ?? 'text'] },
         type === 'default' && styles.default,
         type === 'title' && styles.title,
         type === 'small' && styles.small,
@@ -23,6 +24,7 @@ export function ThemedText({ style, type = 'default', themeColor, ...rest }: The
         type === 'link' && styles.link,
         type === 'linkPrimary' && styles.linkPrimary,
         type === 'code' && styles.code,
+        { color: themeColor ? theme[themeColor] : type === 'linkPrimary' ? colors.primary : theme.text },
         style,
       ]}
       {...rest}
@@ -32,42 +34,29 @@ export function ThemedText({ style, type = 'default', themeColor, ...rest }: The
 
 const styles = StyleSheet.create({
   small: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: 500,
+    ...typography.helper,
   },
   smallBold: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: 700,
+    ...typography.helper,
+    fontWeight: typography.bodyEmphasis.fontWeight,
   },
   default: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontWeight: 500,
+    ...typography.body,
   },
   title: {
-    fontSize: 48,
-    fontWeight: 600,
-    lineHeight: 52,
+    ...typography.screenTitle,
   },
   subtitle: {
-    fontSize: 32,
-    lineHeight: 44,
-    fontWeight: 600,
+    ...typography.sectionTitle,
   },
   link: {
-    lineHeight: 30,
-    fontSize: 14,
+    ...typography.body,
   },
   linkPrimary: {
-    lineHeight: 30,
-    fontSize: 14,
-    color: '#3c87f7',
+    ...typography.body,
   },
   code: {
+    ...typography.caption,
     fontFamily: Fonts.mono,
-    fontWeight: Platform.select({ android: 700 }) ?? 500,
-    fontSize: 12,
   },
 });

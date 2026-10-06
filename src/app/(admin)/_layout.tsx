@@ -9,10 +9,12 @@ export default function AdminLayout() {
       <PushNotificationRegistration role="administrator" />
       <Stack
         screenOptions={{
-          contentStyle: { backgroundColor: SkillMatchTheme.brand.background },
+          headerStyle: { backgroundColor: SkillMatchTheme.ui.colors.surface },
+          headerTintColor: SkillMatchTheme.ui.colors.textPrimary,
+          contentStyle: { backgroundColor: SkillMatchTheme.ui.colors.background },
         }}
       >
-        <Stack.Screen name="admin/index" options={{ headerShown: false }} />
+        <Stack.Screen name="admin/index" options={{ title: 'Admin Dashboard', headerShown: true }} />
         <Stack.Screen name="admin/notifications" options={{ title: 'Notifications' }} />
         <Stack.Screen name="admin/workers" options={{ title: 'Worker Directory' }} />
         <Stack.Screen name="admin/clients" options={{ title: 'Client Directory' }} />

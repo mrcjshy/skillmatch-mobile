@@ -55,26 +55,30 @@ export function BookingCompactCard({
       style={({ pressed }) => [
         styles.card,
         isHistory ? styles.historyCard : null,
-        pressed ? styles.pressed : null,
+        pressed ? (isHistory ? styles.historyPressed : styles.pressed) : null,
       ]}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${booking.job_title}, ${formatBookingStatus(booking.booking_status)}. View booking details`}
     >
       <View style={styles.topRow}>
-        <Text style={styles.title} numberOfLines={2}>{booking.job_title}</Text>
+        <Text style={styles.title}>{booking.job_title}</Text>
         <AppChip
           label={formatBookingStatus(booking.booking_status)}
-          variant={isHistory ? 'neutral' : 'positive'}
+          variant={
+            booking.booking_status === 'pending' ? 'warning' :
+            booking.booking_status === 'cancelled' || booking.booking_status === 'no_show' ? 'danger' :
+            'positive'
+          }
         />
       </View>
 
       {timestamp ? <Text style={styles.primaryLine}>{timestamp}</Text> : null}
       <View style={styles.metaRow}>
         {budget ? <Text style={styles.meta}>{budget}</Text> : null}
-        {generalLocation ? <Text style={styles.meta} numberOfLines={1}>{generalLocation}</Text> : null}
+        {generalLocation ? <Text style={styles.meta}>{generalLocation}</Text> : null}
       </View>
-      {counterparty ? <Text style={styles.counterparty} numberOfLines={1}>{counterparty}</Text> : null}
+      {counterparty ? <Text style={styles.counterparty}>{counterparty}</Text> : null}
 
       <Text style={styles.affordance}>View details →</Text>
     </Pressable>
@@ -93,27 +97,38 @@ const styles = StyleSheet.create({
   historyCard: {
     backgroundColor: colors.surfaceSubtle,
   },
-  pressed: { opacity: 0.72 },
-  topRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  pressed: { backgroundColor: colors.surfaceSubtle },
+  historyPressed: { backgroundColor: colors.surface },
+  topRow: { flexDirection: 'column', alignItems: 'flex-start', maxWidth: '100%', gap: spacing.sm },
   title: {
-    flex: 1,
+    width: '100%',
+    maxWidth: '100%',
+    flexShrink: 1,
     ...type.cardTitle,
     color: colors.textPrimary,
   },
   primaryLine: {
+    maxWidth: '100%',
+    flexShrink: 1,
     ...type.bodyEmphasis,
     color: colors.textPrimary,
   },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', maxWidth: '100%', gap: spacing.sm },
   meta: {
+    maxWidth: '100%',
+    flexShrink: 1,
     ...type.helper,
     color: colors.textSecondary,
   },
   counterparty: {
+    maxWidth: '100%',
+    flexShrink: 1,
     ...type.helper,
     color: colors.textSecondary,
   },
   affordance: {
+    maxWidth: '100%',
+    flexShrink: 1,
     ...type.bodyEmphasis,
     color: colors.primary,
   },

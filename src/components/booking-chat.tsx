@@ -538,7 +538,9 @@ export default function BookingChat({
               </Text>
               <AppButton
                 variant="primary"
-                label={isSending ? 'Sending…' : 'Send'}
+                label="Send"
+                accessibilityLabel="Send"
+                loading={isSending}
                 onPress={handleSend}
                 disabled={!isDraftSendable || isSending}
                 style={styles.sendButton}
@@ -662,6 +664,5 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     alignSelf: 'flex-end',
-    height: 44,
   },
 });

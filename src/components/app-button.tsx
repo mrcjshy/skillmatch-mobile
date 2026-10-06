@@ -11,9 +11,6 @@ import { SkillMatchTheme } from '@/constants/theme';
 
 const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
 
-/** Compact pill stays 36 tall; hitSlop expands the interactive area to 44. */
-const COMPACT_HIT_SLOP = { top: 4, bottom: 4, left: 4, right: 4 } as const;
-
 export type AppButtonVariant = 'primary' | 'secondary' | 'ghost' | 'destructive' | 'compact';
 
 type AppButtonProps = {
@@ -39,13 +36,11 @@ export function AppButton({
 }: AppButtonProps) {
   const blocked = disabled || loading;
   const spinnerColor =
-    variant === 'compact'
-      ? colors.textInverse
-      : variant === 'destructive'
-        ? colors.danger
-        : variant === 'primary'
-          ? colors.textOnAccent
-          : colors.primary;
+    variant === 'destructive'
+      ? colors.danger
+      : variant === 'primary'
+        ? colors.textOnAccent
+        : colors.primary;
 
   return (
     <Pressable
@@ -53,22 +48,22 @@ export function AppButton({
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: blocked, busy: loading }}
       disabled={blocked}
-      hitSlop={variant === 'compact' ? COMPACT_HIT_SLOP : undefined}
       onPress={onPress}
       style={({ pressed }) => [
         styles.base,
         variantStyles[variant],
         variant === 'primary' && pressed && !blocked ? styles.primaryPressed : null,
-        variant !== 'primary' && pressed && !blocked ? styles.pressed : null,
-        blocked && variant === 'primary' ? styles.primaryDisabled : null,
-        blocked && variant !== 'primary' ? styles.blocked : null,
+        variant !== 'primary' && pressed && !blocked
+          ? variant === 'compact' ? styles.compactPressed : styles.pressed
+          : null,
+        blocked ? styles.blocked : null,
         style,
       ]}
     >
       {loading ? (
         <ActivityIndicator color={spinnerColor} />
       ) : (
-        <Text style={[styles.label, labelStyles[variant]]}>{label}</Text>
+        <Text style={[styles.label, labelStyles[variant], blocked ? styles.blockedLabel : null]}>{label}</Text>
       )}
     </Pressable>
   );
@@ -79,34 +74,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+    minWidth: 48,
+    borderWidth: 1.5,
+    borderColor: colors.controlBorder,
   },
   primaryPressed: {
     backgroundColor: colors.accentPressed,
   },
   pressed: {
+    backgroundColor: colors.selected,
+  },
+  compactPressed: {
     opacity: 0.72,
   },
-  primaryDisabled: {
-    opacity: 0.4,
-  },
   blocked: {
-    opacity: 0.4,
+    backgroundColor: colors.surfaceSubtle,
+    borderColor: colors.controlBorder,
+  },
+  blockedLabel: {
+    color: colors.textSecondary,
   },
   label: {
     textAlign: 'center',
+    flexShrink: 1,
+    maxWidth: '100%',
   },
 });
 
 const variantStyles = StyleSheet.create({
   primary: {
     alignSelf: 'stretch',
-    height: size.primaryButton,
+    minHeight: size.primaryButton,
     borderRadius: radius.pill,
     backgroundColor: colors.accent,
+    borderColor: colors.primary,
   },
   secondary: {
     alignSelf: 'stretch',
-    height: size.secondaryButton,
+    minHeight: size.secondaryButton,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceSubtle,
   },
@@ -116,14 +122,16 @@ const variantStyles = StyleSheet.create({
   },
   destructive: {
     alignSelf: 'stretch',
-    height: size.secondaryButton,
+    minHeight: size.secondaryButton,
     borderRadius: radius.pill,
     backgroundColor: 'transparent',
+    borderColor: colors.danger,
   },
   compact: {
-    height: size.compactButton,
+    minHeight: size.compactButton,
     borderRadius: radius.pill,
     backgroundColor: colors.primary,
+    borderColor: colors.primary,
     paddingHorizontal: spacing.lg,
   },
 });

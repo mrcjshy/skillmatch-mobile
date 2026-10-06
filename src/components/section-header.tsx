@@ -27,11 +27,17 @@ export function SectionHeader({ title, subtitle, trailing, style }: SectionHeade
 const styles = StyleSheet.create({
   wrap: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    maxWidth: '100%',
     alignItems: 'center',
     gap: spacing.md,
   },
   copy: {
-    flex: 1,
+    minWidth: 0,
+    flexBasis: 'auto',
+    flexGrow: 1,
+    flexShrink: 1,
+    maxWidth: '100%',
     gap: spacing.xxs,
   },
   title: {
@@ -44,5 +50,6 @@ const styles = StyleSheet.create({
   },
   trailing: {
     flexShrink: 0,
+    maxWidth: '100%',
   },
 });

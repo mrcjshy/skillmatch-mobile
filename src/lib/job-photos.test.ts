@@ -396,3 +396,168 @@ describe('safe Storage errors', () => {
     expect(JSON.stringify(logged.mock.calls)).not.toContain('opaque-value');
   });
 });
+
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+describe('operation-lifetime guarded missing-slot retry', () => {
+  it('ends locally when authorization expires during the initial listing, before dispatching upload', async () => {
+    const listing = deferred<{ data: { name: string }[]; error: null }>();
+    const api = storageApi({ list: vi.fn(() => listing.promise) });
+    let current = true;
+    const input = { clientId: CLIENT_ID, jobId: JOB_ID,
+      retries: [{ slot: 1 as const, image: validated(jpegBytes()) }],
+      isOperationCurrent: () => current };
+    const result = retryMissingJobPhotos(input);
+    const outcome = result.then(value => ({ value }), error => ({ error }));
+    expect(api.list).toHaveBeenCalledTimes(1);
+    current = false;
+    listing.resolve({ data: [], error: null });
+    expect(await outcome).toMatchObject({ error: { code: 'operation_invalidated' } });
+    expect(api.upload).not.toHaveBeenCalled();
+    expect(api.list).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('operation-lifetime guarded private reads', () => {
+  it.each(['false', 'throw'] as const)('fails closed for a %s guard before listing', async kind => {
+    const api = storageApi();
+    await expect(listJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID,
+      isOperationCurrent: () => { if (kind === 'throw') throw Error('private detail'); return false; } }))
+      .rejects.toMatchObject({ code: 'operation_invalidated', message: 'Photo operation is no longer current.' });
+    expect(api.list).not.toHaveBeenCalled(); expect(api.createSignedUrls).not.toHaveBeenCalled();
+  });
+  it.each(['slots', 'empty', 'error', 'rejection'] as const)('stops after invalidated listing: %s', async kind => {
+    const pending = deferred<any>(); let current = true;
+    const api = storageApi({ list: vi.fn(() => pending.promise) });
+    const outcome = listJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID, isOperationCurrent: () => current })
+      .then(value => ({ value }), error => ({ error }));
+    current = false;
+    if (kind === 'rejection') pending.reject(Error('private transport'));
+    else pending.resolve({ data: kind === 'slots' ? [{ name: '1' }] : [], error: kind === 'error' ? { status: 403 } : null });
+    expect(await outcome).toMatchObject({ error: { code: 'operation_invalidated' } });
+    expect(api.createSignedUrls).not.toHaveBeenCalled();
+  });
+  it.each(['success', 'error', 'rejection', 'throwing-guard'] as const)('rejects stale signing: %s', async kind => {
+    const pending = deferred<any>(), started = deferred<void>(); let current = true;
+    const api = storageApi({ list: vi.fn(async () => ({ data: [{ name: '1' }], error: null })),
+      createSignedUrls: vi.fn(() => { started.resolve(); return pending.promise; }) });
+    const outcome = listJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID,
+      isOperationCurrent: () => { if (!current && kind === 'throwing-guard') throw Error('private detail'); return current; } })
+      .then(value => ({ value }), error => ({ error }));
+    await started.promise; current = false;
+    if (kind === 'rejection') pending.reject(Error('private transport'));
+    else pending.resolve({ data: [{ path: PREFIX + '/1', signedUrl: 'private-url' }], error: kind === 'error' ? { status: 403 } : null });
+    expect(await outcome).toMatchObject({ error: { code: 'operation_invalidated' } });
+    expect(api.list).toHaveBeenCalledTimes(1); expect(api.createSignedUrls).toHaveBeenCalledTimes(1);
+  });
+  it('preserves guarded canonical success and partial signed responses', async () => {
+    const api = storageApi({ list: vi.fn(async () => ({ data: [{ name: '3' }, { name: '1' }], error: null })),
+      createSignedUrls: vi.fn(async () => ({ data: [{ path: PREFIX + '/1', signedUrl: 'private-one', error: null },
+        { path: PREFIX + '/3', signedUrl: '', error: 'unavailable' }, { path: 'foreign', signedUrl: 'foreign' }], error: null })) });
+    await expect(listJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID, isOperationCurrent: () => true }))
+      .resolves.toEqual([{ slot: 1, path: PREFIX + '/1', signedUrl: 'private-one' }]);
+    expect(api.createSignedUrls).toHaveBeenCalledWith([PREFIX + '/1', PREFIX + '/3'], 60);
+    expect(api.getPublicUrl).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('operation guard boundary coverage', () => {
+  const retries = () => [
+    { slot: 1 as const, image: validated(jpegBytes()) },
+    { slot: 3 as const, image: validated(webpBytes()) },
+  ];
+  it('rejects invalid-before-entry and throwing guards without a Storage request or raw error', async () => {
+    storageApi();
+    for (const isOperationCurrent of [() => false, () => { throw Error('private-account-secret'); }]) {
+      const result = retryMissingJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID, retries: retries(), isOperationCurrent });
+      await expect(result).rejects.toMatchObject({ name: 'JobPhotoError', code: 'operation_invalidated', message: 'Photo operation is no longer current.' });
+    }
+    expect(storageFrom).not.toHaveBeenCalled();
+  });
+  it('preserves validation order even for an invalidated operation', async () => {
+    storageApi(); const guard = vi.fn(() => false); const photo = validated(jpegBytes());
+    await expect(retryMissingJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID,
+      retries: [{ slot: 1, image: photo }, { slot: 1, image: photo }], isOperationCurrent: guard }))
+      .rejects.toMatchObject({ code: 'invalid_slot' });
+    expect(guard).not.toHaveBeenCalled(); expect(storageFrom).not.toHaveBeenCalled();
+  });
+  it.each(['success', 'failure', 'rejection'] as const)('ends after an in-flight upload settles with %s', async kind => {
+    const pending = deferred<any>(); const started = deferred<void>();
+    const upload = vi.fn(() => { started.resolve(); return pending.promise; });
+    const api = storageApi({ upload }); let current = true;
+    const outcome = retryMissingJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID, retries: retries(), isOperationCurrent: () => current })
+      .then(value => ({ value }), error => ({ error }));
+    await started.promise; current = false;
+    if (kind === 'rejection') pending.reject(Error('opaque transport failure'));
+    else pending.resolve({ data: kind === 'success' ? { path: PREFIX + '/1' } : null,
+      error: kind === 'failure' ? { status: 503 } : null });
+    expect(await outcome).toMatchObject({ error: { code: 'operation_invalidated' } });
+    expect(upload).toHaveBeenCalledTimes(1); expect(api.list).toHaveBeenCalledTimes(1);
+  });
+  it('does not initiate the next slot when completion of the earlier request revokes the operation', async () => {
+    const pending = deferred<any>(); const started = deferred<void>(); let current = true;
+    const completed = pending.promise.then(value => { current = false; return value; });
+    const api = storageApi({ upload: vi.fn(() => { started.resolve(); return completed; }) });
+    const outcome = retryMissingJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID, retries: retries(), isOperationCurrent: () => current })
+      .then(value => ({ value }), error => ({ error }));
+    await started.promise; pending.resolve({ data: { path: PREFIX + '/1' }, error: null });
+    expect(await outcome).toMatchObject({ error: { code: 'operation_invalidated' } });
+    expect(api.upload.mock.calls.map(call => call[0])).toEqual([PREFIX + '/1']); expect(api.list).toHaveBeenCalledTimes(1);
+    current = true; // A later current operation cannot revive the finished invocation.
+    await Promise.resolve(); expect(api.upload).toHaveBeenCalledTimes(1);
+  });
+  it.each(['resolved', 'rejected'] as const)('ends after an invalidated reconciliation listing is %s', async kind => {
+    const pending = deferred<any>(); const started = deferred<void>(); let current = true;
+    const list = vi.fn().mockResolvedValueOnce({ data: [], error: null }).mockImplementationOnce(() => { started.resolve(); return pending.promise; });
+    const api = storageApi({ list, upload: vi.fn(async () => ({ data: null, error: { status: 503 } })) });
+    const outcome = retryMissingJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID, retries: retries(), isOperationCurrent: () => current })
+      .then(value => ({ value }), error => ({ error }));
+    await started.promise; current = false;
+    if (kind === 'rejected') pending.reject(Error('private transport details'));
+    else pending.resolve({ data: [{ name: '1' }], error: null });
+    expect(await outcome).toMatchObject({ error: { code: 'operation_invalidated' } });
+    expect(api.list).toHaveBeenCalledTimes(2); expect(api.upload).toHaveBeenCalledTimes(1);
+  });
+  it('fails closed if a guard starts throwing during a pending list', async () => {
+    const pending = deferred<any>(); let broken = false;
+    const api = storageApi({ list: vi.fn(() => pending.promise) });
+    const outcome = retryMissingJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID, retries: retries(),
+      isOperationCurrent: () => { if (broken) throw Error('private-account-secret'); return true; } })
+      .then(value => ({ value }), error => ({ error }));
+    broken = true; pending.resolve({ data: [], error: null });
+    expect(await outcome).toMatchObject({ error: { code: 'operation_invalidated', message: 'Photo operation is no longer current.' } });
+    expect(api.upload).not.toHaveBeenCalled(); expect(api.list).toHaveBeenCalledTimes(1);
+  });
+  it('keeps always-current paths, byte-detected MIME, ordered slots, immutable uploads and reconciliation counts', async () => {
+    const list = vi.fn().mockResolvedValueOnce({ data: [{ name: '2' }], error: null })
+      .mockResolvedValueOnce({ data: [{ name: '2' }], error: null })
+      .mockResolvedValueOnce({ data: [{ name: '2' }, { name: '3' }], error: null })
+      .mockResolvedValueOnce({ data: [{ name: '2' }, { name: '3' }], error: null });
+    const upload = vi.fn().mockResolvedValueOnce({ data: null, error: { status: 503 } })
+      .mockResolvedValueOnce({ data: { path: PREFIX + '/1' }, error: null });
+    storageApi({ list, upload }); const webp = validated(webpBytes()), jpeg = validated(jpegBytes());
+    const result = await retryMissingJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID,
+      retries: [{ slot: 2, image: validated(pngBytes()) }, { slot: 3, image: webp }, { slot: 1, image: jpeg }], isOperationCurrent: () => true });
+    expect(result).toMatchObject({ outcome: 'all', requestedCount: 3, successfulCount: 3, failedCount: 0 });
+    expect(result.slots.map(x => [x.slot, x.status])).toEqual([[2, 'already_present'], [3, 'already_present'], [1, 'uploaded']]);
+    expect(upload.mock.calls).toEqual([[PREFIX + '/3', webp.bytes, { contentType: 'image/webp', upsert: false }],
+      [PREFIX + '/1', jpeg.bytes, { contentType: 'image/jpeg', upsert: false }]]);
+    expect(list).toHaveBeenCalledTimes(4); expect(storageFrom.mock.calls.every(call => call[0] === 'job-photos')).toBe(true);
+  });
+  it.each([false, true])('preserves valid partial and none result counts with supplied guard=%s', async supplied => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (const existing of [[], [{ name: '1' }]]) {
+      storageApi({ list: vi.fn(async () => ({ data: existing, error: null })), upload: vi.fn(async () => ({ data: null, error: { status: 503 } })) });
+      const result = await retryMissingJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID, retries: retries(), ...(supplied ? { isOperationCurrent: () => true } : {}) });
+      expect(result).toMatchObject({ outcome: existing.length ? 'partial' : 'none', requestedCount: 2,
+        successfulCount: existing.length ? 1 : 0, failedCount: existing.length ? 1 : 2 });
+    }
+  });
+});

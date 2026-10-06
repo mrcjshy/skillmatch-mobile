@@ -42,11 +42,13 @@ export function AppListRow({
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
         {trailing ? (
-          typeof trailing === 'string' ? (
-            <Text style={styles.trailingText}>{trailing}</Text>
-          ) : (
-            trailing
-          )
+          <View style={styles.trailing}>
+            {typeof trailing === 'string' ? (
+              <Text style={styles.trailingText}>{trailing}</Text>
+            ) : (
+              trailing
+            )}
+          </View>
         ) : null}
       </View>
       {showDivider ? (
@@ -73,6 +75,7 @@ export function AppListRow({
 
 const styles = StyleSheet.create({
   wrap: {
+    maxWidth: '100%',
     minHeight: size.listRowMinHeight,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
@@ -82,6 +85,8 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    maxWidth: '100%',
     alignItems: 'center',
     gap: spacing.md,
     minHeight: 32,
@@ -92,7 +97,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   copy: {
-    flex: 1,
+    minWidth: 0,
+    flexBasis: 'auto',
+    flexGrow: 1,
+    flexShrink: 1,
+    maxWidth: '100%',
     gap: 2,
   },
   title: {
@@ -103,7 +112,13 @@ const styles = StyleSheet.create({
     ...type.helper,
     color: colors.textSecondary,
   },
+  trailing: {
+    maxWidth: '100%',
+    flexShrink: 1,
+  },
   trailingText: {
+    maxWidth: '100%',
+    flexShrink: 1,
     ...type.bodyEmphasis,
     fontSize: 14,
     lineHeight: 20,

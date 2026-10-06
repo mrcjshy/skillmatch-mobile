@@ -29,9 +29,28 @@ describe('Client Booking Details navigation UI', () => {
   it('preserves Client Home in history for the automatic acceptance transition', () => {
     const home = readSource('src/app/(client)/(tabs)/client/index.tsx');
     const handoffNavigation = home.match(
-      /onNavigate:\s*\(bookingId\)\s*=>\s*router\.(push|replace)\(\{\s*pathname:\s*'\/client\/booking-details',\s*params:\s*\{\s*bookingId\s*\}/,
+      /onNavigate:\s*\(bookingId\)\s*=>\s*\{\s*if \(isOwnerCurrent\(\)\) router\.(push|replace)\(\{\s*pathname:\s*'\/client\/booking-details',\s*params:\s*\{\s*bookingId\s*\}/,
     );
 
     expect(handoffNavigation?.[1]).toBe('push');
+  });
+});
+
+describe('retained parent and secondary navigation boundaries', () => {
+  it.each(['client', 'worker'])('%s keeps parent role protection and secondary screen overrides', (role) => {
+    const root = readSource('src/app/_layout.tsx');
+    expect(root).toContain('<Stack screenOptions={{ headerShown: false }}>');
+    expect(root).toContain(`<Stack.Protected guard={access === '${role}'}>`);
+    expect(root).toContain('<SessionProvider>');
+    expect(root).toContain('<AccountProvider>');
+    const layout = readSource(`src/app/(${role})/_layout.tsx`);
+    expect(layout).not.toMatch(/headerLeft|router\.(push|replace)|useFocusEffect|subscribe/);
+    for (const [screen, title] of [['notifications', 'Notifications'], ['chat', 'Booking Chat'], ['booking-details', 'Booking Details']]) {
+      const wrapper = readSource(`src/app/(${role})/${role}/${screen}.tsx`);
+      expect(wrapper).toContain(`options={{ title: '${title}' }}`);
+      expect(wrapper).not.toMatch(/headerLeft|headerShown\s*:\s*false/);
+    }
+    for (const screen of ['terms', 'privacy']) expect(readSource(`src/app/(${role})/${role}/${screen}.tsx`)).toContain('options={{ headerShown: false }}');
+    expect(readSource('src/app/(auth)/_layout.tsx')).toContain('headerShown: false');
   });
 });

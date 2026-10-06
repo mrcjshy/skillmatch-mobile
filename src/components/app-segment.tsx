@@ -42,9 +42,14 @@ export function AppSegment<T extends string>({
             accessibilityLabel={option.label}
             disabled={disabled}
             onPress={() => onChange(option.value)}
-            style={[styles.option, selected ? styles.optionSelected : null]}
+            style={({ pressed }) => [
+              styles.option,
+              selected ? styles.optionSelected : null,
+              pressed && !disabled ? styles.optionPressed : null,
+              disabled ? styles.optionDisabled : null,
+            ]}
           >
-            <Text style={[styles.label, selected ? styles.labelSelected : null]}>{option.label}</Text>
+            <Text style={[styles.label, selected ? styles.labelSelected : null, disabled ? styles.labelDisabled : null]}>{option.label}</Text>
           </Pressable>
         );
       })}
@@ -55,28 +60,41 @@ export function AppSegment<T extends string>({
 const styles = StyleSheet.create({
   track: {
     flexDirection: 'row',
-    height: size.segmentHeight,
     backgroundColor: colors.surfaceSubtle,
     borderRadius: radius.pill,
     padding: spacing.xs,
   },
   option: {
     flex: 1,
-    minHeight: 32,
+    minHeight: size.ghostButton,
+    minWidth: size.ghostButton,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1.5,
+    borderColor: colors.controlBorder,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
   optionSelected: {
     backgroundColor: colors.surface,
+    borderColor: colors.primary,
   },
+  optionPressed: { backgroundColor: colors.selected },
+  optionDisabled: { backgroundColor: colors.surfaceSubtle, borderColor: colors.controlBorder },
+  labelDisabled: { color: colors.textSecondary },
   label: {
+    flexShrink: 1,
+    maxWidth: '100%',
+    textAlign: 'center',
     fontSize: 15,
     fontWeight: '600',
     lineHeight: 20,
     color: colors.textSecondary,
   },
   labelSelected: {
+    textDecorationLine: 'underline',
     fontWeight: '700',
     color: colors.primary,
   },

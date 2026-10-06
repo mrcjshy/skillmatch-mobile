@@ -72,7 +72,6 @@ export function AdminAnalyticsDashboard({
         />
       }
     >
-      <Text style={styles.heading}>Admin Dashboard</Text>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Inbox</Text>
         <AppButton label="Notifications" variant="secondary" onPress={onNotifications} />
@@ -163,7 +162,6 @@ export function AdminAnalyticsDashboard({
 const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.gutter, paddingBottom: spacing.xxxl + spacing.sm, gap: spacing.lg },
-  heading: { ...type.screenTitle, color: colors.textPrimary },
   context: { ...type.helper, color: colors.textSecondary },
   updated: { ...type.caption, color: colors.textSecondary },
   section: { gap: spacing.md },

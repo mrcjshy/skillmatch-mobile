@@ -30,18 +30,22 @@ export function SelectedSkillChips({
       {skills.map((skill) => (
         <View key={skill.id} style={styles.block}>
           <View style={styles.chip}>
-            <Text style={styles.name} numberOfLines={3}>
+            <Text style={styles.name}>
               ✓ {skill.skill_name}
             </Text>
             <Pressable
-              style={[styles.remove, disabled && styles.disabled]}
+              style={({ pressed }) => [
+                styles.remove,
+                pressed && !disabled && styles.removePressed,
+                disabled && styles.disabled,
+              ]}
               onPress={() => onRemove(skill.id)}
               disabled={disabled}
               accessibilityRole="button"
               accessibilityLabel={`Remove ${skill.skill_name}`}
               accessibilityState={{ disabled }}
             >
-              <Text style={styles.removeText}>Remove</Text>
+              <Text style={[styles.removeText, disabled && styles.disabledText]}>Remove</Text>
             </Pressable>
           </View>
           {renderAfterSkill?.(skill)}
@@ -72,6 +76,13 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   remove: {
+    maxWidth: '100%',
+    flexShrink: 1,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderColor: colors.controlBorder,
+    backgroundColor: 'transparent',
+    paddingVertical: spacing.sm,
     minHeight: size.ghostButton,
     minWidth: size.ghostButton,
     justifyContent: 'center',
@@ -79,10 +90,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   removeText: {
+    flexShrink: 1,
+    maxWidth: '100%',
+    textAlign: 'center',
     ...type.helper,
     fontWeight: '600',
     color: colors.primary,
     textDecorationLine: 'underline',
   },
-  disabled: { opacity: 0.6 },
+  removePressed: { backgroundColor: colors.surface },
+  disabled: { backgroundColor: colors.surfaceSubtle },
+  disabledText: { color: colors.textSecondary },
 });

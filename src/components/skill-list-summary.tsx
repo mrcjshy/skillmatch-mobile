@@ -39,7 +39,7 @@ export function SkillListSummary({
       <View style={styles.chips}>
         {visible.map((skill) => (
           <View key={skill.id} style={styles.chip}>
-            <Text style={styles.chipLabel} numberOfLines={1}>
+            <Text style={styles.chipLabel}>
               {skill.skill_name}
             </Text>
           </View>
@@ -51,7 +51,7 @@ export function SkillListSummary({
               hitSlop={MORE_HIT_SLOP}
               accessibilityRole="button"
               accessibilityLabel={`View ${remaining} more skills`}
-              style={({ pressed }) => [styles.moreChip, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.moreAction, pressed && styles.morePressed]}
             >
               <Text style={styles.moreLabel}>+{remaining} more</Text>
             </Pressable>
@@ -82,7 +82,9 @@ const styles = StyleSheet.create({
   note: { ...type.helper, color: colors.textSecondary },
   chip: {
     maxWidth: '100%',
-    height: size.chipHeight,
+    minHeight: size.chipHeight,
+    flexShrink: 1,
+    paddingVertical: spacing.xs,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     alignItems: 'center',
@@ -95,13 +97,28 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   moreChip: {
-    height: size.chipHeight,
+    maxWidth: '100%',
+    minHeight: size.chipHeight,
+    flexShrink: 1,
+    paddingVertical: spacing.xs,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.selected,
   },
+  moreAction: {
+    minHeight: size.ghostButton,
+    minWidth: size.ghostButton,
+    maxWidth: '100%',
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.selected,
+  },
+  morePressed: { backgroundColor: colors.accent },
   moreLabel: {
     ...type.badge,
     color: colors.primary,
@@ -109,11 +126,16 @@ const styles = StyleSheet.create({
   viewAffordance: {
     alignSelf: 'flex-start',
     minHeight: size.ghostButton,
+    minWidth: size.ghostButton,
+    maxWidth: '100%',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
     justifyContent: 'center',
   },
   viewLabel: {
     ...type.bodyEmphasis,
     color: colors.primary,
   },
-  pressed: { opacity: 0.72 },
+  pressed: { backgroundColor: colors.selected },
 });

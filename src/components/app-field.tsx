@@ -38,20 +38,30 @@ export function AppField({
   onFocus,
   onBlur,
   placeholderTextColor,
+  accessibilityState,
+  accessibilityLabel,
   ...inputProps
 }: AppFieldProps) {
   const [focused, setFocused] = useState(false);
   const isSearch = variant === 'search';
   const hasError = typeof errorText === 'string' && errorText.length > 0;
   const canEdit = disabled ? false : editable;
+  const noneditable = disabled || editable === false;
+  const hasExplicitNameOrReference =
+    inputProps['aria-label'] !== undefined ||
+    inputProps.accessibilityLabelledBy !== undefined ||
+    inputProps['aria-labelledby'] !== undefined;
 
   return (
     <View style={containerStyle}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <TextInput
         {...inputProps}
+        accessibilityLabel={accessibilityLabel ?? (hasExplicitNameOrReference ? undefined : label)}
         multiline={multiline}
         editable={canEdit}
+        accessibilityState={{ ...accessibilityState, disabled: noneditable }}
+        aria-disabled={noneditable}
         placeholderTextColor={placeholderTextColor ?? colors.textDisabled}
         underlineColorAndroid="transparent"
         onFocus={(event) => {
@@ -65,10 +75,10 @@ export function AppField({
         style={[
           styles.input,
           isSearch ? styles.search : styles.defaultField,
-          multiline && !isSearch ? styles.multiline : null,
+          multiline ? styles.multiline : null,
           focused && !hasError ? styles.focused : null,
           hasError ? styles.error : null,
-          disabled ? styles.disabled : null,
+          noneditable ? styles.disabled : null,
           style,
           inputStyle,
         ]}
@@ -94,20 +104,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSubtle,
   },
   defaultField: {
-    height: size.fieldHeight,
+    minHeight: size.fieldHeight,
     borderRadius: radius.md,
     borderWidth: 1.5,
-    borderColor: 'transparent',
+    borderColor: colors.controlBorder,
     borderCurve: 'continuous',
   },
   search: {
-    height: size.searchHeight,
+    minHeight: size.searchHeight,
     borderRadius: radius.pill,
     borderWidth: 1.5,
-    borderColor: 'transparent',
+    borderColor: colors.controlBorder,
   },
   multiline: {
-    height: undefined,
     minHeight: 96,
     paddingVertical: spacing.md,
     textAlignVertical: 'top',
@@ -121,8 +130,8 @@ const styles = StyleSheet.create({
     borderColor: colors.danger,
   },
   disabled: {
-    opacity: 0.6,
-    color: colors.textDisabled,
+    backgroundColor: colors.surfaceSubtle,
+    color: colors.textSecondary,
   },
   helper: {
     ...type.helper,

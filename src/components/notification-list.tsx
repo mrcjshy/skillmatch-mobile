@@ -34,7 +34,7 @@ import {
 } from '@/lib/notifications';
 import { useAccount } from '@/providers/account-provider';
 
-const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
 
 /**
  * The Notifications inbox, shared by the Worker and Client routes.
@@ -372,9 +372,13 @@ export default function NotificationList({
               accessibilityRole="button"
               accessibilityState={{ disabled: busy, busy: isMarkingThis }}
               accessibilityLabel={`${formatNotificationLabel(n.type)}${unread ? ', unread' : ''}. ${n.message}`}
-              style={busy && !isMarkingThis ? styles.cardDisabled : undefined}
+              style={styles.cardTarget}
             >
-              <AppCard style={unread ? styles.cardUnread : undefined}>{body}</AppCard>
+              {({ pressed }) => (
+                <AppCard style={[styles.cardInteractive, unread && styles.cardUnread,
+                  !busy && pressed && (unread ? styles.cardUnreadPressed : styles.cardPressed),
+                  busy && styles.cardDisabled]}>{body}</AppCard>
+              )}
             </Pressable>
           ) : (
             <AppCard key={n.id}>{body}</AppCard>
@@ -405,8 +409,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentSoft,
     borderRadius: radius.md,
   },
+  cardTarget: {
+    minHeight: size.ghostButton,
+    minWidth: size.ghostButton,
+  },
+  cardInteractive: {
+    minHeight: size.ghostButton,
+    borderWidth: 1.5,
+    borderColor: colors.controlBorder,
+  },
+  cardPressed: { backgroundColor: colors.selected },
+  cardUnreadPressed: { backgroundColor: colors.surfaceSubtle },
   cardDisabled: {
-    opacity: 0.5,
+    backgroundColor: colors.surfaceSubtle,
   },
   cardHeader: {
     flexDirection: 'row',

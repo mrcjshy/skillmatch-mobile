@@ -22,14 +22,19 @@ export function AppChip({ label, variant = 'neutral', style }: AppChipProps) {
 
 const styles = StyleSheet.create({
   base: {
-    height: size.chipHeight,
+    minHeight: size.chipHeight,
+    maxWidth: '100%',
+    flexShrink: 1,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
     alignItems: 'center',
     justifyContent: 'center',
   },
   label: {
     ...type.badge,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
 });
 

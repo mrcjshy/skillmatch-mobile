@@ -1,21 +1,22 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 
 import { supabase } from '@/lib/supabase';
 import { parseJobPaymentMethod, type JobPaymentMethod } from '@/lib/job-payment';
-import { useAccount } from '@/providers/account-provider';
+
 
 export type MasterSkill = { id: string; skill_name: string };
 
 export type PostedJob = {
   id: string;
   title: string;
+  description: string | null;
   status: string;
   scheduled_at: string | null;
   budget: number | null;
@@ -49,7 +50,7 @@ async function loadSkills(): Promise<MasterSkill[]> {
 async function loadMyJobs(clientId: string): Promise<PostedJob[]> {
   const jobsResult = await supabase
     .from('job_postings')
-    .select('id, title, status, scheduled_at, budget, payment_method')
+    .select('id, title, description, status, scheduled_at, budget, payment_method')
     .eq('client_id', clientId)
     .order('created_at', { ascending: false });
   if (jobsResult.error) {
@@ -97,6 +98,7 @@ async function loadMyJobs(clientId: string): Promise<PostedJob[]> {
     return {
       id: String(job.id),
       title: String(job.title),
+      description: typeof job.description === 'string' ? job.description : null,
       status: String(job.status ?? 'open'),
       scheduled_at: (job.scheduled_at as string | null) ?? null,
       budget: (job.budget as number | null) ?? null,
@@ -117,47 +119,54 @@ type ClientJobsContextValue = {
 
 const ClientJobsContext = createContext<ClientJobsContextValue | undefined>(undefined);
 
-export function ClientJobsProvider({ children }: { children: ReactNode }) {
-  const { account } = useAccount();
-  const clientId = account?.id;
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [skills, setSkills] = useState<MasterSkill[]>([]);
-  const [jobs, setJobs] = useState<PostedJob[]>([]);
-
-  const refresh = useCallback(async (id: string) => {
-    const [masterSkills, myJobs] = await Promise.all([loadSkills(), loadMyJobs(id)]);
-    setSkills(masterSkills);
-    setJobs(myJobs);
-  }, []);
-
-  /* eslint-disable react-hooks/set-state-in-effect -- fetch-on-mount; established convention */
-  useEffect(() => {
-    if (!clientId) return;
-    let cancelled = false;
-    setIsLoading(true);
-    setLoadError(null);
-    refresh(clientId)
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setLoadError(error instanceof Error ? error.message : COPY.loadGeneric);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [clientId, refresh]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  return (
-    <ClientJobsContext.Provider value={{ isLoading, loadError, skills, jobs, refresh }}>
-      {children}
-    </ClientJobsContext.Provider>
-  );
+/** The existing two loaders share one authorized latest-refresh owner. */
+export function createClientJobsRefreshOwner(
+  clientId: string, isOwnerCurrent: () => boolean,
+  readSkills: () => Promise<MasterSkill[]> = loadSkills,
+  readJobs: (id: string) => Promise<PostedJob[]> = loadMyJobs,
+) {
+  let disposed = false, invalidated = false, sequence = 0;
+  let state = { isLoading: true, loadError: null as string | null, skills: [] as MasterSkill[], jobs: [] as PostedJob[] };
+  const listeners = new Set<() => void>();
+  const publish = (next: typeof state) => { state = next; for (const listener of listeners) listener(); };
+  const authorized = () => {
+    if (disposed || invalidated) return false;
+    try { if (isOwnerCurrent()) return true; } catch { /* A guard failure ends this lifetime. */ }
+    invalidated = true;
+    return false;
+  };
+  const current = (request: number) => authorized() && request === sequence;
+  async function refresh(id: string, initial = false) {
+    if (!authorized() || id !== clientId) throw new Error('Client jobs owner changed.');
+    const request = ++sequence;
+    try {
+      const [skills, jobs] = await Promise.all([readSkills(), readJobs(id)]);
+      if (current(request)) publish({ ...state, skills, jobs, isLoading: false, loadError: null });
+    } catch (error) {
+      if (initial && current(request)) publish({ ...state, isLoading: false, loadError: error instanceof Error ? error.message : COPY.loadGeneric });
+      throw error;
+    }
+  }
+  return {
+    refresh: (id: string) => refresh(id),
+    loadInitial: () => refresh(clientId, true),
+    dispose: () => { disposed = true; sequence++; },
+    activate: () => { disposed = false; },
+    snapshot: () => state,
+    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+  };
 }
 
+export function ClientJobsProvider({ children, ownerId, isOwnerCurrent }: { children: ReactNode; ownerId: string; isOwnerCurrent: () => boolean }) {
+  const [owner] = useState(() => createClientJobsRefreshOwner(ownerId, isOwnerCurrent));
+  const state = useSyncExternalStore(owner.subscribe, owner.snapshot, owner.snapshot);
+  useEffect(() => {
+    owner.activate();
+    void owner.loadInitial().catch(() => {});
+    return () => owner.dispose();
+  }, [owner]);
+  return <ClientJobsContext.Provider value={{ ...state, refresh: owner.refresh }}>{children}</ClientJobsContext.Provider>;
+}
 export function useClientJobs(): ClientJobsContextValue {
   const value = useContext(ClientJobsContext);
   if (value === undefined) {

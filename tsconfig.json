@@ -11,6 +11,9 @@
       ]
     }
   },
+  "files": [
+    "node_modules/expo/types/global.d.ts"
+  ],
   "include": [
     "**/*.ts",
     "**/*.tsx",

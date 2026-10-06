@@ -34,7 +34,7 @@ const styles = StyleSheet.create({
 const fillStyles = StyleSheet.create({
   warning: { backgroundColor: colors.warningTint },
   danger: { backgroundColor: colors.dangerTint },
-  success: { backgroundColor: colors.accentSoft },
+  success: { backgroundColor: colors.successTint },
 });
 
 const textStyles = StyleSheet.create({

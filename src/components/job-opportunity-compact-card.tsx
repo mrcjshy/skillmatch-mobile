@@ -29,7 +29,7 @@ export function JobOpportunityCompactCard({
       accessibilityLabel={`${fields.title}, ${fields.matchLine}. View job opportunity details`}
     >
       <View style={styles.topRow}>
-        <Text style={styles.title} numberOfLines={2}>
+        <Text style={styles.title}>
           {fields.title}
         </Text>
         {fields.primarySkillName ? (
@@ -38,7 +38,7 @@ export function JobOpportunityCompactCard({
       </View>
 
       {fields.descriptionPreview ? (
-        <Text style={styles.description} numberOfLines={2} ellipsizeMode="tail">
+        <Text style={styles.description}>
           {fields.descriptionPreview}
         </Text>
       ) : null}
@@ -47,7 +47,7 @@ export function JobOpportunityCompactCard({
       <View style={styles.metaRow}>
         {fields.budget ? <Text style={styles.meta}>{fields.budget}</Text> : null}
         {fields.area ? (
-          <Text style={styles.meta} numberOfLines={1}>
+          <Text style={styles.meta}>
             {fields.area}
           </Text>
         ) : null}
@@ -68,31 +68,43 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.sm,
   },
-  pressed: { opacity: 0.72 },
-  topRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  pressed: { backgroundColor: colors.surfaceSubtle },
+  topRow: { flexDirection: 'column', alignItems: 'flex-start', maxWidth: '100%', gap: spacing.sm },
   title: {
-    flex: 1,
+    width: '100%',
+    maxWidth: '100%',
+    flexShrink: 1,
     ...type.cardTitle,
     color: colors.textPrimary,
   },
   description: {
+    maxWidth: '100%',
+    flexShrink: 1,
     ...type.helper,
     color: colors.textSecondary,
   },
   primaryLine: {
+    maxWidth: '100%',
+    flexShrink: 1,
     ...type.bodyEmphasis,
     color: colors.textPrimary,
   },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', maxWidth: '100%', gap: spacing.sm },
   meta: {
+    maxWidth: '100%',
+    flexShrink: 1,
     ...type.helper,
     color: colors.textSecondary,
   },
   match: {
+    maxWidth: '100%',
+    flexShrink: 1,
     ...type.helper,
     color: colors.textSecondary,
   },
   affordance: {
+    maxWidth: '100%',
+    flexShrink: 1,
     ...type.bodyEmphasis,
     color: colors.primary,
   },

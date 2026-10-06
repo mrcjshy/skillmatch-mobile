@@ -247,7 +247,6 @@ const styles = StyleSheet.create({
   choice: {
     alignSelf: 'flex-start',
     maxWidth: '100%',
-    backgroundColor: colors.surface,
     borderRadius: radius.pill,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -271,16 +270,19 @@ const styles = StyleSheet.create({
   },
   composer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: spacing.sm,
     padding: spacing.gutter,
   },
   composerField: {
     flex: 1,
+    minWidth: size.fieldHeight,
   },
   askButton: {
     alignSelf: 'center',
-    height: size.searchHeight,
+    flexShrink: 1,
+    maxWidth: '100%',
     paddingHorizontal: spacing.lg,
   },
 });

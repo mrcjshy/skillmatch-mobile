@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -14,6 +15,7 @@ import { getMyIdentitySubmission, type WorkerIdentitySubmission } from '@/lib/wo
 import { loadWorkerOnboarding, type WorkerOnboardingState } from '@/lib/worker-onboarding';
 import { isPhoneVerificationRequiredForBootstrap } from '@/lib/phone-verification';
 import { useSession } from '@/providers/session-provider';
+import { ClientPostJobDraftMemoryProvider } from '@/providers/client-post-job-draft-provider';
 
 /**
  * Authoritative SkillMatch application-account state.
@@ -79,6 +81,7 @@ export type AccountBootstrapError = {
 export type AccountStatus = 'idle' | 'pending' | 'resolved' | 'error';
 
 export type AccountContextValue = {
+  clientDraftTermination?: { subscribe: (listener: () => void) => () => void; snapshot: () => number };
   account: AccountRecord | null;
   status: AccountStatus;
   isAccountLoading: boolean;
@@ -219,10 +222,12 @@ async function bootstrapAccount(
   userEmail: string | undefined,
   userMetadata: unknown,
   authPhone: string | undefined,
-  phoneConfirmedAt: string | undefined
+  phoneConfirmedAt: string | undefined,
+  isCurrent: () => boolean
 ): Promise<BootstrapResult> {
   // 1. Authoritative own-row SELECT.
   const first = await selectOwnAccountRow(userId);
+  if (!isCurrent()) return fail('account_fetch_failed', 'Account validation was superseded.');
   if (first.kind === 'error') {
     return fail('account_fetch_failed', 'Could not load your account. Please try again.');
   }
@@ -262,6 +267,7 @@ async function bootstrapAccount(
     barangay: DEPLOYMENT_BARANGAY,
     city: DEPLOYMENT_CITY,
   });
+  if (!isCurrent()) return fail('account_fetch_failed', 'Account validation was superseded.');
 
   if (insertError && insertError.code !== POSTGRES_UNIQUE_VIOLATION) {
     return fail('account_insert_failed', 'Could not set up your account. Please try again.');
@@ -306,7 +312,8 @@ async function loadWorkerIdentityGate(userId: string): Promise<{
 }
 
 export function AccountProvider({ children }: { children: ReactNode }) {
-  const { session, isSessionLoading, sessionError } = useSession();
+  const sessionState = useSession();
+  const { session, isSessionLoading, sessionError, sessionRevision = 0, isSessionRevisionCurrent } = sessionState;
 
   const [account, setAccount] = useState<AccountRecord | null>(null);
   const [status, setStatus] = useState<AccountStatus>('idle');
@@ -319,6 +326,33 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [workerOnboardingState, setWorkerOnboardingState] = useState<WorkerOnboardingState>('loading');
   const [retryToken, setRetryToken] = useState(0);
   const identityGeneration = useRef(0);
+  const [clientDraftTermination] = useState(() => {
+    let epoch = 0;
+    const listeners = new Set<() => void>();
+    return {
+      snapshot: () => epoch,
+      subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+      terminate() { epoch++; for (const listener of listeners) listener(); },
+    };
+  });
+  const [attempt, setAttempt] = useState<{ session: typeof session; revision: number; retry: number } | null>(null);
+  const [currentKey] = useState(() => {
+    let activeSession = session, activeRevision = sessionRevision, activeRetry = retryToken;
+    return {
+      observe(nextSession: typeof session, nextRevision: number, nextRetry: number) {
+        activeSession = nextSession; activeRevision = nextRevision; activeRetry = nextRetry;
+      },
+      matches(nextSession: typeof session, nextRevision: number, nextRetry: number) {
+        return activeSession === nextSession && activeRevision === nextRevision && activeRetry === nextRetry;
+      },
+    };
+  });
+  useLayoutEffect(() => { currentKey.observe(session, sessionRevision, retryToken); }, [currentKey, session, sessionRevision, retryToken]);
+  const isCurrentRevision = () => currentKey.matches(session, sessionRevision, retryToken) && (isSessionRevisionCurrent?.(sessionRevision) ?? true);
+  const usable = !isSessionLoading && !sessionError && session !== null;
+  const isAttemptCurrent = usable && attempt?.session === session && attempt.revision === sessionRevision && attempt.retry === retryToken && isCurrentRevision();
+  const exposedStatus = isAttemptCurrent ? status : usable ? 'pending' : 'idle';
+  const exposedAccount = isAttemptCurrent ? account : null;
 
   const userId = session?.user.id;
   const userEmail = session?.user.email;
@@ -341,6 +375,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
     // Stale-result guard: any session/user/retry change invalidates this run.
     let cancelled = false;
+    const current = () => !cancelled && isCurrentRevision();
+    setAttempt({ session, revision: sessionRevision, retry: retryToken });
 
     setAccount(null);
     setAccountError(null);
@@ -355,11 +391,15 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       userEmail,
       userMetadata,
       session.user.phone,
-      session.user.phone_confirmed_at
+      session.user.phone_confirmed_at,
+      current
     )
       .then(async (result) => {
-        if (cancelled) return;
+        if (!current()) return;
         if (result.ok) {
+          // A validated terminal result is irreversible for private Client state,
+          // even if a later consent/Worker stage fails or this run is superseded.
+          if (result.account.role !== 'client' || result.account.is_active !== true) clientDraftTermination.terminate();
           let consentRow: UserConsent | null = null;
           let nextIdentity: WorkerIdentitySubmission | null = null;
           let nextVerified = false;
@@ -374,6 +414,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
             } catch {
               consentRow = null;
             }
+            if (!current()) return;
+            if (!isCurrentLegalConsent(consentRow)) clientDraftTermination.terminate();
             if (result.account.role === 'worker' && isCurrentLegalConsent(consentRow)) {
               const identity = await loadWorkerIdentityGate(result.account.id);
               nextIdentity = identity.identitySubmission;
@@ -382,7 +424,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
             }
           }
 
-          if (cancelled) return;
+          if (!current()) return;
           setAccount(result.account);
           setConsent(consentRow);
           setIdentitySubmission(nextIdentity);
@@ -391,6 +433,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           setAccountError(null);
           setStatus('resolved');
         } else {
+          if (result.error.code !== 'account_fetch_failed') clientDraftTermination.terminate();
           setAccount(null);
           setConsent(null);
           setIdentitySubmission(null);
@@ -401,7 +444,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(() => {
-        if (cancelled) return;
+        if (!current()) return;
         setAccount(null);
         setConsent(null);
         setIdentitySubmission(null);
@@ -421,7 +464,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     // the run keys on identity + retry so an in-flight run for an older
     // user or attempt is discarded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSessionLoading, sessionError, session, userId, retryToken]);
+  }, [isSessionLoading, sessionError, session, sessionRevision, userId, retryToken]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const retryAccountBootstrap = useCallback(() => {
@@ -429,15 +472,18 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshConsent = useCallback(async () => {
-    if (!account || account.role === 'administrator') {
+    if (!isCurrentRevision() || exposedStatus !== 'resolved' || !account || account.role === 'administrator') {
       return;
     }
     const generation = account.role === 'worker' ? ++identityGeneration.current : null;
     try {
       const row = await getMyConsent();
+      if (!isCurrentRevision()) return;
       if (generation !== null && generation !== identityGeneration.current) return;
+      if (!isCurrentLegalConsent(row)) clientDraftTermination.terminate();
       if (account.role === 'worker' && isCurrentLegalConsent(row)) {
         const identity = await loadWorkerIdentityGate(account.id);
+        if (!isCurrentRevision()) return;
         if (generation !== identityGeneration.current) return;
         setIdentitySubmission(identity.identitySubmission);
         setWorkerIsVerified(identity.workerIsVerified);
@@ -445,43 +491,50 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       }
       setConsent(row);
     } catch {
+      if (!isCurrentRevision()) return;
       if (generation !== null && generation !== identityGeneration.current) return;
+      clientDraftTermination.terminate();
       setConsent(null);
     }
-  }, [account]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, exposedStatus, session, sessionRevision, retryToken]);
 
   const refreshIdentity = useCallback(async () => {
-    if (!account || account.role !== 'worker') {
+    if (!isCurrentRevision() || exposedStatus !== 'resolved' || !account || account.role !== 'worker') {
       return;
     }
     const generation = ++identityGeneration.current;
     setWorkerOnboardingState('loading');
     const identity = await loadWorkerIdentityGate(account.id);
+    if (!isCurrentRevision()) return;
     if (generation !== identityGeneration.current) return;
     setIdentitySubmission(identity.identitySubmission);
     setWorkerIsVerified(identity.workerIsVerified);
     setWorkerOnboardingState(identity.workerOnboardingState);
-  }, [account]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, exposedStatus, session, sessionRevision, retryToken]);
 
-  return (
-    <AccountContext.Provider
-      value={{
-        account,
-        status,
-        isAccountLoading: status === 'pending',
-        accountError,
+  const accountValue: AccountContextValue = {
+        clientDraftTermination,
+        account: exposedAccount,
+        status: exposedStatus,
+        isAccountLoading: exposedStatus === 'pending',
+        accountError: isAttemptCurrent ? accountError : null,
         retryAccountBootstrap,
-        consent,
-        hasCurrentConsent: isCurrentLegalConsent(consent),
+        consent: isAttemptCurrent ? consent : null,
+        hasCurrentConsent: isAttemptCurrent && isCurrentLegalConsent(consent),
         refreshConsent,
-        identitySubmission,
-        hasIdentitySubmission: identitySubmission !== null,
-        workerIsVerified,
-        workerOnboardingState,
+        identitySubmission: isAttemptCurrent ? identitySubmission : null,
+        hasIdentitySubmission: isAttemptCurrent && identitySubmission !== null,
+        workerIsVerified: isAttemptCurrent && workerIsVerified,
+        workerOnboardingState: isAttemptCurrent ? workerOnboardingState : 'loading',
         refreshIdentity,
-      }}
-    >
-      {children}
+      };
+  return (
+    <AccountContext.Provider value={accountValue}>
+      <ClientPostJobDraftMemoryProvider session={sessionState} account={accountValue}>
+        {children}
+      </ClientPostJobDraftMemoryProvider>
     </AccountContext.Provider>
   );
 }

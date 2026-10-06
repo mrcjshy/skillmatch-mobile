@@ -1,4 +1,5 @@
 import { AuthError, type Session } from '@supabase/supabase-js';
+import { toByteArray } from 'base64-js';
 import * as Linking from 'expo-linking';
 import {
   createContext,
@@ -29,6 +30,10 @@ import { supabase } from '@/lib/supabase';
  * Recovery authorization is in-memory only and is not persisted.
  */
 export type SessionContextValue = {
+  sessionRevision?: number;
+  sessionLifetime?: SessionLifetime | null;
+  isSessionRevisionCurrent?: (revision: number) => boolean;
+  subscribeSessionLifecycle?: (listener: () => void) => () => void;
   /** The restored Supabase Auth session, or null when no session exists. */
   session: Session | null;
   /** True while the initial session/recovery restoration is still pending. */
@@ -43,9 +48,57 @@ export type SessionContextValue = {
   markRecoveryPasswordUpdated: () => void;
 };
 
+export type SessionLifetime = Readonly<{ ownerId: string; isCurrent: () => boolean }>;
+/** Local correlation only: never signature verification or authorization. */
+export function extractSessionMarker(session: Session, expectedUrl: string | undefined): string | null {
+  try {
+    if (!expectedUrl || typeof session.access_token !== 'string' || session.access_token.length > 32768) return null;
+    const parts = session.access_token.split('.');
+    if (parts.length !== 3 || parts.some(part => !/^[A-Za-z0-9_-]+$/.test(part))) return null;
+    const payload = parts[1];
+    if (payload.length % 4 === 1) return null;
+    const bytes = toByteArray(payload + '='.repeat((4 - payload.length % 4) % 4));
+    const claims = JSON.parse(decodeURIComponent(Array.from(bytes, byte => '%' + byte.toString(16).padStart(2, '0')).join('')));
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!claims || claims.iss !== expectedUrl.replace(/\/$/, '') + '/auth/v1' ||
+      typeof claims.sub !== 'string' || !uuid.test(claims.sub) || claims.sub !== session.user.id ||
+      typeof claims.session_id !== 'string' || !uuid.test(claims.session_id)) return null;
+    return JSON.stringify([claims.iss, claims.sub, claims.session_id]);
+  } catch { return null; }
+}
+
+/** Synchronous epoch/revision updates survive batched sign-out/sign-in. */
+export function createSessionLifecycle() {
+  let revision = 0, epoch = 0;
+  let record: { marker: string | null; epoch: number; lifetime: SessionLifetime } | null = null;
+  const listeners = new Set<() => void>();
+  const changed = () => { for (const listener of listeners) listener(); };
+  return {
+    get revision() { return revision; },
+    get lifetime() { return record?.lifetime ?? null; },
+    isRevisionCurrent: (candidate: number) => candidate === revision,
+    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    terminate() { epoch++; revision++; record = null; changed(); },
+    replace(next: Session | null, expectedUrl: string | undefined, terminated = false) {
+      revision++;
+      if (terminated || next === null) { epoch++; record = null; }
+      if (!next) { changed(); return; }
+      const marker = extractSessionMarker(next, expectedUrl);
+      if (record && marker !== null && record.marker === marker && record.epoch === epoch && record.lifetime.ownerId === next.user.id) { changed(); return; }
+      epoch++;
+      const nextRecord = { marker, epoch, lifetime: null as unknown as SessionLifetime };
+      nextRecord.lifetime = { ownerId: next.user.id, isCurrent: () => record === nextRecord && nextRecord.epoch === epoch };
+      record = nextRecord;
+      changed();
+    },
+  };
+}
+
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
+  const [lifecycle] = useState(createSessionLifecycle);
+  const [sessionRevision, setSessionRevision] = useState(0);
   const [session, setSession] = useState<Session | null>(null);
   const [isSessionLoading, setIsSessionLoading] = useState(true);
   const [sessionError, setSessionError] = useState<AuthError | null>(null);
@@ -59,15 +112,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const lastHandledRecoveryUrlRef = useRef<string | null>(null);
   const handleRecoveryUrlRef = useRef<(url: string) => Promise<void>>(async () => {});
 
-  const applySession = useCallback((next: Session | null) => {
+  const applySession = useCallback((next: Session | null, terminated = false) => {
+    lifecycle.replace(next, process.env.EXPO_PUBLIC_SUPABASE_URL, terminated || recoveryStatusRef.current !== 'idle');
+    setSessionRevision(lifecycle.revision);
     sessionRef.current = next;
     setSession(next);
-  }, []);
+  }, [lifecycle]);
 
   const applyRecoveryStatus = useCallback((next: RecoveryStatus) => {
+    if (next !== 'idle') {
+      lifecycle.terminate();
+      setSessionRevision(lifecycle.revision);
+    }
     recoveryStatusRef.current = next;
     setRecoveryStatus(next);
-  }, []);
+  }, [lifecycle]);
 
   const applyRecoveryUserId = useCallback((next: string | null) => {
     recoveryUserIdRef.current = next;
@@ -179,10 +238,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       // Identity/session update only. Ordinary SIGNED_IN never authorizes recovery.
       if (!isMounted) return;
-      applySession(nextSession);
+      applySession(nextSession, event === 'SIGNED_OUT' || event === 'PASSWORD_RECOVERY');
       if (nextSession) setSessionError(null);
 
       if (nextSession === null) {
@@ -222,8 +281,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (initialUrl !== null && isSkillMatchRecoveryDestination(initialUrl)) {
           await handleRecoveryUrlRef.current(initialUrl);
         } else {
+          const restoringRevision = lifecycle.revision;
           const { data, error } = await supabase.auth.getSession();
           if (!isMounted) return;
+          if (!lifecycle.isRevisionCurrent(restoringRevision)) return;
           if (error) {
             applySession(null);
             setSessionError(error);
@@ -246,7 +307,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
       linking.remove();
     };
-  }, [applyRecoveryStatus, applyRecoveryUserId, applySession]);
+  }, [applyRecoveryStatus, applyRecoveryUserId, applySession, lifecycle]);
 
   // Foreground/background token-refresh lifecycle (native only).
   useEffect(() => {
@@ -272,6 +333,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   return (
     <SessionContext.Provider
       value={{
+        sessionRevision,
+        sessionLifetime: lifecycle.lifetime,
+        isSessionRevisionCurrent: lifecycle.isRevisionCurrent,
+        subscribeSessionLifecycle: lifecycle.subscribe,
         session,
         isSessionLoading,
         sessionError,

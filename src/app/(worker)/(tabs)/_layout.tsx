@@ -6,7 +6,7 @@ import { NotificationBell } from '@/components/notification-bell';
 import { SkillMatchTheme } from '@/constants/theme';
 import { WorkerProfileProvider } from '@/providers/worker-profile-provider';
 
-const { colors } = SkillMatchTheme.ui;
+const { colors, type, size } = SkillMatchTheme.ui;
 const ACTIVE_COLOR = colors.primary;
 const INACTIVE_COLOR = colors.textDisabled;
 
@@ -32,7 +32,7 @@ function TabLabel({
   children: string;
 }) {
   return (
-    <Text style={{ color, fontSize: 11, fontWeight: focused ? '700' : '400' }}>{children}</Text>
+    <Text style={{ ...type.caption, color, fontWeight: focused ? '700' : '400' }}>{children}</Text>
   );
 }
 
@@ -42,6 +42,8 @@ export default function WorkerTabsLayout() {
       <Tabs
         backBehavior="initialRoute"
         screenOptions={{
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
           headerRight: () => <NotificationBell role="worker" />,
           tabBarActiveTintColor: ACTIVE_COLOR,
           tabBarInactiveTintColor: INACTIVE_COLOR,
@@ -49,16 +51,17 @@ export default function WorkerTabsLayout() {
             backgroundColor: colors.background,
             borderTopWidth: 0,
           },
-          sceneStyle: { backgroundColor: SkillMatchTheme.brand.background },
+          sceneStyle: { backgroundColor: colors.background },
         }}
       >
         <Tabs.Screen
           name="worker/index"
           options={{
             title: 'Home',
-            headerShown: false,
+            tabBarAccessibilityLabel: 'Home',
+            headerShown: true,
             tabBarIcon: ({ color }) => (
-              <TabIcon name={{ android: 'home', ios: 'house.fill' }} color={color} size={24} />
+              <TabIcon name={{ android: 'home', ios: 'house.fill' }} color={color} size={size.tabIcon} />
             ),
             tabBarLabel: ({ focused, color }) => (
               <TabLabel focused={focused} color={color}>Home</TabLabel>
@@ -76,11 +79,12 @@ export default function WorkerTabsLayout() {
           name="worker/bookings"
           options={{
             title: 'Bookings',
+            tabBarAccessibilityLabel: 'Bookings',
             tabBarIcon: ({ color }) => (
               <TabIcon
                 name={{ android: 'event_list', ios: 'calendar' }}
                 color={color}
-                size={24}
+                size={size.tabIcon}
               />
             ),
             tabBarLabel: ({ focused, color }) => (
@@ -92,8 +96,9 @@ export default function WorkerTabsLayout() {
           name="worker/profile"
           options={{
             title: 'Profile',
+            tabBarAccessibilityLabel: 'Profile',
             tabBarIcon: ({ color }) => (
-              <TabIcon name={{ android: 'person', ios: 'person.fill' }} color={color} size={24} />
+              <TabIcon name={{ android: 'person', ios: 'person.fill' }} color={color} size={size.tabIcon} />
             ),
             tabBarLabel: ({ focused, color }) => (
               <TabLabel focused={focused} color={color}>Profile</TabLabel>

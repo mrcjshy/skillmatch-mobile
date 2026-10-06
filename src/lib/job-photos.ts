@@ -274,6 +274,7 @@ export async function retryMissingJobPhotos(input: {
   clientId: string;
   jobId: string;
   retries: readonly JobPhotoRetry[];
+  isOperationCurrent?: () => boolean;
 }): Promise<JobPhotoUploadResult> {
   buildJobPhotoPrefix(input.clientId, input.jobId);
   if (!validateJobPhotoCount(input.retries.length).ok) {
@@ -287,8 +288,23 @@ export async function retryMissingJobPhotos(input: {
     seen.add(retry.slot);
   }
 
+  // This is local operation cancellation, not a new server authorization check.
+  // A failed/throwing guard permanently terminates this invocation.
+  const assertOperationCurrent = () => {
+    if (input.isOperationCurrent === undefined) return;
+    let current = false;
+    try { current = input.isOperationCurrent() === true; } catch { /* fail closed */ }
+    if (!current) throw new JobPhotoError('Photo operation is no longer current.', 'operation_invalidated');
+  };
+  const rethrowCurrent = (error: unknown): never => {
+    assertOperationCurrent();
+    throw error;
+  };
+
+  assertOperationCurrent();
   const results: JobPhotoUploadSlotResult[] = [];
   for (const retry of input.retries) {
+    assertOperationCurrent();
     const path = buildJobPhotoPath(input.clientId, input.jobId, retry.slot);
     const checked = validateJobPhotoBytes(retry.image.bytes);
     if (!checked.ok) {
@@ -302,7 +318,9 @@ export async function retryMissingJobPhotos(input: {
       continue;
     }
 
-    const before = await listCanonicalSlots(input.clientId, input.jobId);
+    assertOperationCurrent();
+    const before = await listCanonicalSlots(input.clientId, input.jobId).catch(rethrowCurrent);
+    assertOperationCurrent();
     if (before.error) {
       logJobPhotoFailure('reconcile', before.error);
       results.push({
@@ -319,16 +337,20 @@ export async function retryMissingJobPhotos(input: {
       continue;
     }
 
+    assertOperationCurrent();
     const uploaded = await supabase.storage.from(JOB_PHOTOS_BUCKET).upload(path, checked.image.bytes, {
       contentType: checked.image.mime,
       upsert: false,
-    });
+    }).catch(rethrowCurrent);
+    assertOperationCurrent();
     if (!uploaded.error) {
       results.push({ slot: retry.slot, path, mime: checked.image.mime, status: 'uploaded' });
       continue;
     }
 
-    const after = await listCanonicalSlots(input.clientId, input.jobId);
+    assertOperationCurrent();
+    const after = await listCanonicalSlots(input.clientId, input.jobId).catch(rethrowCurrent);
+    assertOperationCurrent();
     if (after.error === null && after.slots.includes(retry.slot)) {
       results.push({ slot: retry.slot, path, mime: checked.image.mime, status: 'already_present' });
       continue;
@@ -344,6 +366,7 @@ export async function retryMissingJobPhotos(input: {
     });
   }
 
+  assertOperationCurrent();
   const successfulCount = results.filter((result) => result.status !== 'failed').length;
   const failedCount = results.length - successfulCount;
   const outcome = failedCount === 0 ? 'all' : successfulCount === 0 ? 'none' : 'partial';
@@ -353,8 +376,21 @@ export async function retryMissingJobPhotos(input: {
 export async function listJobPhotos(input: {
   clientId: string;
   jobId: string;
+  isOperationCurrent?: () => boolean;
 }): Promise<SignedJobPhoto[]> {
-  const listed = await listCanonicalSlots(input.clientId, input.jobId);
+  const assertOperationCurrent = () => {
+    if (input.isOperationCurrent === undefined) return;
+    let current = false;
+    try { current = input.isOperationCurrent() === true; } catch { /* fail closed */ }
+    if (!current) throw new JobPhotoError('Photo operation is no longer current.', 'operation_invalidated');
+  };
+  const rethrowCurrent = (error: unknown): never => {
+    assertOperationCurrent();
+    throw error;
+  };
+  assertOperationCurrent();
+  const listed = await listCanonicalSlots(input.clientId, input.jobId).catch(rethrowCurrent);
+  assertOperationCurrent();
   if (listed.error) {
     logJobPhotoFailure('list', listed.error);
     throw new JobPhotoError('job photos could not be loaded', 'list_failed');
@@ -362,16 +398,18 @@ export async function listJobPhotos(input: {
   if (listed.slots.length === 0) return [];
 
   const paths = listed.slots.map((slot) => buildJobPhotoPath(input.clientId, input.jobId, slot));
+  assertOperationCurrent();
   const signed = await supabase.storage
     .from(JOB_PHOTOS_BUCKET)
-    .createSignedUrls(paths, JOB_PHOTO_SIGNED_URL_TTL_SECONDS);
+    .createSignedUrls(paths, JOB_PHOTO_SIGNED_URL_TTL_SECONDS).catch(rethrowCurrent);
+  assertOperationCurrent();
   if (signed.error || !Array.isArray(signed.data)) {
     logJobPhotoFailure('signed_url', signed.error ?? { message: 'signed URL response missing' });
     throw new JobPhotoError('job photos could not be loaded', 'signed_url_failed');
   }
 
   const expected = new Map(paths.map((path, index) => [path, listed.slots[index]] as const));
-  return signed.data.flatMap((row) => {
+  const photos = signed.data.flatMap((row) => {
     const path = typeof row.path === 'string' ? row.path : null;
     const slot = path === null ? undefined : expected.get(path);
     if (
@@ -385,4 +423,6 @@ export async function listJobPhotos(input: {
     }
     return [{ slot, path, signedUrl: row.signedUrl }];
   });
+  assertOperationCurrent();
+  return photos;
 }

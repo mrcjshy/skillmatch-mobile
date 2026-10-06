@@ -52,8 +52,8 @@ export function AvailabilityControl({
           disabled ? styles.triggerDisabled : null,
         ]}
       >
-        <Text style={styles.triggerLabel}>{selectedOption.label}</Text>
-        <Text style={styles.caret} accessibilityElementsHidden>
+        <Text style={[styles.triggerLabel, disabled ? styles.disabledLabel : null]}>{selectedOption.label}</Text>
+        <Text style={[styles.caret, disabled ? styles.disabledLabel : null]} accessibilityElementsHidden>
           ▾
         </Text>
       </Pressable>
@@ -104,6 +104,7 @@ export function AvailabilityControl({
 const styles = StyleSheet.create({
   trigger: {
     minHeight: size.fieldHeight,
+    minWidth: size.fieldHeight,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -111,16 +112,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSubtle,
     borderRadius: radius.md,
     borderWidth: 1.5,
-    borderColor: 'transparent',
+    borderColor: colors.controlBorder,
     borderCurve: 'continuous',
   },
   triggerPressed: {
+    backgroundColor: colors.selected,
     borderColor: colors.primary,
   },
   triggerDisabled: {
-    opacity: 0.6,
+    backgroundColor: colors.surfaceSubtle,
+    borderColor: colors.controlBorder,
   },
+  disabledLabel: { color: colors.textSecondary },
   triggerLabel: {
+    flex: 1,
+    flexShrink: 1,
     ...type.body,
     color: colors.textPrimary,
   },
@@ -148,6 +154,10 @@ const styles = StyleSheet.create({
   },
   option: {
     minHeight: size.secondaryButton,
+    minWidth: size.ghostButton,
+    paddingVertical: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: colors.controlBorder,
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
     borderRadius: radius.md,
@@ -155,15 +165,17 @@ const styles = StyleSheet.create({
   },
   optionSelected: {
     backgroundColor: colors.accentSoft,
+    borderColor: colors.primary,
   },
   optionPressed: {
-    opacity: 0.72,
+    backgroundColor: colors.surface,
   },
   optionLabel: {
     ...type.bodyEmphasis,
     color: colors.textSecondary,
   },
   optionLabelSelected: {
+    textDecorationLine: 'underline',
     color: colors.primary,
     fontWeight: '700',
   },

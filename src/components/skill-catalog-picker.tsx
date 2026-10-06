@@ -52,14 +52,19 @@ export function SkillCatalogPicker({
           return (
             <View key={skill.id} style={styles.skillBlock}>
               <Pressable
-                style={[styles.skillToggle, selected && styles.skillToggleSelected]}
+                style={({ pressed }) => [
+                  styles.skillToggle,
+                  selected && styles.skillToggleSelected,
+                  pressed && !disabled && styles.skillTogglePressed,
+                  disabled && styles.skillToggleDisabled,
+                ]}
                 onPress={() => onToggleSkill(skill.id)}
                 disabled={disabled}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: selected, disabled }}
                 accessibilityLabel={skill.skill_name}
               >
-                <Text style={[styles.skillText, selected && styles.skillTextSelected]} numberOfLines={3}>
+                <Text style={[styles.skillText, selected && styles.skillTextSelected, disabled && styles.skillTextDisabled]}>
                   {selected ? '✓ ' : ''}
                   {skill.skill_name}
                 </Text>
@@ -79,6 +84,9 @@ const styles = StyleSheet.create({
   skillBlock: { gap: spacing.sm },
   skillToggle: {
     minHeight: size.ghostButton,
+    minWidth: size.ghostButton,
+    borderWidth: 1.5,
+    borderColor: colors.controlBorder,
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: radius.md,
@@ -89,7 +97,11 @@ const styles = StyleSheet.create({
   },
   skillToggleSelected: {
     backgroundColor: colors.accentSoft,
+    borderColor: colors.primary,
   },
+  skillTogglePressed: { backgroundColor: colors.surface },
+  skillToggleDisabled: { backgroundColor: colors.surfaceSubtle, borderColor: colors.controlBorder },
+  skillTextDisabled: { color: colors.textSecondary },
   skillText: {
     ...type.body,
     color: colors.textPrimary,

@@ -5,7 +5,6 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import { ActiveBookingHomeCard } from '@/components/active-booking-home-card';
 import { AppCard } from '@/components/app-card';
 import { AvailabilityControl } from '@/components/availability-control';
-import { HomeHeader } from '@/components/home-header';
 import { InlineStatus } from '@/components/inline-status';
 import { JobOpportunityCompactCard } from '@/components/job-opportunity-compact-card';
 import { SectionHeader } from '@/components/section-header';
@@ -147,13 +146,11 @@ export default function WorkerHome() {
     }, [accountId, canLoadOpportunities])
   );
 
-  const fullName = account?.full_name ?? '—';
   const firstName = firstNameFromFullName(account?.full_name ?? '');
   const identityNotice = workerHomeIdentityNotice(isVerified, identityStatus);
 
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-      <HomeHeader fullName={fullName} role="worker" variant="chrome" />
 
       <View style={styles.titleBlock}>
         <Text style={styles.greeting}>{homeGreeting()}</Text>

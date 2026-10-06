@@ -5,7 +5,7 @@ import { Pressable, StyleSheet } from 'react-native';
 import { IconCircle } from '@/components/icon-circle';
 import { SkillMatchTheme } from '@/constants/theme';
 
-const { colors } = SkillMatchTheme.ui;
+const { colors, radius, size } = SkillMatchTheme.ui;
 
 type NotificationBellProps = {
   role: 'worker' | 'client';
@@ -37,10 +37,11 @@ const styles = StyleSheet.create({
   button: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
-    minWidth: 44,
+    minHeight: size.ghostButton,
+    minWidth: size.ghostButton,
+    borderRadius: radius.pill,
   },
   pressed: {
-    opacity: 0.6,
+    backgroundColor: colors.selected,
   },
 });
