@@ -247,14 +247,15 @@ describe('Admin route wiring', () => {
   it('registers the queue route and preserves its verification details destination', () => {
     const root = process.cwd();
     const layout = readFileSync(join(root, 'src/app/(admin)/_layout.tsx'), 'utf8');
-    const home = readFileSync(join(root, 'src/app/(admin)/admin/index.tsx'), 'utf8');
+    const tabs = readFileSync(join(root, 'src/app/(admin)/(tabs)/_layout.tsx'), 'utf8');
+    const home = readFileSync(join(root, 'src/app/(admin)/(tabs)/admin/index.tsx'), 'utf8');
     const queue = readFileSync(join(root, 'src/app/(admin)/admin/identity-reviews.tsx'), 'utf8');
     expect(layout).toContain('name="admin/identity-reviews"');
     expect(layout).toContain('name="admin/verification-details"');
-    expect(layout).toContain('name="admin/reports"');
+    expect(tabs).toContain('name="admin/reports"');
     expect(home).toContain("router.push('/admin/identity-reviews'");
     expect(home).toContain("router.push('/admin/reports'");
-    expect(home).toContain('Sign Out');
+    expect(home).toContain('label="Sign out"');
     expect(queue).toContain('<IdentityReviewQueue');
     expect(queue).toContain("pathname: '/admin/verification-details'");
   });

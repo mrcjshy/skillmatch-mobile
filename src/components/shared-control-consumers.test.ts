@@ -30,6 +30,7 @@ function harness() {
       module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022,
     } }).outputText;
     runInNewContext(code, { ...context, exports, require: (name: string) => {
+      if (name === '@/components/refinement-theme') return { useUiTheme: () => modules['@/constants/theme'].SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children };
       if (!(name in modules)) throw Error(`Unexpected import: ${name}`);
       return modules[name];
     } });
@@ -38,12 +39,14 @@ function harness() {
   const theme = compile(read('src/constants/theme.ts'), { 'react-native': native, '@/global.css': {} });
   const { AppButton } = compile(read('src/components/app-button.tsx'), {
     'react-native': native, 'react/jsx-runtime': { jsx, jsxs: jsx }, '@/constants/theme': theme,
+    '@/components/app-symbol': { AppSymbol: 'SymbolView' },
   });
   // Execute actual source style declarations and selected JSX at the control seam.
   // No effects, services, sessions or chat lifecycle are executed by this harness.
   const styles = (file: string): Props => {
     const source = ast(file);
-    const declaration = nodes(source, node => ts.isVariableDeclaration(node) && node.name.getText(source) === 'styles')[0] as ts.VariableDeclaration;
+    const declarations = nodes(source, node => ts.isVariableDeclaration(node) && node.name.getText(source) === 'styles') as ts.VariableDeclaration[];
+    const declaration = declarations.find(node => node.initializer && ts.isCallExpression(node.initializer) && node.initializer.expression.getText(source) === 'StyleSheet.create')!;
     return compile(`export const styles = ${declaration.initializer!.getText(source)};`, {},
       { ...theme.SkillMatchTheme.ui, StyleSheet: native.StyleSheet }).styles;
   };
@@ -94,7 +97,7 @@ function harness() {
     const entry = knowledge.FAQ_ENTRIES.find((item: Props) => item.question === choice.props.label);
     expect(entry).toBeDefined();
     const parent = find(tree, element => element.type === 'View'
-      && flatten(element.props.style).backgroundColor === theme.SkillMatchTheme.ui.colors.surfaceSubtle
+      && flatten(element.props.style).backgroundColor === theme.SkillMatchTheme.ui.colors.surfaceSunken
       && find(element.props.children, child => child === choice));
     expect(parent).toBeDefined();
     return { choice, control: AppButton(choice.props), entry, render, find,
@@ -129,7 +132,7 @@ describe('Booking Chat Send compatibility', () => {
     const styles = h.styles(booking);
     expect(styles.sendButton.height).toBeUndefined();
     const { control } = h.button(booking, 'sendButton', { isSending: false, isDraftSendable: true, handleSend: vi.fn() });
-    expect(flatten(control.props.style({ pressed: false })).minHeight).toBe(56);
+    expect(flatten(control.props.style({ pressed: false })).minHeight).toBe(52);
     expect(flatten(control.props.style({ pressed: false })).height).toBeUndefined();
     expect(styles.composerInput.maxHeight).toBe(120);
   });
@@ -145,7 +148,7 @@ describe('FAQ presentation-only Ask compatibility', () => {
       expect(props.label).toBe('Ask');
       expect(props.accessibilityLabel).toBe('Ask');
       expect(props.disabled).toBe(!canAsk);
-      expect(flatten(control.props.style({ pressed: false })).minHeight).toBe(56);
+      expect(flatten(control.props.style({ pressed: false })).minHeight).toBe(52);
       expect(flatten(control.props.style({ pressed: false })).height).toBeUndefined();
       expect(control.props.children.props.numberOfLines).toBeUndefined();
       if (!control.props.disabled) control.props.onPress();
@@ -176,7 +179,7 @@ describe('FAQ answer-choice composed feedback', () => {
     expect(control.props.disabled).toBe(false);
     const resting = flatten(control.props.style({ pressed: false }));
     const pressed = flatten(control.props.style({ pressed: true }));
-    expect(pressed.backgroundColor).toBe(ui.colors.selected);
+    expect(pressed.backgroundColor).toBe(ui.colors.accentSubtle);
     expect(pressed.backgroundColor).not.toBe(resting.backgroundColor);
     expect(flatten(control.props.style({ pressed: false }))).toEqual(resting);
     for (const presentation of [resting, pressed]) {
@@ -198,7 +201,7 @@ describe('FAQ answer-choice composed feedback', () => {
     };
     const restBackground = resting.backgroundColor === 'transparent'
       ? parentStyle.backgroundColor : resting.backgroundColor;
-    expect(restBackground).toBe(ui.colors.surfaceSubtle);
+    expect(restBackground).toBe(ui.colors.surfaceSunken);
     expect(contrast(restBackground)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(pressed.backgroundColor)).toBeGreaterThanOrEqual(4.5);
     console.log('F1 composed contrast', JSON.stringify({ labelColor, restBackground,
@@ -245,15 +248,11 @@ describe('Unchanged lifecycle/resolver and token consumer contracts', () => {
   });
   it('constructs known ghost/secondary token consumer styles without changing their sources', () => {
     const h = harness();
-    expect(h.size).toMatchObject({ ghostButton: 48, secondaryButton: 52, searchHeight: 52, compactButton: 48 });
+    expect(h.size).toMatchObject({ ghostButton: 48, secondaryButton: 48, searchHeight: 52, compactButton: 48 });
     for (const [file, token] of [
       ['src/components/selected-skill-chips.tsx', 'ghostButton'],
-      ['src/components/skill-catalog-picker.tsx', 'ghostButton'],
-      ['src/components/skill-list-summary.tsx', 'ghostButton'],
-      ['src/components/worker-identity-section.tsx', 'ghostButton'],
       ['src/components/legal-document-screen.tsx', 'ghostButton'],
       ['src/components/client-post-job-screen.tsx', 'ghostButton'],
-      ['src/components/availability-control.tsx', 'secondaryButton'],
     ]) {
       const constructed = h.styles(file);
       const uses = nodes(ast(file), node => ts.isPropertyAssignment(node) && node.initializer.getText() === `size.${token}`);

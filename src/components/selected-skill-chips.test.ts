@@ -21,6 +21,7 @@ function harness(file: string, name: string) {
   let state = false;
   const setState = (next: boolean) => { state = next; };
   const Component = compile(`src/components/${file}.tsx`, { 'react-native': native, react: { useState: () => [state, setState] }, 'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' }, '@/constants/theme': theme,
+    '@/components/refinement-theme': { useUiTheme: () => theme.SkillMatchTheme.ui },
     '@/components/app-field': { AppField: 'AppField' }, '@/lib/worker-profile': compile('src/lib/worker-profile.ts', {}), '@/lib/skill-catalog': compile('src/lib/skill-catalog.ts', {}) })[name];
   return { render: (props: Props) => Component(props), ui: theme.SkillMatchTheme.ui };
 }

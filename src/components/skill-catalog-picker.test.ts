@@ -14,14 +14,16 @@ function harness(file: string, name: string) {
   const compile = (path: string, modules: Props): Props => {
     const exports: Props = {};
     const code = ts.transpileModule(readFileSync(path, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-    runInNewContext(code, { exports, require: (key: string) => { if (!(key in modules)) throw Error(`Unexpected import: ${key}`); return modules[key]; } });
+    runInNewContext(code, { exports, require: (key: string) => {
+      if (key === '@/components/refinement-theme') return { useUiTheme: () => modules['@/constants/theme'].SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children }; if (!(key in modules)) throw Error(`Unexpected import: ${key}`); return modules[key]; } });
     return exports;
   };
   const theme = compile('src/constants/theme.ts', { 'react-native': native, '@/global.css': {} });
   let state = false;
   const setState = (next: boolean) => { state = next; };
   const Component = compile(`src/components/${file}.tsx`, { 'react-native': native, react: { useState: () => [state, setState] }, 'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' }, '@/constants/theme': theme,
-    '@/components/app-field': { AppField: 'AppField' }, '@/lib/worker-profile': compile('src/lib/worker-profile.ts', {}), '@/lib/skill-catalog': compile('src/lib/skill-catalog.ts', {}) })[name];
+    '@/components/app-field': { AppField: 'AppField' }, '@/components/app-chip': { AppChip: 'AppChip' }, '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
+    '@/components/grouped-row': compile('src/components/grouped-row.ts', { 'react-native': native }), '@/lib/worker-profile': compile('src/lib/worker-profile.ts', {}), '@/lib/skill-catalog': compile('src/lib/skill-catalog.ts', {}) })[name];
   return { render: (props: Props) => Component(props), ui: theme.SkillMatchTheme.ui };
 }
 function ratio(a: string, b: string) {
@@ -43,7 +45,7 @@ function contrast(element: any, parent: string, tag: string) {
 
 const skills = [{ id: 'b', skill_name: 'Zinc roofing' }, { id: 'a', skill_name: 'Long plumbing selection that wraps at large font scales' }];
 describe('SkillCatalogPicker actual selection output', () => {
-  it('has growing readable composed states, neutral blocked presentation and selected checkmark', () => {
+  it('has readable composed rows, a visible checkbox mark, neutral blocked presentation and a symbol check', () => {
     const h = harness('skill-catalog-picker', 'SkillCatalogPicker');
     for (const disabled of [false, true]) {
       const tree = h.render({ skills, query: '', onQueryChange: vi.fn(), isSkillSelected: (id: string) => id === 'a', onToggleSkill: vi.fn(), disabled });
@@ -54,18 +56,35 @@ describe('SkillCatalogPicker actual selection output', () => {
         expect(resting.minHeight).toBeGreaterThanOrEqual(48);
         expect(resting.minWidth).toBeGreaterThanOrEqual(48);
         expect(resting.height).toBeUndefined();
-        expect(resting.borderColor).not.toBe('transparent');
-        expect(button.props.children.props.numberOfLines).toBeUndefined();
-        expect(button.props.children.props.allowFontScaling).not.toBe(false);
-        expect(flatten(button.props.children.props.style).flexShrink).toBe(1);
         expect(button.props.disabled).toBe(disabled);
         expect(button.props.accessibilityState.disabled).toBe(disabled);
-        if (disabled) { expect(pressed).toEqual(resting); expect(flatten(button.props.children.props.style).color).toBe(h.ui.colors.textSecondary); }
+        const label = children(button.props.children).find(n => n.type === 'Text');
+        expect(label.props.numberOfLines).toBeUndefined();
+        expect(label.props.allowFontScaling).not.toBe(false);
+        expect(flatten(label.props.style).flexShrink).toBe(1);
+        if (disabled) { expect(flatten(label.props.style).color).toBe(h.ui.colors.textSecondary); expect(pressed.backgroundColor).toBe(resting.backgroundColor); }
         else expect(pressed.backgroundColor).not.toBe(resting.backgroundColor);
-        if (button.props.accessibilityState.checked) expect(button.props.children.props.children[0]).toBe('✓ ');
+        const mark = children(button.props.children).find(n => n.type === 'View');
+        const symbols = children(mark.props.children).filter(n => n.type === 'AppSymbol');
+        expect(symbols).toHaveLength(button.props.accessibilityState.checked ? 1 : 0);
+        expect(JSON.stringify(children(button.props.children).filter(n => n.type === 'Text').map(n => n.props.children))).not.toContain('\u2713');
+        const markStyle = states(mark, false);
+        expect(ratio(markStyle.borderColor, h.ui.colors.surface)).toBeGreaterThanOrEqual(3);
         contrast(button, h.ui.colors.surface, 'catalog');
       }
     }
+  });
+  it('blocks only unselected rows the caller marks unavailable, leaving chosen rows removable', () => {
+    const h = harness('skill-catalog-picker', 'SkillCatalogPicker'), onToggleSkill = vi.fn();
+    const tree = h.render({ skills, query: '', onQueryChange: vi.fn(), isSkillSelected: (id: string) => id === 'a', onToggleSkill, isSkillUnavailable: () => true });
+    const [chosen, other] = children(tree).filter(n => n.type === 'Pressable');
+    expect(chosen.props.disabled).toBe(false);
+    expect(chosen.props.accessibilityState).toEqual({ checked: true, disabled: false });
+    expect(other.props.disabled).toBe(true);
+    expect(other.props.accessibilityState).toEqual({ checked: false, disabled: true });
+    const label = children(other.props.children).find(n => n.type === 'Text');
+    expect(flatten(label.props.style).color).toBe(h.ui.colors.textSecondary);
+    contrast(other, h.ui.colors.surface, 'catalog-unavailable');
   });
   it('uses real filtering/order, forwards search callback and only selected render-after siblings', () => {
     const h = harness('skill-catalog-picker', 'SkillCatalogPicker'), onToggleSkill = vi.fn(), onQueryChange = vi.fn();

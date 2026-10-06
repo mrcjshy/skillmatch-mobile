@@ -3,12 +3,16 @@ import { AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { AppButton } from '@/components/app-button';
 import { AppChip } from '@/components/app-chip';
+import { FactRow } from '@/components/fact-row';
 import { InlineStatus } from '@/components/inline-status';
 import { JobPhotoGallery } from '@/components/job-photo-gallery';
+import { SectionHeader } from '@/components/section-header';
+import { SurfaceGroup } from '@/components/surface-group';
 import { ClientJobLocation } from '@/components/client-job-location';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatCardDateTime } from '@/lib/date-time';
 import { formatClientPostedPaymentLine } from '@/lib/job-payment';
+import { jobStatusLabel, jobStatusVariant } from '@/lib/status-presentation';
 import { loadClientBookings, type ClientBooking } from '@/lib/booking-records';
 import { listJobPhotos, type SignedJobPhoto } from '@/lib/job-photos';
 import { useAccount } from '@/providers/account-provider';
@@ -137,41 +141,55 @@ export default function ClientJobDetails({ jobId }: { jobId: string | null }) {
     {!authorized || !focused || !active ? <InlineStatus variant="loading" message="Job details are unavailable until access is current." /> :
       isLoading ? <InlineStatus variant="loading" message="Loading your job…" /> :
         !job ? <InlineStatus variant={loadError ? 'error' : 'empty'} message={loadError ?? 'This job is unavailable.'} /> : <>
-          <Text selectable style={styles.title}>{job.title}</Text>
-          <AppChip label={`Status: ${job.status}`} variant="neutral" />
-          <Text selectable style={styles.body}>{job.description?.trim() ? job.description : 'No description provided.'}</Text>
+          <View style={styles.header}>
+            <AppChip label={jobStatusLabel(job.status)} variant={jobStatusVariant(job.status)} />
+            <Text selectable accessibilityRole="header" style={styles.title}>{job.title}</Text>
+          </View>
+          <SurfaceGroup>
+            <FactRow icon={{ android: 'schedule', ios: 'clock' }} label="Schedule" value={formatCardDateTime(job.scheduled_at) ?? 'No schedule'} strong selectable />
+            <FactRow icon={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} label="Budget" value={job.budget === null ? 'Not set' : `₱${job.budget.toLocaleString()}`} strong inline />
+            {job.payment_method_readable ? <FactRow icon={{ android: 'receipt_long', ios: 'doc.plaintext' }} label="Payment" value={formatClientPostedPaymentLine(job.payment_method)} /> : null}
+            <FactRow icon={{ android: 'handyman', ios: 'wrench.and.screwdriver' }} label="Skills" value={job.skills.length ? job.skills.join(', ') : 'None'} />
+          </SurfaceGroup>
           <View style={styles.section}>
-            <Text selectable style={styles.line}>Schedule: {formatCardDateTime(job.scheduled_at) ?? 'No schedule'}</Text>
-            <Text selectable style={styles.line}>Budget: {job.budget === null ? 'Not set' : `₱${job.budget.toLocaleString()}`}</Text>
-            {job.payment_method_readable ? <Text selectable style={styles.line}>{formatClientPostedPaymentLine(job.payment_method)}</Text> : null}
-            <Text selectable style={styles.line}>Skills: {job.skills.length ? job.skills.join(', ') : 'None'}</Text>
+            <SectionHeader title="Description" />
+            <Text selectable style={styles.body}>{job.description?.trim() ? job.description : 'No description provided.'}</Text>
           </View>
           {visible ? <>
             {read.bookingState === 'loading' ? <InlineStatus variant="loading" message="Loading booking context…" /> :
               read.bookingState === 'error' ? <InlineStatus variant="error" message="Booking context is unavailable. Retry to check assignment." /> :
                 read.booking ? <View style={styles.section}>
+                  <SectionHeader title="Booking" />
                   <Text selectable style={styles.body}>{read.booking.booking_status === 'confirmed' ? 'Assigned' : `Booking status: ${read.booking.booking_status}`}</Text>
-                  <AppButton label="Booking Details" variant="secondary" onPress={() => {
+                  <AppButton label="Booking details" variant="primary" onPress={() => {
                     if (read.operation.isCurrent() && read.booking) router.push({ pathname: '/client/booking-details', params: { bookingId: read.booking.booking_id } });
                   }} />
-                </View> : job.status === 'open' ? <Text selectable style={styles.body}>Waiting for acceptance</Text> : <Text selectable style={styles.line}>No current booking context.</Text>}
-            <JobPhotoGallery photos={read.photos} loading={read.photoState === 'loading'} error={read.photoState === 'error'} />
-            {read.photoState === 'ready' && read.photos.length === 0 ? <Text selectable style={styles.line}>No job photos.</Text> : null}
-            {job.status === 'open' ? <AppButton label="View/Edit Location" variant="secondary" onPress={() => { if (read.operation.locationCurrent()) setLocationOpen(true); }} /> : null}
+                </View> : job.status === 'open' ? <View style={styles.section}>
+                  <SectionHeader title="Waiting for a worker" />
+                  <Text selectable style={styles.body}>Waiting for acceptance</Text>
+                  <Text style={styles.line}>Eligible workers can see this job. The first worker to accept books it, and you will be notified.</Text>
+                </View> : <Text selectable style={styles.line}>No current booking context.</Text>}
+            <View style={styles.section}>
+              <SectionHeader title="Photos" />
+              <JobPhotoGallery photos={read.photos} loading={read.photoState === 'loading'} error={read.photoState === 'error'} />
+              {read.photoState === 'ready' && read.photos.length === 0 ? <Text selectable style={styles.line}>No job photos.</Text> : null}
+            </View>
+            {job.status === 'open' ? <AppButton label="View or edit location" variant="secondary" onPress={() => { if (read.operation.locationCurrent()) setLocationOpen(true); }} /> : null}
             {locationOpen && job.status === 'open' ? <ClientJobLocation jobId={job.id} clientId={ownerId}
-              dismissalLabel="Back to Job Details" isOperationCurrent={read.operation.locationCurrent} onClose={() => setLocationOpen(false)} /> : null}
+              dismissalLabel="Back to job details" isOperationCurrent={read.operation.locationCurrent} onClose={() => setLocationOpen(false)} /> : null}
           </> : <InlineStatus variant="loading" message="Loading protected job details…" />}
         </>}
     {refreshError ? <InlineStatus variant="error" message="Could not refresh. Displayed facts may be out of date. Please retry." /> : null}
-    {authorized && focused && active ? <AppButton label="Retry / Refresh Job" variant="secondary" loading={refreshing} disabled={isLoading}
+    {authorized && focused && active ? <AppButton label="Refresh job" variant="ghost" loading={refreshing} disabled={isLoading}
       onPress={() => void reload()} /> : null}
   </ScrollView>;
 }
 const styles = StyleSheet.create({
-  scroll: { flex: 1, backgroundColor: colors.background },
-  container: { padding: spacing.gutter, paddingBottom: spacing.xxxxl, gap: spacing.lg, backgroundColor: colors.background },
-  title: { ...type.cardTitle, color: colors.textPrimary },
+  scroll: { flex: 1, backgroundColor: colors.canvas },
+  container: { padding: spacing.gutter, paddingBottom: spacing.xxxxl, gap: spacing.xl, backgroundColor: colors.canvas },
+  header: { gap: spacing.sm, alignItems: 'flex-start' },
+  title: { ...type.screenTitle, color: colors.textPrimary },
   body: { ...type.body, color: colors.textPrimary },
   line: { ...type.helper, color: colors.textSecondary },
-  section: { gap: spacing.sm },
+  section: { gap: spacing.md },
 });

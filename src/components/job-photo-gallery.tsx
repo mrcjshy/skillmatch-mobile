@@ -69,8 +69,8 @@ const styles = StyleSheet.create({
   photo: {
     width: 104,
     height: 104,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.control,
+    backgroundColor: colors.surfaceSunken,
     borderCurve: 'continuous',
   },
 });

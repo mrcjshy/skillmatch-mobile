@@ -3,9 +3,11 @@ import { useCallback, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { AppCard } from '@/components/app-card';
-import { AppChip, type AppChipVariant } from '@/components/app-chip';
+import { AppChip } from '@/components/app-chip';
+import { AppSymbol } from '@/components/app-symbol';
+import { groupPosition, groupedRowStyle } from '@/components/grouped-row';
 import { InlineStatus } from '@/components/inline-status';
+import { useUiTheme } from '@/components/refinement-theme';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatCardDateTime } from '@/lib/date-time';
 import {
@@ -18,19 +20,14 @@ import {
   loadMyReportsErrorCopy,
   reportContextLabel,
 } from '@/lib/reports';
+import { reportStatusVariant } from '@/lib/status-presentation';
 import { BookingRole } from '@/lib/booking-records';
 import { useAccount } from '@/providers/account-provider';
 
 const { colors, type, spacing } = SkillMatchTheme.ui;
 
-function reportChipVariant(status: string): AppChipVariant {
-  if (status === 'resolved') return 'selected';
-  if (status === 'under_review') return 'warning';
-  if (status === 'dismissed') return 'warning';
-  return 'neutral';
-}
-
 export default function MyReportsList({ role }: { role: BookingRole }) {
+  const ui = useUiTheme();
   const router = useRouter();
   const { account } = useAccount();
   const accountId = account?.id;
@@ -130,15 +127,16 @@ export default function MyReportsList({ role }: { role: BookingRole }) {
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={refresh}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
         />
       }
     >
       {reports.length === 0 ? (
         <InlineStatus variant="empty" message={COPY.emptyMyReports} />
       ) : (
-        reports.map((report) => {
+        <View>
+        {reports.map((report, index) => {
           const created = formatCardDateTime(report.created_at);
           return (
             <Pressable
@@ -149,22 +147,24 @@ export default function MyReportsList({ role }: { role: BookingRole }) {
               }}
               accessibilityRole="button"
               accessibilityLabel={`${formatReportCategory(report.category)}, ${formatReportStatus(report.status)}. View report details`}
+              style={({ pressed }) => [styles.row, groupedRowStyle(ui, groupPosition(index, reports.length)), pressed ? styles.pressed : null]}
             >
-              <AppCard>
-                <View style={styles.topRow}>
-                  <Text style={styles.title}>{formatReportCategory(report.category)}</Text>
-                  <AppChip
-                    label={formatReportStatus(report.status)}
-                    variant={reportChipVariant(report.status)}
-                  />
-                </View>
+              <View style={styles.copy}>
+                <Text style={styles.title}>{formatReportCategory(report.category)}</Text>
                 <Text style={styles.meta}>{reportContextLabel(report.booking_id)}</Text>
                 {created ? <Text style={styles.meta}>{created}</Text> : null}
-                <Text style={styles.affordance}>View details →</Text>
-              </AppCard>
+                <View style={styles.statusRow}>
+                  <AppChip
+                    label={formatReportStatus(report.status)}
+                    variant={reportStatusVariant(report.status)}
+                  />
+                </View>
+              </View>
+              <AppSymbol name={{ android: 'chevron_right', ios: 'chevron.right' }} size={20} tintColor={colors.textSecondary} />
             </Pressable>
           );
-        })
+        })}
+        </View>
       )}
     </ScrollView>
   );
@@ -173,41 +173,39 @@ export default function MyReportsList({ role }: { role: BookingRole }) {
 const styles = StyleSheet.create({
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   container: {
     flexGrow: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     padding: spacing.gutter,
     gap: spacing.md,
-    paddingBottom: spacing.xxxl + spacing.sm,
+    paddingBottom: spacing.xxxxl,
   },
   center: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.gutter,
   },
-  topRow: {
+  row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
+    gap: spacing.md,
+    minHeight: SkillMatchTheme.ui.size.listRowMinHeight,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
   },
+  pressed: { backgroundColor: colors.surfaceSunken },
+  copy: { flex: 1, minWidth: 0, gap: spacing.xs },
+  statusRow: { flexDirection: 'row', alignItems: 'center' },
   title: {
-    flex: 1,
-    ...type.cardTitle,
+    ...type.bodyEmphasis,
     color: colors.textPrimary,
   },
   meta: {
     ...type.helper,
     color: colors.textSecondary,
-  },
-  affordance: {
-    ...type.caption,
-    color: colors.primary,
-    fontWeight: '600',
-    marginTop: spacing.xs,
   },
 });

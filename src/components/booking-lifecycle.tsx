@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { type ReactNode, useRef, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { AppNotice } from '@/components/app-notice';
 import { AppButton } from '@/components/app-button';
 import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import {
   CANCELLATION_DETAIL_MAX,
   CANCELLATION_REASON_OPTIONS,
@@ -18,7 +19,7 @@ import {
 } from '@/lib/booking-lifecycle';
 import type { CancellationReasonCode } from '@/lib/bookings';
 
-const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+
 
 /**
  * The lifecycle action section of one CONFIRMED Booking card (BL-01A-UI).
@@ -60,13 +61,18 @@ export default function BookingLifecycle({
   showCompletion,
   showCancellation,
   onChanged,
+  children,
 }: {
   role: LifecycleRole;
   bookingId: string;
   showCompletion: boolean;
   showCancellation: boolean;
   onChanged: () => Promise<void>;
+  children?: ReactNode;
 }) {
+  const ui = useUiTheme();
+  const { styles } = createStyles(ui);
+
   /**
    * One busy slot per Booking card, holding WHICH action is in flight. Both
    * controls on this card are disabled while either runs, since completing and
@@ -186,7 +192,7 @@ export default function BookingLifecycle({
 
   return (
     <View style={styles.section}>
-      <Text style={styles.heading}>{COPY.heading}</Text>
+      {role === 'client' && showCompletion ? <Text style={styles.heading}>{COPY.heading}</Text> : null}
 
       {/*
         Client only. The Worker branch below never renders this control.
@@ -211,17 +217,17 @@ export default function BookingLifecycle({
         sit at the same weight as the action the participant actually came to
         perform. The confirmation dialog is unchanged.
       */}
+      {children}
+
       {showCancellation ? (
-        <AppButton
-          variant="destructive"
-          label={busyAction === 'cancel' ? COPY.cancelling : COPY.cancel}
-          onPress={openCancelModal}
-          loading={busyAction === 'cancel'}
-          disabled={isBusy}
-        />
+        <View style={styles.cancellation}>
+          {role === 'client' ? <Text style={styles.modalBody}>Either party may cancel.</Text> : null}
+          <AppButton variant="destructive" label={busyAction === 'cancel' ? COPY.cancelling : COPY.cancel}
+            onPress={openCancelModal} loading={busyAction === 'cancel'} disabled={isBusy} />
+        </View>
       ) : null}
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <AppNotice variant="danger" message={error} /> : null}
 
       <Modal visible={cancelModalOpen} transparent animationType="fade" onRequestClose={closeCancelModal}>
         <View style={styles.overlay}>
@@ -232,7 +238,7 @@ export default function BookingLifecycle({
             onPress={closeCancelModal}
             disabled={isBusy}
           />
-          <View style={styles.modalCard}>
+          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalCard} keyboardShouldPersistTaps="handled">
             <Text style={styles.modalTitle}>{COPY.cancelReasonTitle}</Text>
             <Text style={styles.modalBody}>{COPY.cancelReasonBody}</Text>
             <View style={styles.reasonOptions} accessibilityRole="radiogroup">
@@ -241,6 +247,7 @@ export default function BookingLifecycle({
                 return (
                   <Pressable
                     key={option.value}
+                    style={({ pressed }) => [styles.reasonOption, pressed && styles.reasonOptionPressed]}
                     accessibilityRole="radio"
                     accessibilityLabel={option.label}
                     accessibilityState={{ selected, disabled: isBusy }}
@@ -282,34 +289,42 @@ export default function BookingLifecycle({
               disabled={!cancellationInput.ok || isBusy}
             />
             <AppButton label={COPY.dismiss} variant="ghost" onPress={closeCancelModal} disabled={isBusy} />
-          </View>
+          </ScrollView>
         </View>
       </Modal>
     </View>
   );
 }
 
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing, radius, size } = ui;
 const styles = StyleSheet.create({
   section: {
-    gap: spacing.sm,
+    gap: spacing.xl,
   },
+  cancellation: { gap: spacing.md },
   heading: {
     ...type.sectionTitle,
     color: colors.textPrimary,
-  },
-  error: {
-    ...type.helper,
-    color: colors.danger,
   },
   overlay: {
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: spacing.gutter,
-    backgroundColor: colors.overlay,
+    backgroundColor: colors.scrim,
   },
+  modalScroll: { maxHeight: '90%', width: '100%', flexGrow: 0 },
+  reasonOption: {
+    minHeight: size.compactButton,
+    minWidth: size.compactButton,
+    maxWidth: '100%',
+    justifyContent: 'center',
+    borderRadius: radius.control,
+  },
+  reasonOptionPressed: { backgroundColor: colors.surfaceSunken },
   modalCard: {
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: radius.control,
     padding: spacing.lg,
     gap: spacing.md,
   },
@@ -317,6 +332,9 @@ const styles = StyleSheet.create({
   modalBody: { ...type.body, color: colors.textSecondary },
   reasonOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   counter: { ...type.caption, color: colors.textSecondary },
-  counterOver: { ...type.caption, color: colors.danger, fontWeight: '600' },
-  helper: { ...type.helper, color: colors.danger },
+  counterOver: { ...type.caption, color: colors.error, fontWeight: '600' },
+  helper: { ...type.helper, color: colors.error },
 });
+
+  return { styles };
+}

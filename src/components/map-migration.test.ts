@@ -64,6 +64,7 @@ function harness(file: string, nativeAvailable = true, dev = false) {
     '@/lib/recent-locations': { loadRecentLocations: vi.fn().mockResolvedValue([]), clearRecentLocations: vi.fn() },
     '@/lib/bookings': { formatLocation: () => 'Santa Ana, Pateros' },
     '@/components/app-button': { AppButton: 'AppButton' },
+    '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
     '@/components/app-notice': { AppNotice: 'AppNotice' },
     '@/components/worker-job-location-map': { WorkerJobLocationMapLibre: 'WorkerMap' },
     '@maplibre/maplibre-react-native': runtime,
@@ -75,6 +76,7 @@ function harness(file: string, nativeAvailable = true, dev = false) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   runInNewContext(compiled, { exports, setTimeout: vi.fn(), clearTimeout: vi.fn(), __DEV__: dev, require: (name: string) => {
+      if (name === '@/components/refinement-theme') return { useUiTheme: () => (modules['@/constants/theme'] as { SkillMatchTheme: { ui: unknown } }).SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children };
     if (!nativeAvailable && name === '@maplibre/maplibre-react-native') throw new Error('Native module unavailable');
     if (!(name in modules)) throw new Error(`Unexpected import: ${name}`);
     return modules[name];
@@ -88,7 +90,7 @@ function all(tree: Element | null, predicate: (node: Element) => boolean): Eleme
   return [...(predicate(tree) ? [tree] : []), ...children.flatMap(child => all(child, predicate))];
 }
 const byType = (tree: Element, type: string) => all(tree, n => n.type === type)[0];
-const confirmButton = (tree: Element) => all(tree, n => n.type === 'AppButton' && n.props.label === 'Choose This Location')[0];
+const confirmButton = (tree: Element) => all(tree, n => n.type === 'AppButton' && n.props.label === 'Choose this location')[0];
 const region = (center: { longitude: number; latitude: number }, userInteraction = true, zoom = 14) => ({
   nativeEvent: { center: [center.longitude, center.latitude], userInteraction, zoom },
 });
@@ -132,7 +134,7 @@ describe('migrated map source event contracts', () => {
     byType(render(), 'Map').props.onRegionDidChange(region(pin));
     await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
     await all(render(), n => n.props.accessibilityLabel === location.COPY.useCurrentLocation)[0].props.onPress();
-    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Open Settings')).toHaveLength(1));
+    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Open settings')).toHaveLength(1));
     expect(confirmButton(render()).props.disabled).toBe(false);
     expect(h.geocoder.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
   });

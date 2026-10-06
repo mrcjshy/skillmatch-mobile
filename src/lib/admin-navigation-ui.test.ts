@@ -3,8 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AdminLayout from '../app/(admin)/_layout';
 import { SkillMatchTheme } from '../constants/theme';
-import AdminHome from '../app/(admin)/admin/index';
+import AdminHome from '../app/(admin)/(tabs)/admin/index';
 import type { AdminAnalyticsSummary, AdminAnalyticsView } from './admin-analytics';
+
+vi.mock('@/components/refinement-theme', () => ({
+  useUiTheme: () => SkillMatchTheme.ui,
+  RefinementThemeProvider: ({ children }: { children: ReactNode }) => children,
+}));
 
 const seams = vi.hoisted(() => ({
   cells: [] as unknown[], cursor: 0, push: vi.fn(), signOut: vi.fn(), refresh: vi.fn(),
@@ -20,7 +25,7 @@ vi.mock('react', async (importOriginal) => ({
   useEffect: () => undefined,
 }));
 vi.mock('@/providers/account-provider', () => ({ useAccount: () => ({
-  status: 'resolved', account: { id: 'admin-1', role: 'administrator', is_active: true },
+  status: 'resolved', account: { id: 'admin-1', role: 'administrator', is_active: true, full_name: 'Alma Reyes Santos' },
 }) }));
 vi.mock('@/providers/session-provider', () => ({ useSession: () => ({ session: { user: { id: 'admin-1' } } }) }));
 vi.mock('@/lib/sign-out', () => ({ signOutCurrentUser: () => seams.signOut() }));
@@ -31,13 +36,19 @@ vi.mock('@/lib/admin-analytics', async (importOriginal) => ({
     refresh() { seams.refresh(); }
   },
 }));
+// The shared sticky header (greeting, date, bell) has its own tests; here it is an inert host.
+vi.mock('@/components/home-header', () => ({ HomeStickyHeader: 'HomeStickyHeader' }));
 
 vi.mock('@/global.css', () => ({}));
+vi.mock('expo-font', () => ({ useFonts: () => [true] }));
+vi.mock('expo-symbols/androidWeights/regular', () => ({ default: { name: 'MaterialSymbols_400Regular', font: 1 } }));
+vi.mock('expo-symbols', () => ({ SymbolView: 'SymbolView' }));
 vi.mock('react-native', () => ({
   Platform: { select: (options: Record<string, unknown>) => options.default },
   StyleSheet: { create: (styles: unknown) => styles },
   View: 'View', Text: 'Text', ScrollView: 'ScrollView', RefreshControl: 'RefreshControl',
   ActivityIndicator: 'ActivityIndicator', Pressable: 'Pressable',
+  useWindowDimensions: () => ({ fontScale: 1, width: 1080, height: 2400 }),
 }));
 vi.mock('expo-router', () => ({
   Stack: Object.assign('Stack', { Screen: 'Stack.Screen' }),
@@ -62,7 +73,8 @@ function composed(node: ReactNode): ReactElement<Props>[] {
     if (typeof child.type === 'function') {
       return composed((child.type as (props: Props) => ReactNode)(child.props));
     }
-    return [child, ...composed(child.props.children)];
+    const nested = Object.entries(child.props).filter(([key, value]) => key !== 'children' && isValidElement(value)).map(([, value]) => value) as ReactNode[];
+    return [child, ...composed(child.props.children), ...nested.flatMap((value) => composed(value))];
   });
 }
 function text(nodes: ReactElement<Props>[]) {
@@ -89,6 +101,8 @@ const snapshot: AdminAnalyticsSummary = {
 const view: AdminAnalyticsView = {
   ownerId: 'admin-1', snapshot, loading: false, refreshing: false, error: null,
 };
+const ID_REVIEWS = 'ID reviews, 2 Workers waiting for review';
+const REPORTS = 'Reports, 3 reports need attention';
 function home() {
   seams.cursor = 0;
   return composed(AdminHome());
@@ -99,72 +113,85 @@ describe('Admin navigation configuration (static composition, not native layout)
     vi.clearAllMocks(); seams.cells = []; seams.cursor = 0;
     seams.signOut.mockResolvedValue({ error: null });
   });
-  it('gives the dashboard one visible navigator-owned light header', () => {
+  it('mounts the tab shell headerless in a light, centered-title Admin Stack', () => {
     const tree = elements(AdminLayout());
-    const stack = tree.find((node) => node.props.screenOptions !== undefined);
-    const dashboard = tree.filter((node) => node.props.name === 'admin/index');
-    expect(dashboard).toHaveLength(1);
-    const options = { ...(stack?.props.screenOptions as object), ...(dashboard[0].props.options as object) };
-    expect(options).toMatchObject({
-      headerShown: true, title: 'Admin Dashboard',
-      headerStyle: { backgroundColor: SkillMatchTheme.ui.colors.surface },
+    const stack = tree.find((node) => node.props.screenOptions !== undefined)!;
+    expect(stack.props.screenOptions).toMatchObject({
+      headerTitleAlign: 'center', headerShadowVisible: false, statusBarStyle: 'dark',
+      headerStyle: { backgroundColor: SkillMatchTheme.ui.colors.canvas },
       headerTintColor: SkillMatchTheme.ui.colors.textPrimary,
-      contentStyle: { backgroundColor: SkillMatchTheme.ui.colors.background },
+      contentStyle: { backgroundColor: SkillMatchTheme.ui.colors.canvas },
     });
-    expect(options).not.toHaveProperty('headerLeft');
-    expect(options).not.toHaveProperty('headerRight');
-    expect(options).not.toHaveProperty('headerTitleStyle');
+    expect(stack.props.screenOptions).not.toHaveProperty('headerLeft');
+    expect(stack.props.screenOptions).not.toHaveProperty('headerRight');
+    const shell = tree.filter((node) => node.props.name === '(tabs)');
+    expect(shell).toHaveLength(1);
+    expect(shell[0].props.options).toEqual({ headerShown: false });
+    expect(tree.filter((node) => node.props.name === 'admin/index')).toHaveLength(0);
   });
-  it('removes the repeated dashboard title while retaining populated content and footer', () => {
+  it('replaces the dashboard title and button list with attention rows, plain counts and a quiet account section', () => {
     seams.cells[0] = view;
     const nodes = home();
-    expect(text(nodes)).not.toContain('Admin Dashboard');
-    expect(text(nodes)).toEqual(expect.arrayContaining([
-      'Inbox', 'Directories', 'Overview', 'Total Workers', '1,234,567',
-      'Needs attention', 'Payments by method and status', 'Reports by status', 'Sign Out',
+    const header = nodes.find((node) => node.type === ('HomeStickyHeader' as unknown))!;
+    // Wave 7: the greeting addresses the role, not the stored account name (presentation only).
+    expect(header.props).toMatchObject({ name: 'Admin', role: 'admin' });
+    const strings = text(nodes);
+    expect(strings).not.toContain('Admin Dashboard');
+    for (const removed of ['Inbox', 'Directories', 'Overview', 'Total Workers', 'Open ID reviews', 'Open Reports', 'Sign Out']) {
+      expect(strings).not.toContain(removed);
+    }
+    expect(strings).toEqual(expect.arrayContaining([
+      'Needs attention', 'ID reviews', '2 Workers waiting for review', '2 waiting',
+      'Reports', '3 reports need attention', '3 open',
+      'Platform summary', 'Workers', '1,234,567', '3 verified', 'Bookings', '3 completed',
+      'Payments', 'QR Ph (PayMongo TEST)', 'Pending 1 · Paid 2 · Refunded 0 · Not set 0',
+      'Reports by status', 'Account', 'Signed in as', 'Alma Reyes Santos', 'Sign out',
     ]));
-    expect(nodes.filter((node) => node.props.accessibilityLabel === 'Sign Out')).toHaveLength(1);
+    // Attention comes before the summary, and the account section is last.
+    expect(strings.indexOf('Needs attention')).toBeLessThan(strings.indexOf('Platform summary'));
+    expect(strings.indexOf('Platform summary')).toBeLessThan(strings.indexOf('Account'));
+    expect(nodes.filter((node) => node.props.accessibilityLabel === 'Sign out')).toHaveLength(1);
   });
-  it('retains every secondary registration and normal Back ownership', () => {
+  it('registers every secondary Admin screen as a pushed Stack screen with a sentence-case title', () => {
     const nodes = elements(AdminLayout());
-    expect(nodes.filter((node) => node.props.name && node.props.name !== 'admin/index')
+    expect(nodes.filter((node) => node.props.name && node.props.name !== '(tabs)')
       .map((node) => [node.props.name, node.props.options])).toEqual([
       ['admin/notifications', { title: 'Notifications' }],
-      ['admin/workers', { title: 'Worker Directory' }],
-      ['admin/clients', { title: 'Client Directory' }],
-      ['admin/user-detail', { title: 'User Details' }],
-      ['admin/identity-reviews', { title: 'Identity Reviews', headerShown: true }],
-      ['admin/reports', { title: 'Reports', headerShown: true }],
-      ['admin/report-details', { title: 'Report Details', headerShown: true }],
-      ['admin/verification-details', { title: 'Verification Details', headerShown: true }],
+      ['admin/user-detail', { title: 'Account details' }],
+      ['admin/identity-reviews', { title: 'ID reviews' }],
+      ['admin/verification-details', { title: 'ID review' }],
+      ['admin/report-details', { title: 'Report details' }],
     ]);
     expect(nodes.filter((node) => node.props.role === 'administrator')).toHaveLength(1);
     for (const node of nodes.filter((entry) => entry.props.options !== undefined)) {
       expect(node.props.options).not.toHaveProperty('headerLeft');
+      expect(node.props.options).not.toHaveProperty('headerRight');
     }
   });
   it.each([
-    ['Notifications', '/admin/notifications'], ['Workers', '/admin/workers'],
-    ['Clients', '/admin/clients'], ['Open ID reviews', '/admin/identity-reviews'],
-    ['Open Reports', '/admin/reports'],
-  ])('invokes the actual %s dashboard action at its existing destination', (label, destination) => {
+    [ID_REVIEWS, '/admin/identity-reviews'], [REPORTS, '/admin/reports'],
+  ])('invokes the actual %s attention row at its existing destination', (label, destination) => {
     seams.cells[0] = view;
     press(home(), label);
     expect(seams.push).toHaveBeenCalledExactlyOnceWith(destination);
     expect(seams.signOut).not.toHaveBeenCalled();
   });
-  it('retains loading content and populated actions without an initial empty snapshot', () => {
+  it('keeps the attention rows reachable while the first snapshot loads, without an empty snapshot', () => {
     const nodes = home();
     expect(text(nodes)).toContain('Loading Admin analytics…');
-    expect(text(nodes)).not.toContain('Overview');
-    for (const label of ['Notifications', 'Workers', 'Clients', 'Sign Out']) button(nodes, label);
+    expect(text(nodes)).not.toContain('Platform summary');
+    expect(text(nodes).filter((line) => line === 'Count loading')).toHaveLength(2);
+    expect(text(nodes)).not.toContain('2 waiting');
+    for (const label of ['ID reviews, Count loading', 'Reports, Count loading', 'Sign out']) button(nodes, label);
+    press(nodes, 'ID reviews, Count loading');
+    expect(seams.push).toHaveBeenCalledExactlyOnceWith('/admin/identity-reviews');
   });
   it('retains long error content, previous snapshot, refresh and actual retry callbacks', () => {
     const error = 'Unable to load the current retained-data snapshot. '.repeat(8);
     seams.cells[0] = { ...view, error, refreshing: true };
     const nodes = home();
     expect(text(nodes)).toContain(`${error} Showing the previous snapshot.`);
-    expect(text(nodes)).toContain('Overview');
+    expect(text(nodes)).toContain('Platform summary');
     press(nodes, 'Retry');
     const scroll = nodes.find((node) => node.props.refreshControl !== undefined)!;
     const refresh = scroll.props.refreshControl as ReactElement<Props>;
@@ -172,50 +199,48 @@ describe('Admin navigation configuration (static composition, not native layout)
     (refresh.props.onRefresh as () => void)();
     expect(seams.refresh).toHaveBeenCalledTimes(2);
   });
-  it('retains Sign Out busy suppression and success through its actual footer callback', async () => {
+  it('retains Sign out busy suppression and success through its actual footer callback', async () => {
     let resolve!: (result: { error: null }) => void;
     seams.signOut.mockReturnValue(new Promise((done) => { resolve = done; }));
-    press(home(), 'Sign Out');
+    press(home(), 'Sign out');
     const busy = home();
-    expect(button(busy, 'Sign Out').props).toMatchObject({
+    expect(button(busy, 'Sign out').props).toMatchObject({
       disabled: true, accessibilityRole: 'button', accessibilityState: { busy: true, disabled: true },
     });
-    press(busy, 'Sign Out');
+    press(busy, 'Sign out');
     expect(seams.signOut).toHaveBeenCalledTimes(1);
     resolve({ error: null });
     await Promise.resolve(); await Promise.resolve();
-    expect(button(home(), 'Sign Out').props).toMatchObject({ disabled: false });
+    expect(button(home(), 'Sign out').props).toMatchObject({ disabled: false });
     expect(text(home())).not.toContain('Sign out failed. Please try again.');
     expect(seams.push).not.toHaveBeenCalled();
   });
-  it.each(['returned', 'thrown'] as const)('retains %s Sign Out failure, error presentation and retry', async (failure) => {
+  it.each(['returned', 'thrown'] as const)('retains %s Sign out failure, error presentation and retry', async (failure) => {
     const expected = failure === 'returned' ? 'Sign out unavailable; try again.' : 'Sign out failed. Please try again.';
     if (failure === 'returned') seams.signOut.mockResolvedValueOnce({ error: { message: expected } });
     else seams.signOut.mockRejectedValueOnce(new Error('inert failure'));
-    press(home(), 'Sign Out');
+    press(home(), 'Sign out');
     await Promise.resolve(); await Promise.resolve();
     expect(text(home())).toContain(expected);
-    expect(button(home(), 'Sign Out').props.disabled).toBe(false);
-    press(home(), 'Sign Out');
+    expect(button(home(), 'Sign out').props.disabled).toBe(false);
+    press(home(), 'Sign out');
     await Promise.resolve(); await Promise.resolve();
     expect(seams.signOut).toHaveBeenCalledTimes(2);
     expect(text(home())).not.toContain(expected);
     expect(seams.push).not.toHaveBeenCalled();
   });
-  it('keeps long content and titles uncapped, scaling enabled, and no new menu trigger', () => {
+  it('keeps long content uncapped, scaling enabled, and exactly three Home actions', () => {
     seams.cells[0] = view;
     const nodes = home();
-    expect(text(nodes)).toContain('Payments by method and status');
     for (const node of nodes) {
       expect(node.props.allowFontScaling).not.toBe(false);
       expect(node.props.maxFontSizeMultiplier).toBeUndefined();
       expect(node.props.adjustsFontSizeToFit).not.toBe(true);
+      expect(node.props.numberOfLines).toBeUndefined();
       expect(node.props.accessibilityRole).not.toBe('menu');
     }
     expect(nodes.filter((node) => node.props.accessibilityRole === 'button')
-      .map((node) => node.props.accessibilityLabel)).toEqual([
-      'Notifications', 'Workers', 'Clients', 'Open ID reviews', 'Open Reports', 'Sign Out',
-    ]);
+      .map((node) => node.props.accessibilityLabel)).toEqual([ID_REVIEWS, REPORTS, 'Sign out']);
   });
   it('composes header token colors with readable foreground contrast', () => {
     const stack = elements(AdminLayout()).find((node) => node.props.screenOptions !== undefined)!;

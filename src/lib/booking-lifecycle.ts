@@ -124,28 +124,28 @@ const CONFLICT = 'SM409';
 const PAYMENT_BLOCKED = 'SM403';
 
 export const COPY = {
-  heading: 'Booking Actions',
+  heading: 'Booking actions',
 
-  complete: 'Mark as Completed',
+  complete: 'Mark as completed',
   completing: 'Completing…',
-  cancel: 'Cancel Booking',
+  cancel: 'Cancel booking',
   cancelling: 'Cancelling…',
 
   /** Says what completion does and, just as importantly, what it does not do. */
-  completeConfirmTitle: 'Mark as Completed',
+  completeConfirmTitle: 'Mark as completed',
   completeConfirmBody:
     'Payment is settled. Mark this booking and job as finally completed?',
-  completeConfirmAction: 'Mark as Completed',
+  completeConfirmAction: 'Mark as completed',
 
   /**
    * Cancellation is terminal and the Job does NOT return to the matching pool.
    * Saying so plainly is the point: automatic rematching does not exist, and
    * copy that implied it would describe a system this project does not have.
    */
-  cancelConfirmTitle: 'Cancel Booking',
+  cancelConfirmTitle: 'Cancel booking',
   cancelConfirmBody:
     'Cancelling ends this booking and the job will not automatically reopen.',
-  cancelConfirmAction: 'Cancel Booking',
+  cancelConfirmAction: 'Cancel booking',
   cancelReasonTitle: 'Why are you cancelling?',
   cancelReasonBody: 'Choose the reason that best describes this cancellation.',
   cancelDetailLabel: 'Cancellation details',

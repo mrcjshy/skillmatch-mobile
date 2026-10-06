@@ -168,7 +168,7 @@ export function isPaid(p: BookingPayment | undefined): boolean {
  * one place the two vocabularies meet.
  */
 const METHOD_LABEL: Record<PaymentMethod, string> = {
-  cod: 'Cash Payment',
+  cod: 'Cash payment',
   gcash: 'GCash',
   maya: 'Maya',
   qrph: 'QR Ph',
@@ -215,13 +215,13 @@ const ALREADY = 'SM403';
 
 export const COPY = {
   heading: 'Payment',
-  selectCod: 'Select Cash Payment',
-  continueCash: 'Continue with Cash Payment',
-  startQrphPayment: 'Start QR Ph Payment',
-  waitingClientCash: 'Waiting for the client to continue with Cash Payment.',
+  selectCod: 'Select cash payment',
+  continueCash: 'Continue with cash payment',
+  startQrphPayment: 'Start QR Ph payment',
+  waitingClientCash: 'Waiting for the client to continue with cash payment.',
   waitingClientQrph: 'Waiting for the client to start QR Ph payment.',
   selecting: 'Selecting…',
-  confirmCash: 'Confirm Cash Received',
+  confirmCash: 'Confirm cash received',
   confirming: 'Confirming…',
   awaitingClient: 'Status: Awaiting cash confirmation',
   awaitingWorker: 'Awaiting your cash confirmation',
@@ -230,7 +230,7 @@ export const COPY = {
   methodLine: (label: string) => `Payment method: ${label}`,
   notSelected: 'No payment method selected yet.',
   /** Covers every collapsed SM409 cause without asserting which applies. */
-  selectConflict: 'This booking cannot use Cash Payment right now.',
+  selectConflict: 'This booking cannot use cash payment right now.',
   confirmConflict: 'This cash payment cannot be confirmed.',
   /** SM403 — safe to be specific: the caller is the proven assigned Worker. */
   alreadyConfirmed: 'Payment has already been confirmed.',
@@ -246,10 +246,10 @@ export const COPY = {
   chooseMethod: 'Choose a payment method.',
   selectQrph: 'QR Ph',
   starting: 'Starting…',
-  showQr: 'Show / Refresh QR',
+  showQr: 'Show or refresh QR',
   refreshingQr: 'Refreshing…',
-  openTestPage: 'Open PayMongo Test Payment',
-  refreshStatus: 'Refresh Payment Status',
+  openTestPage: 'Open PayMongo test payment',
+  refreshStatus: 'Refresh payment status',
   checking: 'Checking…',
   /** Method-specific on purpose: never the cash wording. */
   awaitingQrphClient: 'Status: Awaiting payment confirmation',
@@ -257,7 +257,7 @@ export const COPY = {
   paidQrph: 'Status: Paid — QR Ph',
   /** Neutral, not an error: reconciliation answered, it is simply not settled. */
   stillPending: 'Payment is still pending.',
-  testModeTitle: 'TEST MODE',
+  testModeTitle: 'Test mode',
   testModeBody:
     'Do not scan this QR with GCash, Maya, or a banking app. Use the PayMongo test payment page for the demo.',
   /** Collapsed provider-side conflict; asserts nothing about the cause. */

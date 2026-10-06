@@ -111,7 +111,7 @@ const CONFLICT = 'SM409';
 const INVALID_INPUT = '22023';
 
 export const COPY = {
-  action: 'Rate Worker',
+  action: 'Rate worker',
   heading: 'Rate this worker',
   scoreLabel: 'Score',
   commentLabel: 'Comment (optional)',

@@ -1,8 +1,8 @@
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 
-const { colors, spacing, radius, size } = SkillMatchTheme.ui;
+
 
 export type AppSegmentOption<T extends string> = {
   value: T;
@@ -26,6 +26,9 @@ export function AppSegment<T extends string>({
   accessibilityLabel,
   style,
 }: AppSegmentProps<T>) {
+  const ui = useUiTheme();
+  const { styles } = createStyles(ui);
+
   return (
     <View
       accessibilityRole="radiogroup"
@@ -57,10 +60,15 @@ export function AppSegment<T extends string>({
   );
 }
 
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing, radius, size } = ui;
 const styles = StyleSheet.create({
+  // One outer boundary (>= 3:1) identifies the control; the options inside stay quiet.
   track: {
     flexDirection: 'row',
-    backgroundColor: colors.surfaceSubtle,
+    backgroundColor: colors.surfaceSunken,
+    borderWidth: 1,
+    borderColor: colors.controlBorder,
     borderRadius: radius.pill,
     padding: spacing.xs,
   },
@@ -70,32 +78,33 @@ const styles = StyleSheet.create({
     minWidth: size.ghostButton,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.surfaceSubtle,
+    backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: colors.controlBorder,
+    borderColor: 'transparent',
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
   optionSelected: {
     backgroundColor: colors.surface,
-    borderColor: colors.primary,
+    borderColor: colors.accent,
   },
-  optionPressed: { backgroundColor: colors.selected },
-  optionDisabled: { backgroundColor: colors.surfaceSubtle, borderColor: colors.controlBorder },
+  optionPressed: { backgroundColor: colors.accentSubtle },
+  optionDisabled: { backgroundColor: 'transparent', borderColor: 'transparent' },
   labelDisabled: { color: colors.textSecondary },
   label: {
+    ...type.label,
     flexShrink: 1,
     maxWidth: '100%',
     textAlign: 'center',
-    fontSize: 15,
-    fontWeight: '600',
-    lineHeight: 20,
     color: colors.textSecondary,
   },
+  // Selection is a heavier weight, the accent colour and the raised white pill; never an underline.
   labelSelected: {
-    textDecorationLine: 'underline',
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.accent,
   },
 });
+
+  return { styles };
+}

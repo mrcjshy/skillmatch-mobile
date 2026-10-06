@@ -1,11 +1,15 @@
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { AdminRow } from '@/components/admin-rows';
 import { AppButton } from '@/components/app-button';
-import { AppCard } from '@/components/app-card';
+import { AppChip } from '@/components/app-chip';
+import { groupPosition, groupedRowStyle } from '@/components/grouped-row';
+import { InitialsAvatar } from '@/components/initials-avatar';
 import { InlineStatus } from '@/components/inline-status';
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
+import { SectionHeader } from '@/components/section-header';
 import { formatCardDateTime } from '@/lib/date-time';
 import {
   IDENTITY_COPY,
@@ -13,8 +17,6 @@ import {
   listWorkersPendingIdReview,
   type PendingIdentityReview,
 } from '@/lib/worker-identity';
-
-const { colors, type, spacing } = SkillMatchTheme.ui;
 
 export function IdentityReviewQueue({
   adminId,
@@ -27,6 +29,8 @@ export function IdentityReviewQueue({
   footer?: ReactNode;
   onSelectWorker: (userId: string) => void;
 }) {
+  const ui = useUiTheme();
+  const styles = createStyles(ui);
   const hasLoaded = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -89,15 +93,20 @@ export function IdentityReviewQueue({
           onRefresh={() => {
             void handleRefresh();
           }}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
+          tintColor={ui.colors.accent}
+          colors={[ui.colors.accent]}
         />
       }
     >
       {header}
-      <Text style={styles.heading}>Pending Identity Reviews</Text>
+      <SectionHeader
+        title="Waiting for review"
+        trailing={!isLoading && !loadError && workers.length > 0
+          ? <Text style={styles.count}>{workers.length === 1 ? '1 Worker' : `${workers.length} Workers`}</Text>
+          : undefined}
+      />
       <Text style={styles.note}>
-        Tap a Worker to review their ID. Approve verifies the Worker. Oldest submission first.
+        Oldest submission first. Opening a review does not change it; Approve verifies the Worker.
       </Text>
 
       {isLoading ? (
@@ -117,66 +126,45 @@ export function IdentityReviewQueue({
           }
         />
       ) : workers.length === 0 ? (
-        <InlineStatus variant="empty" message="No identity submissions are waiting for review." />
+        <InlineStatus
+          variant="empty"
+          icon={{ android: 'verified_user', ios: 'checkmark.shield' }}
+          message="No identity submissions are waiting for review."
+        />
       ) : (
-        workers.map((worker) => {
-          const submitted = formatCardDateTime(worker.submittedAt);
-          return (
-            <Pressable
-              key={worker.documentId}
-              onPress={() => onSelectWorker(worker.userId)}
-              accessibilityRole="button"
-              accessibilityLabel={`Review identity for ${worker.fullName}`}
-              style={({ pressed }) => [pressed ? styles.pressed : null]}
-            >
-              <AppCard>
-                <Text style={styles.cardTitle}>{worker.fullName}</Text>
-                <View style={styles.meta}>
-                  <Text style={styles.cardLine}>ID type: {identityTypeLabel(worker.idType)}</Text>
-                  {submitted ? <Text style={styles.cardLine}>Submitted: {submitted}</Text> : null}
-                </View>
-              </AppCard>
-            </Pressable>
-          );
-        })
+        <View>
+          {workers.map((worker, index) => {
+            const submitted = formatCardDateTime(worker.submittedAt);
+            return (
+              <AdminRow
+                key={worker.documentId}
+                style={groupedRowStyle(ui, groupPosition(index, workers.length))}
+                leading={<InitialsAvatar name={worker.fullName} accent={ui.colors.accentSubtle} size={ui.size.iconCircle} />}
+                title={worker.fullName}
+                lines={[
+                  worker.skills.length > 0 ? worker.skills.join(', ') : 'No skills added',
+                  `ID type: ${identityTypeLabel(worker.idType)}`,
+                  submitted ? `Submitted ${submitted}` : null,
+                ]}
+                trailing={<AppChip label="Pending review" variant="warning" />}
+                onPress={() => onSelectWorker(worker.userId)}
+                accessibilityLabel={`Review identity for ${worker.fullName}`}
+              />
+            );
+          })}
+        </View>
       )}
       {footer}
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    flexGrow: 1,
-    backgroundColor: colors.background,
-    padding: spacing.gutter,
-    gap: spacing.md,
-    paddingBottom: spacing.xxxl + spacing.sm,
-  },
-  heading: {
-    ...type.screenTitle,
-    color: colors.textPrimary,
-  },
-  note: {
-    ...type.helper,
-    color: colors.textSecondary,
-  },
-  pressed: {
-    opacity: 0.72,
-  },
-  cardTitle: {
-    ...type.cardTitle,
-    color: colors.textPrimary,
-  },
-  meta: {
-    gap: spacing.xs,
-  },
-  cardLine: {
-    ...type.helper,
-    color: colors.textSecondary,
-  },
-});
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing } = ui;
+  return StyleSheet.create({
+    scroll: { flex: 1, backgroundColor: colors.canvas },
+    content: { flexGrow: 1, padding: spacing.gutter, gap: spacing.md, paddingBottom: spacing.xxxxl },
+    note: { ...type.helper, color: colors.textSecondary },
+    count: { ...type.label, color: colors.textSecondary },
+  });
+}

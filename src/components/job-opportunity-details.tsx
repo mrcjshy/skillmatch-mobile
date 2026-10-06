@@ -2,12 +2,21 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { AppState, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { AppButton } from '@/components/app-button';
 import { AppChip } from '@/components/app-chip';
+import { FactRow } from '@/components/fact-row';
+import { FormMessage } from '@/components/form-message';
 import { InlineStatus } from '@/components/inline-status';
+import { AppSymbol } from '@/components/app-symbol';
+import { MotionView, useMotion } from '@/components/motion';
 import { WorkerOpportunityJobLocation } from '@/components/job-location-map';
 import { SectionHeader } from '@/components/section-header';
+import { Collapsible } from '@/components/ui/collapsible';
+import { ServiceMark } from '@/components/service-mark';
 import { GuidanceSection } from '@/components/skill-gap';
+import { SurfaceGroup } from '@/components/surface-group';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatOpportunityPaymentLine } from '@/lib/job-payment';
 import { loadWorkerBookings } from '@/lib/booking-records';
@@ -39,7 +48,7 @@ import { JOB_OPPORTUNITIES_CHANGED, subscribeInvalidation, workerOpportunitiesTo
 import { useAccount } from '@/providers/account-provider';
 import { useSession } from '@/providers/session-provider';
 
-const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+const { colors, type, spacing, size } = SkillMatchTheme.ui;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -55,6 +64,8 @@ export default function JobOpportunityDetails({ jobId }: { jobId: string | null 
 }
 
 function OpportunityDetails({ jobId }: { jobId: string | null }) {
+  const insets = useSafeAreaInsets();
+  const motion = useMotion();
   const { account } = useAccount();
   const { session } = useSession();
   const router = useRouter();
@@ -64,6 +75,7 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
 
   const [location, setLocation] = useState<OpportunityLocation | null>(null);
   const accessRef = useRef<ReturnType<typeof createOpportunityLocationAccess> | null>(null);
+  const requirementsAuthority = useRef<string | null>(null);
   const [opportunity, setOpportunity] = useState<JobOpportunity | null>(null);
   const [requirements, setRequirements] = useState<RequirementsState>({ status: 'loading' });
   const [isLoading, setIsLoading] = useState(true);
@@ -128,6 +140,7 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
 
   useFocusEffect(useCallback(() => {
     if (!activeWorker || !workerId || sessionUserId !== workerId || !jobId || !UUID_PATTERN.test(jobId)) {
+      requirementsAuthority.current = null;
       setLocation(null); setOpportunity(null); setIsLoading(false);
       setLoadError(JOB_OPPORTUNITY_COPY.unavailable);
       return;
@@ -135,6 +148,7 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
     const access = createOpportunityLocationAccess({
       jobId, readOpportunities: loadMyJobOpportunities, readLocation: getMyOpportunityLocation,
       onState: (state) => {
+        requirementsAuthority.current = state.opportunity?.job_id ?? null;
         setLocation(state.location);
         setOpportunity(state.opportunity);
         setIsLoading(state.status === 'loading');
@@ -157,12 +171,13 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
       onUnavailable: () => access.invalidate(),
     });
     return () => {
+      requirementsAuthority.current = null;
       appState.remove(); unsubscribe(); access.cancel();
       if (accessRef.current === access) accessRef.current = null;
     };
   }, [activeWorker, workerId, sessionUserId, jobId]));
 
-  const loadRequirements = useCallback(async (id: string) => {
+  const loadRequirements = useCallback(async (id: string, isCurrent: () => boolean) => {
     setRequirements({ status: 'loading' });
     try {
       if (!account) throw new Error('Worker account unavailable');
@@ -170,29 +185,28 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
         loadOpportunityRequiredSkills(id),
         loadMyWorkerSkills(account),
       ]);
-      setRequirements({ status: 'ready', skills, workerSkills: workerSkills ?? [] });
+      if (isCurrent()) setRequirements({ status: 'ready', skills, workerSkills: workerSkills ?? [] });
     } catch (error: unknown) {
       if (error instanceof Error && error.message) {
         console.warn('[V3-1 P3] required skills load failed:', error.message);
       }
-      setRequirements({ status: 'error' });
+      if (isCurrent()) setRequirements({ status: 'error' });
     }
   }, [account]);
 
   const loadedJobId = opportunity?.job_id ?? null;
 
-  /* eslint-disable react-hooks/set-state-in-effect -- requirements follow the loaded job id */
   useEffect(() => {
     if (loadedJobId === null) return;
     const run = { cancelled: false };
-    loadRequirements(loadedJobId).catch(() => {
-      if (!run.cancelled) setRequirements({ status: 'error' });
+    const isCurrent = () => !run.cancelled && AppState.currentState === 'active' && requirementsAuthority.current === loadedJobId;
+    loadRequirements(loadedJobId, isCurrent).catch(() => {
+      if (isCurrent()) setRequirements({ status: 'error' });
     });
     return () => {
       run.cancelled = true;
     };
   }, [loadedJobId, loadRequirements]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   async function retry() {
     if (!isAccepting) await accessRef.current?.refresh();
@@ -217,8 +231,14 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
   }
 
   if (accepted) {
+    // The booking confirmation moment: one short check reveal, then the unchanged words and action.
+    // Decorative only; the status text below carries the meaning for TalkBack.
     return (
       <View style={styles.center}>
+        <MotionView entering={motion.successEnter} style={styles.successMark}
+          accessible={false} importantForAccessibility="no-hide-descendants">
+          <AppSymbol synchronousGlyph name={{ android: 'check_circle', ios: 'checkmark.circle.fill' }} size={32} tintColor={colors.success} style={styles.successSymbol} />
+        </MotionView>
         <InlineStatus variant="note" headline={notice?.headline ?? ACCEPT_JOB_COPY.accepted}
           message={notice?.detail ?? ACCEPT_JOB_COPY.accepted} />
         <AppButton label="View bookings" variant="secondary"
@@ -256,42 +276,53 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
       ? computeSkillGap(requirements.skills, requirements.workerSkills)
       : null;
 
+  const paymentLine = formatOpportunityPaymentLine(opportunity.payment_method);
+
   return (
+    <View style={styles.screen}>
     <ScrollView
       style={styles.scroll}
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardShouldPersistTaps="handled"
       contentContainerStyle={styles.content}
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={refresh}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
         />
       }
     >
       {notice ? (
-        <InlineStatus
-          variant="note"
-          headline={notice.detail ? notice.headline : undefined}
-          message={notice.detail ?? notice.headline}
-        />
+        <View style={styles.pad}>
+          <FormMessage
+            tone={notice.tone === 'success' ? 'success' : notice.tone === 'warning' ? 'warning' : 'info'}
+            message={notice.detail ? `${notice.headline} ${notice.detail}` : notice.headline}
+          />
+        </View>
       ) : null}
 
-      <View style={styles.section}>
-        <Text style={styles.jobTitle}>{opportunity.title}</Text>
-        <Text style={styles.match}>{formatOpportunityMatchLine(opportunity.total_points)}</Text>
-        {opportunity.description ? <Text style={styles.body}>{opportunity.description}</Text> : null}
-
-        <View style={styles.summaryPanel}>
-          <DetailLine label="Schedule" value={schedule} />
-          <DetailLine label="Budget" value={budget} />
-          <DetailLine label="Area" value={area} />
-          <Text style={styles.detailValue}>{formatOpportunityPaymentLine(opportunity.payment_method)}</Text>
+      {/* Decision header: what the work is, then when, where, how much. */}
+      <View style={[styles.pad, styles.heading]}>
+        <ServiceMark subject={opportunity.title} synchronousGlyph />
+        <View style={styles.headingCopy}>
+          <Text accessibilityRole="header" style={styles.jobTitle}>{opportunity.title}</Text>
+          <Text style={styles.match}>{formatOpportunityMatchLine(opportunity.total_points)}</Text>
         </View>
       </View>
 
-      <View style={styles.section}>
-        <SectionHeader title="Skills for this Job" />
+      <View style={styles.pad}>
+        <SurfaceGroup>
+          <FactRow icon={{ android: 'schedule', ios: 'clock' }} label="Schedule" value={schedule} strong />
+          <FactRow icon={{ android: 'location_on', ios: 'mappin' }} label="Area" value={area} />
+          <FactRow icon={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} label="Job budget" value={budget} strong inline />
+          <FactRow icon={{ android: 'receipt_long', ios: 'doc.plaintext' }} label="Payment" value={paymentLine} />
+        </SurfaceGroup>
+      </View>
+
+      <View style={[styles.pad, styles.section]}>
+        <SectionHeader title="Skills for this job" />
         {requirements.status === 'loading' ? (
           <InlineStatus variant="loading" message={JOB_OPPORTUNITY_COPY.loadingRequirements} />
         ) : requirements.status === 'error' ? (
@@ -306,7 +337,7 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
             ) : (
               <View style={styles.skillWrap}>
                 {skillGap.matchedSkills.map((skill) => (
-                  <AppChip key={skill.id} label={`✓ ${skill.name}`} variant="positive" />
+                  <AppChip key={skill.id} label={skill.name} variant="positive" />
                 ))}
               </View>
             )}
@@ -320,28 +351,52 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
                 ))}
               </View>
             )}
-            <GuidanceSection
-              jobId={opportunity.job_id}
-              missingSkillNames={skillGap.missingSkills.map((skill) => skill.name)}
-              buttonLabel="View Skill Gap Guidance"
-            />
           </>
         )}
       </View>
 
-      <View style={styles.section}>
+      {opportunity.description ? (
+        <View style={[styles.pad, styles.section]}>
+          <SectionHeader title="Description" />
+          <Text style={styles.body}>{opportunity.description}</Text>
+        </View>
+      ) : null}
+
+      <View style={[styles.pad, styles.section]}>
+        <SectionHeader title="Location" subtitle="Only the general area is shown before you accept." />
         <WorkerOpportunityJobLocation location={location} />
       </View>
 
-      <View style={styles.section}>
-        <SectionHeader title="Match score" />
-        <View style={styles.summaryPanel}>
-          <Text style={styles.detailValue}>{formatSkillScoreLine(opportunity.skill_points)}</Text>
-          <Text style={styles.detailValue}>{formatLocationScoreLine(opportunity.location_points)}</Text>
-          <Text style={styles.detailValue}>{formatRatingScoreLine(opportunity.rating_points)}</Text>
-        </View>
+      <View style={styles.pad}>
+        <SurfaceGroup>
+          <Collapsible title="Match details" subtitle={formatOpportunityMatchLine(opportunity.total_points)} contained={false}
+            icon={{ android: 'check_circle', ios: 'checkmark.circle' }}>
+            <View style={styles.scoreBreakdown}>
+              <Text style={styles.scoreValue}>{formatSkillScoreLine(opportunity.skill_points)}</Text>
+              <Text style={styles.scoreValue}>{formatLocationScoreLine(opportunity.location_points)}</Text>
+              <Text style={styles.scoreValue}>{formatRatingScoreLine(opportunity.rating_points)}</Text>
+            </View>
+          </Collapsible>
+        </SurfaceGroup>
       </View>
 
+      {requirements.status === 'ready' && requirements.skills.length > 0 && skillGap ? (
+        <View style={styles.pad}>
+          <GuidanceSection
+            jobId={opportunity.job_id}
+            missingSkillNames={skillGap.missingSkills.map((skill) => skill.name)}
+            buttonLabel="View skill gap guidance"
+          />
+        </View>
+      ) : null}
+
+    </ScrollView>
+    <View style={[styles.actionDock, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+      <View style={styles.dockSummary} accessible accessibilityLabel={`Job budget: ${budget}`}>
+        <Text style={styles.dockCaption}>Job budget</Text>
+        <Text style={styles.dockAmount}>{budget}</Text>
+      </View>
+      <View style={styles.acceptAction}>
       <AppButton
         variant="primary"
         label={accepted ? 'Acceptance submitted' : 'Accept'}
@@ -350,82 +405,35 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
         onPress={handleAccept}
         accessibilityLabel={`Accept ${opportunity.title}`}
       />
-    </ScrollView>
-  );
-}
-
-function DetailLine({ label, value }: { label: string; value: string | null }) {
-  if (value === null) return null;
-  return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
+      </View>
+    </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    flexGrow: 1,
-    backgroundColor: colors.background,
-    padding: spacing.gutter,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl + spacing.sm,
-  },
-  center: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.gutter,
-  },
-  section: {
-    gap: spacing.md,
-  },
-  jobTitle: {
-    ...type.cardTitle,
-    color: colors.textPrimary,
-  },
-  match: {
-    ...type.sectionTitle,
-    color: colors.textPrimary,
-  },
-  body: {
-    ...type.body,
-    color: colors.textSecondary,
-  },
-  summaryPanel: {
-    backgroundColor: colors.surfaceSubtle,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    gap: spacing.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  detailRow: {
-    gap: spacing.xxs,
-  },
-  detailLabel: {
-    ...type.caption,
-    color: colors.textSecondary,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  detailValue: {
-    ...type.body,
-    color: colors.textPrimary,
-  },
-  skillWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  note: {
-    ...type.helper,
-    color: colors.textSecondary,
-  },
+  screen: { flex: 1, backgroundColor: colors.canvas },
+  scroll: { flex: 1, backgroundColor: colors.canvas },
+  content: { flexGrow: 1, paddingTop: spacing.sm, gap: spacing.xl, paddingBottom: spacing.xl },
+  pad: { marginHorizontal: spacing.gutter },
+  center: { flex: 1, backgroundColor: colors.canvas, alignItems: 'center', justifyContent: 'center', padding: spacing.gutter },
+  successMark: { width: size.actionCircle, height: size.actionCircle, borderRadius: size.actionCircle / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.successTint },
+  // Centre the native glyph's actual bounds within AppSymbol's reserved scaled box.
+  successSymbol: { alignItems: 'center', justifyContent: 'center' },
+  heading: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  headingCopy: { flex: 1, minWidth: 0, gap: spacing.xs },
+  jobTitle: { ...type.screenTitle, color: colors.textPrimary, flexShrink: 1 },
+  match: { ...type.label, color: colors.textSecondary, flexShrink: 1 },
+  section: { gap: spacing.md },
+  body: { ...type.body, color: colors.textPrimary },
+  scoreBreakdown: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg },
+  scoreValue: { ...type.helper, color: colors.textSecondary, fontVariant: ['tabular-nums'] },
+  detailLabel: { ...type.label, color: colors.textSecondary },
+  skillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  note: { ...type.helper, color: colors.textSecondary },
+  actionDock: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.lg, paddingHorizontal: spacing.gutter, paddingTop: spacing.md, backgroundColor: colors.canvas, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.hairline },
+  dockSummary: { gap: spacing.xxs },
+  dockCaption: { ...type.helper, color: colors.textSecondary },
+  dockAmount: { ...type.money, color: colors.textPrimary },
+  acceptAction: { flex: 1, minWidth: 148 },
 });

@@ -77,15 +77,18 @@ describe('Admin notification route integration', () => {
     expect(protectedAdminGroup).toHaveLength(1);
   });
 
-  it('mounts shared Admin push registration and exposes the inbox from the dashboard', () => {
+  it('mounts shared Admin push registration and exposes the inbox through the Home bell', () => {
     const adminLayout = source('src/app/(admin)/_layout.tsx');
-    const adminHome = source('src/app/(admin)/admin/index.tsx');
-    const dashboard = source('src/components/admin-analytics-dashboard.tsx');
+    const adminHome = source('src/app/(admin)/(tabs)/admin/index.tsx');
+    const header = source('src/components/home-header.tsx');
+    const bell = source('src/components/notification-bell.tsx');
 
     expect(stringLiterals(adminLayout)).toContain('administrator');
     expect(adminLayout.getText()).toContain('<PushNotificationRegistration role="administrator" />');
-    expect(stringLiterals(adminHome)).toContain('/admin/notifications');
-    expect(stringLiterals(dashboard)).toContain('Notifications');
+    // Wave 4: the inbox moved from a dashboard button to the shared Home-only bell.
+    expect(adminHome.getText()).toContain("<HomeStickyHeader name={authorizedId !== null ? ADMIN_GREETING_NAME : ''} role=\"admin\" />");
+    expect(header.getText()).toContain('<NotificationBell role={role} />');
+    expect(bell.getText()).toContain('router.push(`/${role}/notifications`)');
   });
 
   it('keeps notification opening separate from report lifecycle mutation', () => {

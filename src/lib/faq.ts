@@ -54,16 +54,16 @@ export type FaqEntry = {
 };
 
 export const CATEGORY_LABEL: Record<FaqCategory, string> = {
-  account: 'Account at Registration',
-  verification: 'Worker Verification',
-  profile: 'Worker Profile at Skills',
-  'job-posting': 'Pag-post ng Trabaho',
-  opportunities: 'Job Opportunities',
+  account: 'Account at registration',
+  verification: 'Worker verification',
+  profile: 'Worker profile at skills',
+  'job-posting': 'Pag-post ng trabaho',
+  opportunities: 'Job opportunities',
   booking: 'Booking',
   messaging: 'Messaging',
   ratings: 'Ratings',
-  cash: 'Cash Payment',
-  qrph: 'QR Ph Payment',
+  cash: 'Cash payment',
+  qrph: 'QR Ph payment',
   notifications: 'Notifications',
   general: 'Tungkol sa SkillMatch',
 };
@@ -279,7 +279,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'cash',
     question: 'Sino ang nagko-confirm na bayad na ang cash?',
     answer:
-      'Ang Worker lang, gamit ang Confirm Cash Received. Hindi maaaring markahan ng Client na bayad na. Kapag na-confirm ng Worker, makakatanggap ng notification ang Client.',
+      'Ang Worker lang, gamit ang Confirm cash received. Hindi maaaring markahan ng Client na bayad na. Kapag na-confirm ng Worker, makakatanggap ng notification ang Client.',
     keywords: ['confirm', 'natanggap', 'received', 'bayad na', 'paid', 'cash received', 'sino'],
   },
 
@@ -351,7 +351,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
  * ------------------------------------------------------------------ */
 
 export const FAQ_COPY = {
-  title: 'Help & FAQ',
+  title: 'Help and FAQ',
   greeting: 'Hi! Ano ang gusto mong malaman tungkol sa SkillMatch?',
   inputLabel: 'Itanong tungkol sa SkillMatch',
   placeholder: 'Halimbawa: Paano gumagana ang QR Ph?',
@@ -370,7 +370,7 @@ export const FAQ_COPY = {
 /** Dashboard-style entry points. Each maps to one or more fixed categories. */
 export const QUICK_TOPICS: readonly { label: string; categories: readonly FaqCategory[] }[] = [
   { label: 'Account', categories: ['account', 'verification', 'profile'] },
-  { label: 'Finding Jobs', categories: ['opportunities', 'job-posting'] },
+  { label: 'Finding jobs', categories: ['opportunities', 'job-posting'] },
   { label: 'Bookings', categories: ['booking', 'ratings'] },
   { label: 'Payments', categories: ['cash', 'qrph'] },
   { label: 'Messaging', categories: ['messaging', 'notifications'] },

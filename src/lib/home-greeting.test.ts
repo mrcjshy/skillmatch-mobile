@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { greetingForLocalHour, homeGreeting } from './home-greeting';
+import { greetingForLocalHour, homeDate, homeGreeting } from './home-greeting';
 
 describe('greetingForLocalHour', () => {
   it('uses Good evening before 05:00', () => {
@@ -31,6 +31,12 @@ describe('greetingForLocalHour', () => {
 });
 
 describe('homeGreeting', () => {
+  it('formats the supplied local calendar date rather than a fixed day', () => {
+    for (const date of [new Date(2026, 9, 3), new Date(2027, 0, 1)]) {
+      expect(homeDate(date)).toBe(`${new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(date)} · ${new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric' }).format(date)}`);
+    }
+    expect(homeDate(new Date(2026, 9, 3))).not.toBe(homeDate(new Date(2026, 9, 4)));
+  });
   it('reads the local hour from the provided Date', () => {
     expect(homeGreeting(new Date(2026, 0, 1, 9, 0, 0))).toBe('Good morning');
     expect(homeGreeting(new Date(2026, 0, 1, 15, 0, 0))).toBe('Good afternoon');

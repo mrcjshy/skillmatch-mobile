@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createClientPostJobDraftOwner } from './client-post-job-draft-provider';
+import { createClientPostJobDraftOwner, type ClientPostJobDraft } from './client-post-job-draft-provider';
 
 describe('account-owned Post Job draft', () => {
   it('retains every committed input and transaction across wizard steps and reopen', () => {
@@ -9,6 +9,61 @@ describe('account-owned Post Job draft', () => {
     expect(owner.draft).toMatchObject({ description: 'Repair long description', address: 'Confirmed address', wizardStep: 4, budgetText: '500', additionalSkillIds: ['electrical'], modalAdditionalIds: ['electrical'], photoError: 'Example' });
     expect(owner.draft.scheduleDate?.getFullYear()).toBe(2030);
     expect(owner.draft.jobPhotos[0].uri).toBe('file:///photo');
+  });
+});
+
+describe('posted confirmation and the next draft', () => {
+  function posted() {
+    const owner = createClientPostJobDraftOwner('client-a');
+    owner.updateDraft({ wizardStep: 4, description: 'Previous job' });
+    const operation = owner.beginPost()!;
+    owner.recordCreatedJob(operation, 'previous-job');
+    owner.settlePost(operation, { success: 'Job posted. Waiting for a worker to accept.', error: null });
+    owner.finishPost(operation);
+    return owner;
+  }
+  it('retains confirmation through receipt consumption, empty input, no-op picker state and error-only updates', () => {
+    const owner = posted();
+    expect(owner.takePendingCreatedJob()).toBe('previous-job');
+    owner.revalidate(); owner.updateDraft({});
+    owner.updateDraft(previous => ({ description: '  ', modalPrimaryId: previous.primarySkillId, modalAdditionalIds: [], modalQuery: '' }));
+    owner.updateDraft({ description: '', postError: 'Please select at least one required skill.', photoError: 'Gallery unavailable' });
+    expect(owner.draft.postSuccess).toBe('Job posted. Waiting for a worker to accept.');
+    expect(owner.draft.wizardStep).toBe(1); expect(owner.draftEpoch).toBe(1);
+  });
+  it.each<[string, Partial<ClientPostJobDraft>]>([
+    ['skill search', { modalQuery: 'plumb' }],
+    ['tentative primary skill', { modalPrimaryId: 'plumbing' }],
+    ['tentative secondary skill', { modalAdditionalIds: ['electrical'] }],
+    ['committed primary skill', { primarySkillId: 'plumbing' }],
+    ['committed additional skill', { additionalSkillIds: ['electrical'] }],
+    ['wizard advance', { wizardStep: 2 }],
+    ['address', { address: 'Confirmed address' }],
+    ['pin', { pin: { latitude: 14.55, longitude: 121.07 } }],
+    ['date', { scheduleDate: new Date(2030, 0, 2) }],
+    ['time', { scheduleTime: new Date(2030, 0, 2, 12) }],
+    ['budget', { budgetText: '500' }],
+    ['fee preset', { feePreset: 'custom' }],
+    ['payment choice', { paymentMethod: 'cod' }],
+    ['photo', { jobPhotos: [{ uri: 'file:///new', assetId: null, fileName: null, fileSize: null, pickerMimeType: null }] }],
+  ])('clears the previous confirmation when the new draft begins with %s and preserves the input and receipt', (_name, update) => {
+    const owner = posted();
+    expect(owner.updateDraft(update)).toBe(true);
+    expect(owner.draft.postSuccess).toBeNull(); expect(owner.draft).toMatchObject(update);
+    expect(owner.draftEpoch).toBe(1); expect(owner.takePendingCreatedJob()).toBe('previous-job');
+    owner.updateDraft({ description: '' }); owner.revalidate();
+    expect(owner.draft.postSuccess).toBeNull(); expect(owner.takePendingCreatedJob()).toBeNull();
+  });
+  it('clears a retained-lifetime settled receipt on new input without reviving or replaying its operation', () => {
+    let authorized = true;
+    const owner = createClientPostJobDraftOwner('client-a', undefined, () => authorized, () => true);
+    owner.updateDraft({ wizardStep: 4, description: 'Previous' }); const operation = owner.beginPost()!;
+    owner.markCreateDispatched(operation); authorized = false; owner.suspend();
+    owner.recordCreatedJob(operation, 'previous-job'); authorized = true; owner.revalidate();
+    expect(owner.draft.postSuccess).toContain('completion is unknown');
+    owner.updateDraft({ description: 'Next job' });
+    expect(owner.draft.postSuccess).toBeNull(); expect(owner.draft.description).toBe('Next job');
+    expect(owner.isOperationCurrent(operation)).toBe(false); expect(owner.takePendingCreatedJob()).toBe('previous-job');
   });
 });
 

@@ -1,18 +1,11 @@
-import { Link } from 'expo-router';
-import { useState } from 'react';
-import {
-  Image,
-  KeyboardAvoidingView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRef, useState } from 'react';
+import { StyleSheet, View, type TextInput } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
 import { AppField } from '@/components/app-field';
-import { SkillMatchTheme } from '@/constants/theme';
+import { AuthLink, AuthScreen, useAuthScroll } from '@/components/auth-screen';
+import { FormMessage } from '@/components/form-message';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import {
   RECOVERY_REDIRECT_TO,
   RECOVERY_SUCCESS_COPY,
@@ -22,31 +15,35 @@ import {
 } from '@/lib/auth-recovery';
 import { supabase } from '@/lib/supabase';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
-
 /**
  * Signed-out recovery request only. Does not reveal whether the email exists.
  */
 export default function ForgotPasswordScreen() {
-  const insets = useSafeAreaInsets();
+  const styles = createStyles(useUiTheme());
+  const { scrollRef, focusField } = useAuthScroll();
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [fieldError, setFieldError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const emailRef = useRef<TextInput>(null);
 
   async function handleSendRecoveryInstructions() {
     if (isSubmitting) return;
 
+    setFieldError(null);
     setErrorMessage(null);
     setSuccessMessage(null);
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-      setErrorMessage('Please enter your email.');
+      setFieldError('Please enter your email.');
+      focusField(emailRef);
       return;
     }
     if (!hasMinimalEmailSyntax(trimmedEmail)) {
-      setErrorMessage('Please enter a valid email.');
+      setFieldError('Please enter a valid email.');
+      focusField(emailRef);
       return;
     }
 
@@ -68,112 +65,51 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior="padding"
+    <AuthScreen
+      scrollRef={scrollRef}
+      title="Reset your password"
+      description="Enter your email and we will send you instructions to reset your password."
     >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.xxxl },
-        ]}
-      >
-        <View style={styles.brand}>
-          <Image
-            source={require('@/assets/images/skillmatch-logo.png')}
-            style={styles.brandLogo}
-            accessibilityIgnoresInvertColors
-          />
-          <Text style={styles.brandName}>SkillMatch</Text>
-        </View>
-        <Text style={styles.heading}>Forgot Password</Text>
-        <Text style={styles.status}>Enter your email to request password recovery instructions.</Text>
+      <View style={styles.form}>
+        <AppField
+          inputRef={emailRef}
+          label="Email"
+          value={email}
+          onChangeText={(value) => {
+            setEmail(value);
+            setFieldError(null);
+          }}
+          placeholder="you@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="emailAddress"
+          disabled={isSubmitting}
+          errorText={fieldError ?? undefined}
+          accessibilityLabel="Email"
+        />
 
-        <View style={styles.form}>
-          <AppField
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            disabled={isSubmitting}
-            accessibilityLabel="Email"
-          />
+        {errorMessage ? <FormMessage tone="error" message={errorMessage} /> : null}
+        {successMessage ? <FormMessage tone="success" message={successMessage} /> : null}
 
-          {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-          {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
-
+        <View style={styles.actions}>
           <AppButton
-            label="Send Recovery Instructions"
+            label="Send recovery instructions"
             onPress={handleSendRecoveryInstructions}
             loading={isSubmitting}
           />
-
-          <Link href="/login" style={styles.link}>
-            Back to Sign In
-          </Link>
+          <AuthLink href="/login">Back to sign in</AuthLink>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </View>
+    </AuthScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  content: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.gutter,
-    paddingBottom: spacing.xxl,
-  },
-  brand: {
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  brandLogo: {
-    width: 56,
-    height: 56,
-  },
-  brandName: {
-    color: colors.primary,
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  heading: {
-    ...type.display,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginTop: spacing.lg,
-  },
-  status: {
-    ...type.helper,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-  },
-  form: {
-    marginTop: spacing.lg,
-    gap: spacing.lg,
-  },
-  error: {
-    ...type.helper,
-    color: colors.danger,
-  },
-  success: {
-    ...type.helper,
-    color: colors.success,
-  },
-  link: {
-    fontSize: 16,
-    fontWeight: '600',
-    lineHeight: 20,
-    color: colors.primary,
-    textAlign: 'center',
-    paddingVertical: 12,
-  },
-});
+function createStyles(ui: UiTheme) {
+  const { spacing } = ui;
+  return StyleSheet.create({
+    form: { gap: spacing.lg },
+    actions: { gap: spacing.xs },
+  });
+}

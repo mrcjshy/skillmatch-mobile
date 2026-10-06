@@ -19,7 +19,7 @@ describe('Client Booking Details navigation UI', () => {
     const route = readSource('src/app/(client)/client/booking-details.tsx');
     const bookings = readSource('src/components/my-bookings-list.tsx');
 
-    expect(route).toContain("<Stack.Screen options={{ title: 'Booking Details' }} />");
+    expect(route).toContain("<Stack.Screen options={{ title: 'Booking details' }} />");
     expect(route).not.toMatch(/headerShown\s*:\s*false|headerLeft/);
     expect(bookings).toMatch(
       /router\.push\(\{\s*pathname,\s*params:\s*\{\s*bookingId:\s*booking\.booking_id\s*\}/,
@@ -45,9 +45,9 @@ describe('retained parent and secondary navigation boundaries', () => {
     expect(root).toContain('<AccountProvider>');
     const layout = readSource(`src/app/(${role})/_layout.tsx`);
     expect(layout).not.toMatch(/headerLeft|router\.(push|replace)|useFocusEffect|subscribe/);
-    for (const [screen, title] of [['notifications', 'Notifications'], ['chat', 'Booking Chat'], ['booking-details', 'Booking Details']]) {
+    for (const [screen, title] of [['notifications', 'Notifications'], ['chat', 'Booking chat'], ['booking-details', 'Booking details']]) {
       const wrapper = readSource(`src/app/(${role})/${role}/${screen}.tsx`);
-      expect(wrapper).toContain(`options={{ title: '${title}' }}`);
+      expect(wrapper).toContain(`title: '${title}'`);
       expect(wrapper).not.toMatch(/headerLeft|headerShown\s*:\s*false/);
     }
     for (const screen of ['terms', 'privacy']) expect(readSource(`src/app/(${role})/${role}/${screen}.tsx`)).toContain('options={{ headerShown: false }}');

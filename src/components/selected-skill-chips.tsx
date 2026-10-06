@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import type { CatalogSkill } from '@/lib/skill-catalog';
 
-const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
+
 
 type SelectedSkillChipsProps = {
   skills: readonly CatalogSkill[];
@@ -21,6 +21,9 @@ export function SelectedSkillChips({
   emptyLabel = 'No skills selected yet.',
   renderAfterSkill,
 }: SelectedSkillChipsProps) {
+  const ui = useUiTheme();
+  const { styles } = createStyles(ui);
+
   if (skills.length === 0) {
     return <Text style={styles.note}>{emptyLabel}</Text>;
   }
@@ -31,7 +34,7 @@ export function SelectedSkillChips({
         <View key={skill.id} style={styles.block}>
           <View style={styles.chip}>
             <Text style={styles.name}>
-              ✓ {skill.skill_name}
+              {skill.skill_name}
             </Text>
             <Pressable
               style={({ pressed }) => [
@@ -55,6 +58,8 @@ export function SelectedSkillChips({
   );
 }
 
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing, radius, size } = ui;
 const styles = StyleSheet.create({
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   block: { width: '100%', gap: spacing.sm },
@@ -64,21 +69,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    borderRadius: radius.md,
+    borderRadius: radius.control,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
-    backgroundColor: colors.selected,
+    backgroundColor: colors.accentSubtle,
   },
   name: {
     flex: 1,
     flexShrink: 1,
     ...type.bodyEmphasis,
-    color: colors.primary,
+    color: colors.textPrimary,
   },
   remove: {
     maxWidth: '100%',
     flexShrink: 1,
-    borderRadius: radius.sm,
+    borderRadius: radius.control,
     borderWidth: 1.5,
     borderColor: colors.controlBorder,
     backgroundColor: 'transparent',
@@ -93,12 +98,14 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     maxWidth: '100%',
     textAlign: 'center',
-    ...type.helper,
-    fontWeight: '600',
-    color: colors.primary,
+    ...type.label,
+    color: colors.accent,
     textDecorationLine: 'underline',
   },
   removePressed: { backgroundColor: colors.surface },
-  disabled: { backgroundColor: colors.surfaceSubtle },
+  disabled: { backgroundColor: colors.surfaceSunken },
   disabledText: { color: colors.textSecondary },
 });
+
+  return { styles };
+}

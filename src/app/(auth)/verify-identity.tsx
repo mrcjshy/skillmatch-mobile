@@ -1,20 +1,25 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { AppState, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppState, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { AppNotice } from '@/components/app-notice';
+import { AuthScreen, AuthSection } from '@/components/auth-screen';
+import { FormMessage } from '@/components/form-message';
+import { StepList, type Step } from '@/components/step-list';
 import { WorkerIdentitySection } from '@/components/worker-identity-section';
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme, RefinementThemeProvider } from '@/components/refinement-theme';
 import { IDENTITY_COPY } from '@/lib/worker-identity';
 import { signOutCurrentUser } from '@/lib/sign-out';
 import { useAccount } from '@/providers/account-provider';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
-
 export default function VerifyIdentityScreen() {
-  const insets = useSafeAreaInsets();
+  return <RefinementThemeProvider><VerifyIdentityContent /></RefinementThemeProvider>;
+}
+
+function VerifyIdentityContent() {
+  const ui = useUiTheme();
+  const styles = createStyles(ui);
+
   const { refreshIdentity, workerOnboardingState, identitySubmission } = useAccount();
   const [isRetrying, setIsRetrying] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -56,39 +61,55 @@ export default function VerifyIdentityScreen() {
     }
   }
 
-  return (
-    <ScrollView
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={[
-        styles.content,
-        { paddingTop: insets.top + spacing.xxxl },
-      ]}
-    >
-      <View style={styles.brand}>
-        <Image
-          source={require('@/assets/images/skillmatch-logo.png')}
-          style={styles.brandLogo}
-          accessibilityIgnoresInvertColors
-        />
-        <Text style={styles.brandName}>SkillMatch</Text>
-      </View>
-      <Text style={styles.heading}>
-        {workerOnboardingState === 'pending-review' ? 'Verification Pending'
-          : workerOnboardingState === 'rejected' ? 'Verification Needs Attention'
-            : 'Verify your identity'}
-      </Text>
-      <Text style={styles.note}>
-        {workerOnboardingState === 'pending-review'
-          ? 'Your valid ID has been submitted and is waiting for administrator review.'
-          : workerOnboardingState === 'rejected'
-            ? 'Your previous ID submission was not approved. Please submit another supported valid ID.'
-            : 'A valid ID is required before you can use the Worker app. There is no skip.'}
-      </Text>
+  const isPending = workerOnboardingState === 'pending-review';
+  const isRejected = workerOnboardingState === 'rejected';
+  const showsForm = workerOnboardingState === 'needs-submission' || isRejected;
 
-      {workerOnboardingState === 'loading' ? <AppNotice variant="warning" message="Checking verification status..." /> : null}
+  // The real Worker onboarding order: account and email are already done, the ID is now, and the
+  // work profile opens only once an administrator approves the ID.
+  const steps: readonly Step[] = [
+    { label: 'Account and email', state: 'done' },
+    {
+      label: 'Verify your ID',
+      detail: isPending
+        ? 'Submitted. An administrator is reviewing it.'
+        : isRejected
+          ? 'Your last submission was not approved.'
+          : 'Upload a photo of a valid ID.',
+      state: 'current',
+    },
+    { label: 'Set up your work profile', detail: 'Opens after your ID is approved.', state: 'upcoming' },
+  ];
+
+  return (
+    <AuthScreen
+      title={
+        isPending
+          ? 'Verification pending'
+          : isRejected
+            ? 'Verification needs attention'
+            : 'Verify your identity'
+      }
+      description={
+        isPending
+          ? 'Your valid ID has been submitted and is waiting for administrator review.'
+          : isRejected
+            ? 'Your previous ID submission was not approved. Please submit another supported valid ID.'
+            : 'A valid ID is required before you can use the Worker app. There is no skip.'
+      }
+      footer={
+        <>
+          <AppButton label="Sign out" variant="ghost" onPress={() => { void handleSignOut(); }} loading={isSigningOut} />
+          {signOutError ? <FormMessage tone="error" message={signOutError} /> : null}
+        </>
+      }
+    >
+      <StepList steps={steps} />
+
+      {workerOnboardingState === 'loading' ? <FormMessage tone="info" message="Checking verification status..." /> : null}
       {workerOnboardingState === 'load-error' ? (
-        <View style={styles.retryBlock}>
-          <AppNotice variant="danger" message={IDENTITY_COPY.loadFailed} />
+        <View style={styles.block}>
+          <FormMessage tone="error" message={IDENTITY_COPY.loadFailed} />
           <AppButton
             label="Try again"
             variant="secondary"
@@ -100,56 +121,37 @@ export default function VerifyIdentityScreen() {
         </View>
       ) : null}
 
-      {workerOnboardingState === 'pending-review' ? (
-        <AppButton label="Refresh Status" variant="secondary" onPress={() => { void handleRetry(); }} loading={isRetrying} />
+      {isPending ? (
+        <View style={styles.block}>
+          {IDENTITY_COPY.homePendingBody.map((line) => (
+            <Text key={line} style={styles.line}>{line}</Text>
+          ))}
+          <AppButton label="Refresh status" variant="secondary" onPress={() => { void handleRetry(); }} loading={isRetrying} />
+        </View>
       ) : null}
-      {(workerOnboardingState === 'needs-submission' || workerOnboardingState === 'rejected') ? (
-        <WorkerIdentitySection
-          disabled={false}
-          surface="onboarding"
-          authoritativeSubmission={identitySubmission}
-          onSubmitted={handleSubmitted}
-        />
+
+      {showsForm ? (
+        <>
+          <AuthSection title="Why we ask">
+            <Text style={styles.line}>Only verified Workers are included in job matching.</Text>
+            <Text style={styles.line}>An administrator reviews your ID. Clients cannot see it.</Text>
+          </AuthSection>
+          <WorkerIdentitySection
+            disabled={false}
+            surface="onboarding"
+            authoritativeSubmission={identitySubmission}
+            onSubmitted={handleSubmitted}
+          />
+        </>
       ) : null}
-      <AppButton label="Sign Out" variant="ghost" onPress={() => { void handleSignOut(); }} loading={isSigningOut} />
-      {signOutError ? <AppNotice variant="danger" message={signOutError} /> : null}
-    </ScrollView>
+    </AuthScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  content: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.gutter,
-    paddingBottom: spacing.xxl,
-    gap: spacing.lg,
-  },
-  brand: {
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  brandLogo: {
-    width: 48,
-    height: 48,
-  },
-  brandName: {
-    color: colors.primary,
-    fontSize: 18,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  heading: {
-    ...type.display,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginTop: spacing.lg,
-  },
-  note: {
-    ...type.helper,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  retryBlock: {
-    gap: spacing.md,
-  },
-});
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing } = ui;
+  return StyleSheet.create({
+    block: { gap: spacing.md },
+    line: { ...type.body, color: colors.textSecondary },
+  });
+}

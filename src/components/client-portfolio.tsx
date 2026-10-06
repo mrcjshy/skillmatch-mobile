@@ -4,7 +4,6 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { Image } from 'expo-image';
 
 import { AppButton } from '@/components/app-button';
-import { AppCard } from '@/components/app-card';
 import { InitialsAvatar } from '@/components/initials-avatar';
 import { InlineStatus } from '@/components/inline-status';
 import { SectionHeader } from '@/components/section-header';
@@ -141,8 +140,8 @@ export default function ClientPortfolio({ bookingId }: { bookingId: string | nul
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={() => void refresh()}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
         />
       }
     >
@@ -151,7 +150,7 @@ export default function ClientPortfolio({ bookingId }: { bookingId: string | nul
         trailing={
           <InitialsAvatar
             name={state.workerName ?? 'Worker'}
-            accent={colors.accentSoft}
+            accent={colors.accentSubtle}
             size={56}
             photoUri={state.workerPhotoUrl}
           />
@@ -170,7 +169,7 @@ function PortfolioReadCard({ item }: { item: PortfolioItem }) {
   const cover = coverImage(item.images);
   const rest = galleryImages(item.images);
   return (
-    <AppCard>
+    <View style={styles.item}>
       {cover ? <SavedCover image={cover} /> : null}
       {rest.length > 0 ? (
         <View style={styles.galleryRow}>
@@ -182,7 +181,7 @@ function PortfolioReadCard({ item }: { item: PortfolioItem }) {
       <Text style={styles.itemTitle}>{item.title}</Text>
       <Text style={styles.meta}>{projectScaleLabel(item.projectScale)}</Text>
       {item.description ? <Text style={styles.body}>{item.description}</Text> : null}
-    </AppCard>
+    </View>
   );
 }
 
@@ -211,24 +210,30 @@ function SavedThumb({ image }: { image: PortfolioItemImage }) {
 const styles = StyleSheet.create({
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   content: {
     flexGrow: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     padding: spacing.gutter,
     gap: spacing.lg,
-    paddingBottom: spacing.xxxl + spacing.sm,
+    paddingBottom: spacing.xxxxl,
   },
   center: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.gutter,
   },
+  item: {
+    gap: spacing.md,
+    paddingTop: spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+  },
   itemTitle: {
-    ...type.cardTitle,
+    ...type.sectionTitle,
     color: colors.textPrimary,
   },
   body: {
@@ -247,15 +252,15 @@ const styles = StyleSheet.create({
   cover: {
     width: '100%',
     height: 180,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.control,
+    backgroundColor: colors.surfaceSunken,
     borderCurve: 'continuous',
   },
   coverFallback: {
     width: '100%',
     height: 180,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.control,
+    backgroundColor: colors.surfaceSunken,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.md,
@@ -264,17 +269,17 @@ const styles = StyleSheet.create({
   savedThumb: {
     width: 64,
     height: 64,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.control,
+    backgroundColor: colors.surfaceSunken,
     borderCurve: 'continuous',
   },
   savedThumbFallback: {
     width: 64,
     height: 64,
-    borderRadius: radius.md,
+    borderRadius: radius.control,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceSubtle,
+    backgroundColor: colors.surfaceSunken,
     padding: spacing.xs,
     borderCurve: 'continuous',
   },

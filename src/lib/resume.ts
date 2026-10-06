@@ -86,7 +86,7 @@ export type ResumeModel = {
  * ------------------------------------------------------------------ */
 
 export const RESUME_COPY = {
-  title: 'Auto Resume Builder',
+  title: 'Auto resume builder',
   heading: 'Your resume, from your profile',
   disclosure:
     'SkillMatch uses only information already saved in your profile. It will not invent work history, education, certificates, or experience.',
@@ -96,11 +96,11 @@ export const RESUME_COPY = {
   skills: 'Skills',
   projects: 'Portfolio / Projects',
   profile: 'SkillMatch profile',
-  noSummary: 'No About Me text yet — this section will be left out.',
+  noSummary: 'No About me text yet — this section will be left out.',
   noSkills: 'No skills selected yet — the resume will not list any.',
   noProjects: 'No portfolio items yet — this section will be left out.',
   noProfile: 'You have not set up your Worker profile yet. Add your About Me and skills on the dashboard first.',
-  generate: 'Generate & Share PDF',
+  generate: 'Generate and share PDF',
   generating: 'Generating…',
   loading: 'Loading your profile…',
   retry: 'Try again',
@@ -345,11 +345,11 @@ export function buildResumeHtml(m: ResumeModel): string {
   @page { size: A4; margin: 18mm 16mm; }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #111; font-size: 11pt; line-height: 1.45; margin: 0; }
-  header { border-bottom: 2px solid ${SkillMatchTheme.brand.primary}; padding-bottom: 8pt; margin-bottom: 14pt; }
+  header { border-bottom: 2px solid ${SkillMatchTheme.ui.colors.accent}; padding-bottom: 8pt; margin-bottom: 14pt; }
   h1 { font-size: 22pt; margin: 0 0 4pt; letter-spacing: 0.2pt; }
   .contact { font-size: 10pt; color: #333; }
   .contact span + span::before { content: " \\00a0|\\00a0 "; color: #999; }
-  h2 { font-size: 12.5pt; text-transform: uppercase; letter-spacing: 0.8pt; color: ${SkillMatchTheme.brand.primary}; margin: 14pt 0 6pt; border-bottom: 1px solid #ddd; padding-bottom: 3pt; }
+  h2 { font-size: 12.5pt; text-transform: uppercase; letter-spacing: 0.8pt; color: ${SkillMatchTheme.ui.colors.accent}; margin: 14pt 0 6pt; border-bottom: 1px solid #ddd; padding-bottom: 3pt; }
   h3 { font-size: 11.5pt; margin: 8pt 0 2pt; }
   p { margin: 0 0 6pt; }
   ul { margin: 0; padding-left: 0; list-style: none; }

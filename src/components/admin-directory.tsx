@@ -2,26 +2,26 @@ import { useCallback, useState } from 'react';
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 
+import { AdminRow } from '@/components/admin-rows';
 import { AppButton } from '@/components/app-button';
+import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
-import { AppListRow } from '@/components/app-list-row';
+import { groupPosition, groupedRowStyle } from '@/components/grouped-row';
+import { InitialsAvatar } from '@/components/initials-avatar';
 import { InlineStatus } from '@/components/inline-status';
-import { SkillMatchTheme } from '@/constants/theme';
+import { RefinementThemeProvider, useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import { directoryEmptyMessage, loadAdminDirectory, prepareDirectorySearch, type DirectoryItem, type DirectoryKind, type DirectoryPage } from '@/lib/admin-directories';
+import { availabilityLabel, directoryRowStatus, workerVerificationStatus } from '@/lib/admin-presentation';
 import { formatCardDateTime } from '@/lib/date-time';
 import { useAccount } from '@/providers/account-provider';
 import { useSession } from '@/providers/session-provider';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
-
+/** The quiet line under a name. The row's one chip carries verification (or Inactive) separately. */
 function summary(item: DirectoryItem, kind: DirectoryKind): string {
-  const parts = [item.is_active ? 'Active' : 'Inactive'];
+  const parts: string[] = [];
   if (kind === 'worker') {
-    if (!item.has_profile) parts.push('No profile');
-    else {
-      parts.push(item.is_verified === true ? 'Verified' : item.is_verified === false ? 'Unverified' : 'Verification not set');
-      parts.push(item.availability_status ?? 'Availability not set');
-    }
+    if (!item.is_active) parts.push(workerVerificationStatus(item).label);
+    if (item.has_profile) parts.push(availabilityLabel(item.availability_status));
   }
   const joined = formatCardDateTime(item.created_at);
   if (joined) parts.push(`Joined ${joined}`);
@@ -29,6 +29,12 @@ function summary(item: DirectoryItem, kind: DirectoryKind): string {
 }
 
 export function AdminDirectory({ kind }: { kind: DirectoryKind }) {
+  return <RefinementThemeProvider><AdminDirectoryContent kind={kind} /></RefinementThemeProvider>;
+}
+
+function AdminDirectoryContent({ kind }: { kind: DirectoryKind }) {
+  const ui = useUiTheme();
+  const styles = createStyles(ui);
   const router = useRouter();
   const { account, status } = useAccount();
   const { session } = useSession();
@@ -67,6 +73,11 @@ export function AdminDirectory({ kind }: { kind: DirectoryKind }) {
   const totalPages = current ? Math.max(1, Math.ceil(current.total_count / current.page_size)) : 1;
   const title = kind === 'worker' ? 'Workers' : 'Clients';
   const preparedSearch = prepareDirectorySearch(draft);
+  const items = loading && !current ? [] : current?.items ?? [];
+  const runSearch = () => {
+    if (preparedSearch.tooLong) return;
+    setPage(1); setSearch(preparedSearch.search); setReload((n) => n + 1);
+  };
 
   return (
     <FlatList
@@ -74,11 +85,24 @@ export function AdminDirectory({ kind }: { kind: DirectoryKind }) {
       contentContainerStyle={styles.content}
       contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="handled"
-      data={loading && !current ? [] : current?.items ?? []}
+      data={items}
       keyExtractor={(item) => item.user_id}
-      renderItem={({ item }) => <AppListRow title={item.full_name} subtitle={summary(item, kind)} showDivider
-        onPress={() => router.push({ pathname: '/admin/user-detail', params: { userId: item.user_id, kind } } as unknown as Href)}
-        accessibilityLabel={`View ${kind} details for ${item.full_name}`} />}
+      renderItem={({ item, index }) => {
+        const chip = directoryRowStatus(kind, item);
+        const line = summary(item, kind);
+        return (
+          <AdminRow
+            style={groupedRowStyle(ui, groupPosition(index, items.length))}
+            leading={<InitialsAvatar name={item.full_name} accent={ui.colors.accentSubtle} size={ui.size.iconCircle} />}
+            title={item.full_name}
+            lines={[line]}
+            trailing={<AppChip label={chip.label} variant={chip.variant} />}
+            onPress={() => router.push({ pathname: '/admin/user-detail', params: { userId: item.user_id, kind } } as unknown as Href)}
+            accessibilityLabel={`View ${kind} details for ${item.full_name}`}
+            accessibilityValue={chip.label}
+          />
+        );
+      }}
       ListHeaderComponent={
         <View style={styles.header}>
           <AppField
@@ -86,21 +110,15 @@ export function AdminDirectory({ kind }: { kind: DirectoryKind }) {
             label={`Search ${title} by name`}
             value={draft}
             onChangeText={setDraft}
-            onSubmitEditing={() => {
-              if (preparedSearch.tooLong) return;
-              setPage(1); setSearch(preparedSearch.search); setReload((n) => n + 1);
-            }}
+            onSubmitEditing={runSearch}
             returnKeyType="search"
             errorText={preparedSearch.tooLong ? 'Search must be 100 characters or fewer.' : undefined}
           />
           <View style={styles.buttons}>
-            <AppButton label="Search" onPress={() => {
-              if (preparedSearch.tooLong) return;
-              setPage(1); setSearch(preparedSearch.search); setReload((n) => n + 1);
-            }} disabled={preparedSearch.tooLong} />
-            <AppButton label="Clear" variant="secondary" onPress={() => {
+            <AppButton label="Search" variant="secondary" onPress={runSearch} disabled={preparedSearch.tooLong} style={styles.button} />
+            <AppButton label="Clear" variant="ghost" onPress={() => {
               setDraft(''); setSearch(''); setPage(1); setReload((n) => n + 1);
-            }} disabled={!draft && !search} />
+            }} disabled={!draft && !search} style={styles.button} />
           </View>
           {error ? <InlineStatus variant="error" message={error}
             action={<AppButton label="Retry" variant="secondary" onPress={() => setReload((n) => n + 1)} />} /> : null}
@@ -109,21 +127,26 @@ export function AdminDirectory({ kind }: { kind: DirectoryKind }) {
         </View>
       }
       ListEmptyComponent={!loading && !error && current?.items.length === 0
-        ? <InlineStatus variant="empty" message={directoryEmptyMessage(current, kind, search)} />
+        ? <InlineStatus variant="empty" icon={{ android: 'person', ios: 'person' }} message={directoryEmptyMessage(current, kind, search)} />
         : null}
       ListFooterComponent={current && current.total_count > 0 ?
-        <View style={styles.buttons}>
-          <AppButton label="Previous" variant="secondary" disabled={loading || page <= 1} onPress={() => setPage((n) => n - 1)} />
-          <AppButton label="Next" variant="secondary" disabled={loading || page >= totalPages} onPress={() => setPage((n) => n + 1)} />
+        <View style={[styles.buttons, styles.footer]}>
+          <AppButton label="Previous" variant="secondary" disabled={loading || page <= 1} onPress={() => setPage((n) => n - 1)} style={styles.button} />
+          <AppButton label="Next" variant="secondary" disabled={loading || page >= totalPages} onPress={() => setPage((n) => n + 1)} style={styles.button} />
         </View> : null}
     />
   );
 }
 
-const styles = StyleSheet.create({
-  list: { flex: 1, backgroundColor: colors.background },
-  content: { flexGrow: 1, padding: spacing.gutter, paddingBottom: spacing.xxxl, gap: spacing.md },
-  header: { gap: spacing.md },
-  buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  count: { ...type.helper, color: colors.textSecondary },
-});
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing } = ui;
+  return StyleSheet.create({
+    list: { flex: 1, backgroundColor: colors.canvas },
+    content: { flexGrow: 1, paddingHorizontal: spacing.gutter, paddingTop: spacing.sm, paddingBottom: spacing.xxxxl },
+    header: { gap: spacing.md, paddingBottom: spacing.md },
+    buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+    button: { flexGrow: 1, flexBasis: 120 },
+    footer: { paddingTop: spacing.lg },
+    count: { ...type.helper, color: colors.textSecondary },
+  });
+}

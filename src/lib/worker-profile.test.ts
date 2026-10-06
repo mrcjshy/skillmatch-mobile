@@ -11,6 +11,8 @@ import {
   parseWorkerProfileAvailabilityStatus,
   presentAvailabilityControlValue,
   shouldPersistAvailabilityChange,
+  WORKER_PROFILE_AVATAR_SIZE,
+  workerProfileHeaderLayout,
   workerVerificationLabel,
 } from './worker-profile';
 
@@ -169,5 +171,27 @@ describe('worker profile write payloads', () => {
       availability_status: 'busy',
       bio: 'should be ignored',
     })).toBeNull();
+  });
+});
+
+describe('workerProfileHeaderLayout', () => {
+  const phone = { windowWidth: 411, gutter: 20, avatarGap: 12, columnGap: 8 };
+
+  it('puts identity and contacts side by side at 100% on a standard phone, using the row beside the avatar', () => {
+    const layout = workerProfileHeaderLayout({ ...phone, fontScale: 1 });
+    expect(WORKER_PROFILE_AVATAR_SIZE).toBe(64);
+    expect(layout).toEqual({ columns: 'side-by-side', identityMinWidth: 96, identityMaxWidth: 127, contactMinWidth: 160 });
+    // 411 - 2 x 20 gutter - 64 avatar - 12 gap = 295dp shared by both columns and their 8dp gap.
+    if (layout.columns === 'side-by-side') expect(layout.identityMaxWidth + phone.columnGap + layout.contactMinWidth).toBe(295);
+  });
+
+  it('stacks the contacts under the identity only when both columns cannot fit', () => {
+    expect(workerProfileHeaderLayout({ ...phone, fontScale: 1.3 })).toEqual({ columns: 'stacked' });
+    expect(workerProfileHeaderLayout({ ...phone, windowWidth: 340, fontScale: 1 })).toEqual({ columns: 'stacked' });
+    expect(workerProfileHeaderLayout({ ...phone, windowWidth: 480, fontScale: 1.3 }).columns).toBe('side-by-side');
+  });
+
+  it('never shrinks the minimum widths below their 100% values for small font scales', () => {
+    expect(workerProfileHeaderLayout({ ...phone, fontScale: 0.85 })).toEqual(workerProfileHeaderLayout({ ...phone, fontScale: 1 }));
   });
 });

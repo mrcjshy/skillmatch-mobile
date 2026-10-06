@@ -11,20 +11,25 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from 'expo-router';
-import { useIsFocused, usePreventRemove } from 'expo-router/react-navigation';
+import { useHeaderHeight, useIsFocused, usePreventRemove } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/app-button';
-import { AppCard } from '@/components/app-card';
+import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
+import { AppSymbol } from '@/components/app-symbol';
+import { FactRow } from '@/components/fact-row';
 import { InlineStatus } from '@/components/inline-status';
 import { JobPhotoPicker } from '@/components/job-photo-picker';
 import { JobLocationPicker } from '@/components/job-location-picker';
 import { JobSchedulePicker } from '@/components/job-schedule-picker';
+import { RadioRow } from '@/components/radio-row';
 import { SectionHeader } from '@/components/section-header';
 import { SkillCatalogPicker } from '@/components/skill-catalog-picker';
-import { SkillListSummary } from '@/components/skill-list-summary';
+import { SkillMatchMascot } from '@/components/skillmatch-mascot';
+import { SurfaceGroup } from '@/components/surface-group';
 import { SkillMatchTheme } from '@/constants/theme';
+import { formatDetailDateTime } from '@/lib/date-time';
 import { postingDescriptionError, postingLocationError } from '@/lib/job-location';
 import { submitClientPostJob } from '@/lib/client-post-job-submission';
 import { useClientPostJobDraft, type ClientPostJobDraft, type FeePreset } from '@/providers/client-post-job-draft-provider';
@@ -32,6 +37,7 @@ import {
   postingPaymentError,
 } from '@/lib/job-payment';
 import { combineJobSchedule, postingScheduleError } from '@/lib/job-posting-schedule';
+import { canAddPostJobSkill, orderedPostJobSkillIds, postJobSkillRole, togglePostJobSkill } from '@/lib/post-job-skill-selection';
 import { type CatalogSkill } from '@/lib/skill-catalog';
 import { validatePostJobWizardStep, type PostJobWizardStep } from '@/lib/post-job-wizard';
 import { saveRecentLocation } from '@/lib/recent-locations';
@@ -42,9 +48,17 @@ import { useClientJobs } from '@/providers/client-jobs-provider';
 const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
 
 const PAYMENT_OPTIONS = [
-  { value: 'cod', label: 'Cash' },
-  { value: 'qrph', label: 'QR Ph' },
+  { value: 'cod', label: 'Cash', meaning: 'The worker confirms the cash after the job.' },
+  { value: 'qrph', label: 'QR Ph', meaning: 'Pay through QR Ph. Payments run in test mode.' },
 ] as const;
+
+/** One title per real wizard step; the step count, order and validation live in the draft owner. */
+const STEP_TITLES: Record<number, string> = {
+  1: 'What needs to be done',
+  2: 'Where',
+  3: 'When, budget and payment',
+  4: 'Review your job',
+};
 
 const FEE_PRESETS = [
   { value: 300, label: '₱300' },
@@ -87,10 +101,11 @@ function orderedSelectedSkills(
 export function ClientPostJobScreen() {
   const owner = useClientPostJobDraft();
   const { draft, isPosting } = owner;
-  const { description, address, pin, locationNote, scheduleDate, scheduleTime, budgetText, feePreset, paymentMethod, primarySkillId, additionalSkillIds, skillsModalMode, modalQuery, modalPrimaryId, modalAdditionalIds, jobPhotos, wizardStep, postError, postSuccess, photoError } = draft;
+  const { description, address, pin, locationNote, scheduleDate, scheduleTime, budgetText, feePreset, paymentMethod, primarySkillId, additionalSkillIds, modalQuery, modalPrimaryId, modalAdditionalIds, jobPhotos, wizardStep, postError, postSuccess, photoError } = draft;
   const navigation = useNavigation();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const { isLoading, loadError, skills, refresh } = useClientJobs();
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [skillsModalVisible, setSkillsModalVisible] = useState(false);
@@ -104,12 +119,7 @@ export function ClientPostJobScreen() {
   const setBudgetText = (value: ClientPostJobDraft['budgetText'] | ((previous: ClientPostJobDraft['budgetText']) => ClientPostJobDraft['budgetText'])) => setField('budgetText', value);
   const setFeePreset = (value: ClientPostJobDraft['feePreset'] | ((previous: ClientPostJobDraft['feePreset']) => ClientPostJobDraft['feePreset'])) => setField('feePreset', value);
   const setPaymentMethod = (value: ClientPostJobDraft['paymentMethod'] | ((previous: ClientPostJobDraft['paymentMethod']) => ClientPostJobDraft['paymentMethod'])) => setField('paymentMethod', value);
-  const setPrimarySkillId = (value: ClientPostJobDraft['primarySkillId'] | ((previous: ClientPostJobDraft['primarySkillId']) => ClientPostJobDraft['primarySkillId'])) => setField('primarySkillId', value);
-  const setAdditionalSkillIds = (value: ClientPostJobDraft['additionalSkillIds'] | ((previous: ClientPostJobDraft['additionalSkillIds']) => ClientPostJobDraft['additionalSkillIds'])) => setField('additionalSkillIds', value);
-  const setSkillsModalMode = (value: ClientPostJobDraft['skillsModalMode'] | ((previous: ClientPostJobDraft['skillsModalMode']) => ClientPostJobDraft['skillsModalMode'])) => setField('skillsModalMode', value);
   const setModalQuery = (value: ClientPostJobDraft['modalQuery'] | ((previous: ClientPostJobDraft['modalQuery']) => ClientPostJobDraft['modalQuery'])) => setField('modalQuery', value);
-  const setModalPrimaryId = (value: ClientPostJobDraft['modalPrimaryId'] | ((previous: ClientPostJobDraft['modalPrimaryId']) => ClientPostJobDraft['modalPrimaryId'])) => setField('modalPrimaryId', value);
-  const setModalAdditionalIds = (value: ClientPostJobDraft['modalAdditionalIds'] | ((previous: ClientPostJobDraft['modalAdditionalIds']) => ClientPostJobDraft['modalAdditionalIds'])) => setField('modalAdditionalIds', value);
   const setJobPhotos = (value: ClientPostJobDraft['jobPhotos'] | ((previous: ClientPostJobDraft['jobPhotos']) => ClientPostJobDraft['jobPhotos'])) => setField('jobPhotos', value);
   const setWizardStep = (value: ClientPostJobDraft['wizardStep'] | ((previous: ClientPostJobDraft['wizardStep']) => ClientPostJobDraft['wizardStep'])) => setField('wizardStep', value);
   const setPostError = (value: ClientPostJobDraft['postError'] | ((previous: ClientPostJobDraft['postError']) => ClientPostJobDraft['postError'])) => setField('postError', value);
@@ -126,17 +136,18 @@ export function ClientPostJobScreen() {
   });
 
   const knownSkillIds = new Set(skills.map((skill) => skill.id));
-  const primarySkill = skills.find((skill) => skill.id === primarySkillId) ?? null;
   const selectedSkills = orderedSelectedSkills(skills, primarySkillId, additionalSkillIds);
   const showBudgetField = feePreset === null || feePreset === 'custom';
   const hasSelectedSkills = selectedSkills.length > 0;
-  const lockedModalPrimaryId = modalPrimaryId;
+  // The picker edits a working copy; Done commits it and Cancel leaves the job's skills as they were.
+  const modalSelection = { primarySkillId: modalPrimaryId, additionalSkillIds: modalAdditionalIds };
 
-  function openSkillsModal(mode: 'primary' | 'additional') {
-    setSkillsModalMode(mode);
-    setModalPrimaryId(primarySkillId);
-    setModalAdditionalIds(uniqueSkillIds(additionalSkillIds, knownSkillIds, primarySkillId));
-    setModalQuery('');
+  function openSkillsModal() {
+    owner.updateDraft({
+      modalPrimaryId: primarySkillId,
+      modalAdditionalIds: uniqueSkillIds(additionalSkillIds, knownSkillIds, primarySkillId),
+      modalQuery: '',
+    });
     setSkillsModalVisible(true);
   }
 
@@ -146,30 +157,16 @@ export function ClientPostJobScreen() {
   }
 
   function confirmSkillsModal() {
-    const nextPrimary =
-      modalPrimaryId !== null && knownSkillIds.has(modalPrimaryId) ? modalPrimaryId : primarySkillId;
-    if (nextPrimary !== null && knownSkillIds.has(nextPrimary)) {
-      setPrimarySkillId(nextPrimary);
-    }
-    setAdditionalSkillIds(uniqueSkillIds(modalAdditionalIds, knownSkillIds, nextPrimary));
+    const ordered = orderedPostJobSkillIds(modalSelection).filter((id) => knownSkillIds.has(id));
+    owner.updateDraft({ primarySkillId: ordered[0] ?? null, additionalSkillIds: ordered.slice(1) });
     closeSkillsModal();
   }
 
+  /** One list: the first skill chosen is the primary, the next the secondary, no third; tapping again removes. */
   function toggleModalSkill(skillId: string) {
-    if (skillsModalMode === 'primary') {
-      if (skillId === modalPrimaryId) return;
-      setModalPrimaryId(skillId);
-      setModalAdditionalIds((prev) => uniqueSkillIds(prev, knownSkillIds, skillId));
-      return;
-    }
-    if (lockedModalPrimaryId !== null && skillId === lockedModalPrimaryId) return;
-    if (lockedModalPrimaryId === null) {
-      setModalPrimaryId(skillId);
-      return;
-    }
-    setModalAdditionalIds((prev) => {
-      if (prev.includes(skillId)) return prev.filter((id) => id !== skillId);
-      return [...prev, skillId];
+    owner.updateDraft((previous) => {
+      const next = togglePostJobSkill({ primarySkillId: previous.modalPrimaryId, additionalSkillIds: previous.modalAdditionalIds }, skillId);
+      return { modalPrimaryId: next.primarySkillId, modalAdditionalIds: next.additionalSkillIds };
     });
   }
 
@@ -225,9 +222,11 @@ export function ClientPostJobScreen() {
   }
 
   const busy = isPosting;
+  const budgetLabel = budgetText.trim() ? `₱${budgetText.trim()}` : 'Not specified';
+  const showDock = wizardStep === 4 && !isLoading && !loadError;
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior="padding">
+    <KeyboardAvoidingView style={styles.flex} behavior="padding" keyboardVerticalOffset={headerHeight}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.container}
@@ -236,18 +235,32 @@ export function ClientPostJobScreen() {
       >
 
         <View style={styles.form}>
-          {postSuccess ? <Text style={styles.success}>{postSuccess}</Text> : null}
+          {/* The success words stay the confirmation; the static mascot follows them, never beside a post error. */}
+          {postSuccess ? <View style={styles.successRow}>
+            <Text style={[styles.success, styles.successCopy]}>{postSuccess}</Text>
+            {postError ? null : <SkillMatchMascot pose="success" />}
+          </View> : null}
           {isLoading ? (
             <InlineStatus variant="loading" message="Loading…" />
           ) : loadError ? (
             <InlineStatus variant="error" message={loadError} />
           ) : (
             <>
-              <Text style={styles.wizardProgress}>Step {wizardStep} / 4</Text>
-              {wizardStep === 1 ? <View style={styles.section} accessibilityLabel="Job Details">
-                <SectionHeader title="Job Details" />
+              <View style={styles.progressBand}>
+                <View style={styles.progressTrack} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+                  {[1, 2, 3, 4].map(step => <View key={step} style={[styles.progressSegment, step <= wizardStep && styles.progressSegmentComplete]} />)}
+                </View>
+                <Text style={styles.wizardProgress}>Step {wizardStep} of 4</Text>
+                <Text accessibilityRole="header" style={styles.stepTitle}>{STEP_TITLES[wizardStep]}</Text>
+              </View>
+
+              {/* Step 1. The description, then the skills it implies. A future
+                  description -> optional photo -> suggested-skill block belongs between
+                  these two sections; the manual skill choice below stays authoritative. */}
+              {wizardStep === 1 ? <View style={styles.section} accessibilityLabel="Job details">
+                <SectionHeader title="Describe the job" />
                 <AppField
-                  label="Description"
+                  inputStyle={styles.descriptionInput}
                   value={description}
                   onChangeText={setDescription}
                   placeholder="Describe the work needed."
@@ -259,24 +272,80 @@ export function ClientPostJobScreen() {
                 />
               </View> : null}
 
-              {wizardStep === 2 ? <View style={styles.section} accessibilityLabel="Location and Photos">
-                <SectionHeader title="Location & Photos" />
-                <AppCard>
-                  <Text style={styles.fieldLabel}>Service Location</Text>
-                  <Text accessibilityLabel="Confirmed job address" style={styles.locationAddress}>
-                    {address || 'No location selected'}
-                  </Text>
-                  <AppButton
-                    label={pin && address ? 'Change Location' : 'Choose Location'}
-                    variant="secondary"
+              {wizardStep === 1 ? <View style={styles.section} accessibilityLabel="Required skills">
+                <SectionHeader title="Required skills" subtitle="Choose up to two skills. The first is the primary skill and the second the secondary." />
+                {/* One group and one picker: the chosen skills in order, then the single way to change them. */}
+                <SurfaceGroup>
+                  {selectedSkills.map((skill) => {
+                    const role = postJobSkillRole({ primarySkillId, additionalSkillIds }, skill.id);
+                    return (
+                      <View key={skill.id} style={styles.skillRow} accessible accessibilityLabel={`${skill.skill_name}, ${role} skill`}>
+                        <Text style={styles.skillName}>{skill.skill_name}</Text>
+                        {role ? <AppChip label={role} variant={role === 'Primary' ? 'selected' : 'neutral'} /> : null}
+                      </View>
+                    );
+                  })}
+                  <Pressable
+                    style={({ pressed }) => [styles.choiceRow, pressed && styles.choiceRowPressed]}
+                    onPress={openSkillsModal}
                     disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityLabel={hasSelectedSkills ? 'Edit skills' : 'Choose skills'}
+                    accessibilityState={{ disabled: busy }}
+                  >
+                    <View style={styles.choiceCopy}>
+                      {hasSelectedSkills ? null : <Text style={styles.choicePlaceholder}>No skills selected yet.</Text>}
+                      <Text style={styles.choiceAction}>{hasSelectedSkills ? 'Edit skills' : 'Choose skills'}</Text>
+                    </View>
+                    <AppSymbol name={{ android: 'chevron_right', ios: 'chevron.right' }} size={size.icon} tintColor={colors.textSecondary} />
+                  </Pressable>
+                </SurfaceGroup>
+              </View> : null}
+
+              {/* Step 2. Location surface: a later map region (centre pin, recenter,
+                  explicit confirm) sits above this row without changing the step. */}
+              {wizardStep === 2 ? <View style={styles.section} accessibilityLabel="Location and Photos">
+                <SectionHeader title="Service location" subtitle="Workers see only the general area until they accept." />
+                <SurfaceGroup>
+                  <Pressable
+                    style={({ pressed }) => [styles.choiceRow, pressed && styles.choiceRowPressed]}
                     onPress={() => { setLocationNote(null); setLocationPickerVisible(true); }}
-                  />
-                </AppCard>
+                    disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityLabel={pin && address ? 'Change location' : 'Choose location'}
+                    // The label names the action; the value carries what the row shows, so the
+                    // confirmed address is heard ("Change location, Confirmed address: …").
+                    accessibilityValue={{ text: address ? `Confirmed address: ${address}` : 'No location selected' }}
+                    accessibilityState={{ disabled: busy }}
+                  >
+                    <AppSymbol name={{ android: 'location_on', ios: 'mappin' }} size={size.icon} tintColor={colors.accent} />
+                    <View style={styles.choiceCopy}>
+                      <Text style={styles.choiceLabel}>Confirmed address</Text>
+                      <Text style={address ? styles.choiceValue : styles.choicePlaceholder}>
+                        {address || 'No location selected'}
+                      </Text>
+                    </View>
+                    <Text style={styles.choiceAction}>{pin && address ? 'Change' : 'Choose'}</Text>
+                  </Pressable>
+                </SurfaceGroup>
+              </View> : null}
+
+              {wizardStep === 2 ? <View style={styles.section} accessibilityLabel="Job photos">
+                <SectionHeader title="Photos" subtitle="Optional" />
+                <JobPhotoPicker
+                  photos={jobPhotos}
+                  error={photoError}
+                  ownerKey={owner.ownerId}
+                  resetEpoch={owner.draftEpoch}
+                  isOwnerCurrent={() => isFocused && owner.isOwnerCurrent()}
+                  onErrorChange={(error) => owner.updateDraft({ photoError: error })}
+                  disabled={busy}
+                  onPhotosChange={setJobPhotos}
+                />
               </View> : null}
 
               {wizardStep === 3 ? <View style={styles.section} accessibilityLabel="Schedule">
-                <SectionHeader title="Schedule & Payment" />
+                <SectionHeader title="When" />
                 <JobSchedulePicker
                   date={scheduleDate}
                   time={scheduleTime}
@@ -286,8 +355,8 @@ export function ClientPostJobScreen() {
                 />
               </View> : null}
 
-              {wizardStep === 3 ? <View style={styles.section} accessibilityLabel="Budget and Payment">
-                <Text style={styles.fieldLabel}>Budget (Optional)</Text>
+              {wizardStep === 3 ? <View style={styles.section} accessibilityLabel="Budget">
+                <SectionHeader title="Budget" subtitle="Optional" />
                 <View
                   accessibilityRole="radiogroup"
                   accessibilityLabel="Fee presets"
@@ -337,7 +406,7 @@ export function ClientPostJobScreen() {
                       value={budgetText}
                       onChangeText={onBudgetTextChange}
                       placeholder="800"
-                      placeholderTextColor={colors.textDisabled}
+                      placeholderTextColor={colors.textMuted}
                       keyboardType="numeric"
                       editable={!busy}
                       underlineColorAndroid="transparent"
@@ -345,150 +414,86 @@ export function ClientPostJobScreen() {
                     />
                   </View>
                 ) : null}
+              </View> : null}
 
-                <Text style={styles.fieldLabel}>Payment Method</Text>
+              {wizardStep === 3 ? <View style={styles.section} accessibilityLabel="Payment method">
+                <SectionHeader title="Payment method" subtitle="Required. Workers see this before they accept." />
                 <View
                   accessibilityRole="radiogroup"
-                  accessibilityLabel="Payment Method"
+                  accessibilityLabel="Payment method"
                   style={styles.paymentGroup}
                 >
-                  {PAYMENT_OPTIONS.map((option) => {
-                    const on = paymentMethod === option.value;
-                    return (
-                      <Pressable
-                        key={option.value}
-                        style={[styles.paymentOption, on && styles.paymentOptionSelected]}
-                        onPress={() => setPaymentMethod(option.value)}
-                        disabled={busy}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected: on, disabled: busy }}
-                        accessibilityLabel={option.label}
-                      >
-                        <Text style={[styles.paymentLabel, on && styles.paymentLabelSelected]}>
-                          {on ? '✓ ' : ''}
-                          {option.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                  {PAYMENT_OPTIONS.map((option) => (
+                    <RadioRow
+                      key={option.value}
+                      label={option.label}
+                      meaning={option.meaning}
+                      selected={paymentMethod === option.value}
+                      disabled={busy}
+                      accessibilityLabel={option.label}
+                      onPress={() => setPaymentMethod(option.value)}
+                    />
+                  ))}
                 </View>
-                <Text style={styles.help}>Required. Workers see this before they accept.</Text>
                 {paymentMethod === 'qrph' ? (
                   <Text style={styles.help}>QR Ph needs a budget of at least ₱1.00.</Text>
                 ) : null}
               </View> : null}
 
-              {wizardStep === 1 ? <View style={styles.section} accessibilityLabel="Required Skills">
-                <SectionHeader title="Required Skills" />
-                <Text style={styles.fieldLabel}>Primary skill</Text>
-                <Text style={styles.help}>
-                  Required. This is the visible service identity.
-                </Text>
-                {primarySkill ? (
-                  <View style={styles.primarySelected} accessibilityLabel="Selected primary skill">
-                    <Text style={styles.primarySelectedName} numberOfLines={3}>
-                      {primarySkill.skill_name}
-                    </Text>
-                    <Pressable
-                      onPress={() => openSkillsModal('primary')}
-                      disabled={busy}
-                      accessibilityRole="button"
-                      accessibilityLabel="Change primary skill"
-                      accessibilityState={{ disabled: busy }}
-                    >
-                      <Text style={styles.changePrimary}>Change</Text>
-                    </Pressable>
-                  </View>
-                ) : (
-                  <Pressable
-                    onPress={() => openSkillsModal('primary')}
-                    disabled={busy}
-                    accessibilityRole="button"
-                    accessibilityLabel="Choose primary skill"
-                    accessibilityState={{ disabled: busy }}
-                  >
-                    <Text style={styles.help}>Choose the main skill for this job.</Text>
-                    <Text style={styles.changePrimary}>Choose</Text>
-                  </Pressable>
-                )}
-
-                <SkillListSummary
-                  skills={selectedSkills}
-                  emptyLabel="No skills selected yet."
-                  onPressView={hasSelectedSkills ? () => openSkillsModal('additional') : undefined}
-                  viewLabel={hasSelectedSkills ? 'Edit Skills' : undefined}
-                />
-                <AppButton
-                  variant="secondary"
-                  label={hasSelectedSkills ? 'Edit Skills' : 'Choose Skills'}
-                  onPress={() => openSkillsModal('additional')}
-                  disabled={busy}
-                  accessibilityLabel={hasSelectedSkills ? 'Edit Skills' : 'Choose Skills'}
-                />
-              </View> : null}
-
-              {wizardStep === 2 ? <View style={styles.section} accessibilityLabel="Job Photos">
-                <SectionHeader title="Photos (Optional)" />
-                <JobPhotoPicker
-                  photos={jobPhotos}
-                  error={photoError}
-                  ownerKey={owner.ownerId}
-                  resetEpoch={owner.draftEpoch}
-                  isOwnerCurrent={() => isFocused && owner.isOwnerCurrent()}
-                  onErrorChange={(error) => owner.updateDraft({ photoError: error })}
-                  disabled={busy}
-                  onPhotosChange={setJobPhotos}
-                />
-              </View> : null}
-
               {wizardStep === 4 ? (
                 <View style={styles.section} accessibilityLabel="Review and Post">
-                  <SectionHeader title="Review & Post" />
-                  <AppCard>
-                    <Text style={styles.fieldLabel}>Skills</Text>
-                    <Text style={styles.reviewValue}>{selectedSkills.map((skill) => skill.skill_name).join(', ')}</Text>
-                    <Text style={styles.fieldLabel}>Description</Text>
-                    <Text style={styles.reviewValue}>{description.trim()}</Text>
-                    <Text style={styles.fieldLabel}>Location</Text>
-                    <Text style={styles.reviewValue}>{address.trim()}</Text>
-                    <Text style={styles.fieldLabel}>Photos</Text>
-                    <Text style={styles.reviewValue}>{jobPhotos.length} selected</Text>
-                    <Text style={styles.fieldLabel}>Schedule</Text>
-                    <Text style={styles.reviewValue}>{combineJobSchedule(scheduleDate, scheduleTime)?.toLocaleString() ?? 'Not selected'}</Text>
-                    <Text style={styles.fieldLabel}>Budget</Text>
-                    <Text style={styles.reviewValue}>{budgetText.trim() ? `₱${budgetText.trim()}` : 'Not specified'}</Text>
-                    <Text style={styles.fieldLabel}>Payment</Text>
-                    <Text style={styles.reviewValue}>{paymentMethod === 'cod' ? 'Cash' : paymentMethod === 'qrph' ? 'QR Ph' : 'Not selected'}</Text>
-                  </AppCard>
+                  <SectionHeader title="Job summary" subtitle="Check the details, then post." />
+                  <SurfaceGroup>
+                    <FactRow icon={{ android: 'handyman', ios: 'wrench.and.screwdriver' }} label="Skills" value={selectedSkills.map((skill) => skill.skill_name).join(', ')} strong />
+                    <FactRow icon={{ android: 'description', ios: 'text.alignleft' }} label="Description" value={description.trim()} />
+                    <FactRow icon={{ android: 'schedule', ios: 'clock' }} label="Schedule" value={formatDetailDateTime(combineJobSchedule(scheduleDate, scheduleTime)) ?? 'Not selected'} strong />
+                    <FactRow icon={{ android: 'location_on', ios: 'mappin' }} label="Location" value={address.trim()} />
+                    <FactRow icon={{ android: 'photo_library', ios: 'photo' }} label="Photos" value={`${jobPhotos.length} selected`} />
+                    <FactRow icon={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} label="Budget" value={budgetLabel} strong inline />
+                    <FactRow icon={{ android: 'receipt_long', ios: 'doc.plaintext' }} label="Payment" value={paymentMethod === 'cod' ? 'Cash' : paymentMethod === 'qrph' ? 'QR Ph' : 'Not selected'} inline />
+                  </SurfaceGroup>
                 </View>
               ) : null}
 
               <View style={styles.wizardActions}>
                 {wizardStep > 1 ? (
-                  <AppButton variant="secondary" label="Back" onPress={goToPreviousStep} disabled={busy} />
+                  <AppButton style={styles.wizardAction} variant="secondary" label="Previous step" onPress={goToPreviousStep} disabled={busy} />
                 ) : null}
                 {wizardStep < 4 ? (
-                  <AppButton variant="primary" label="Next" onPress={goToNextStep} disabled={busy} />
+                  <AppButton style={styles.wizardAction} variant="primary" label="Next" onPress={goToNextStep} disabled={busy} />
                 ) : null}
               </View>
 
-              {wizardStep === 4 ? <View style={styles.submitBlock} accessibilityLabel="Post Job">
-                {postError ? <InlineStatus variant="error" message={postError} /> : null}
-                <AppButton
-                  variant="primary"
-                  label="+ Post Job"
-                  onPress={() => {
-                    void handlePost();
-                  }}
-                  loading={isPosting}
-                  disabled={busy}
-                  accessibilityLabel="Post Job"
-                />
-              </View> : postError ? <InlineStatus variant="error" message={postError} /> : null}
+              {wizardStep < 4 && postError ? <InlineStatus variant="error" message={postError} /> : null}
             </>
           )}
         </View>
       </ScrollView>
+
+      {/* Review only: no text input here, so the dock cannot fight the keyboard. */}
+      {showDock ? (
+        <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, spacing.md) }]} accessibilityLabel="Post job">
+          {postError ? <InlineStatus variant="error" message={postError} /> : null}
+          <View style={styles.dockRow}>
+            <View style={styles.dockSummary} accessible accessibilityLabel={`Budget: ${budgetLabel}`}>
+              <Text style={styles.dockCaption}>Budget</Text>
+              <Text style={styles.dockAmount}>{budgetLabel}</Text>
+            </View>
+            <View style={styles.dockAction}>
+              <AppButton
+                variant="primary"
+                label="Post job"
+                onPress={() => {
+                  void handlePost();
+                }}
+                loading={isPosting}
+                disabled={busy}
+                accessibilityLabel="Post job"
+              />
+            </View>
+          </View>
+        </View>
+      ) : null}
 
       <Modal visible={locationPickerVisible} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setLocationPickerVisible(false)}>
         {locationPickerVisible ? (
@@ -518,15 +523,9 @@ export function ClientPostJobScreen() {
               { paddingTop: insets.top + spacing.lg, paddingBottom: Math.max(insets.bottom, spacing.lg) },
             ]}
           >
-            <Text style={styles.modalTitle}>
-              {skillsModalMode === 'primary' ? 'Choose Primary Skill' : 'Choose Skills'}
-            </Text>
+            <Text style={styles.modalTitle}>Choose skills</Text>
             <Text style={styles.help}>
-              {skillsModalMode === 'primary'
-                ? 'Required. This is the visible service identity. Matching uses every required skill.'
-                : lockedModalPrimaryId === null
-                  ? 'Tap a skill to set it as primary, then add any additional skills. Matching uses every selected skill.'
-                  : 'Additional required skills. Matching uses every selected skill. The primary skill cannot be removed here.'}
+              Choose up to two skills. The first is the primary skill and the second the secondary. Tap a chosen skill to remove it.
             </Text>
             <ScrollView
               style={styles.modalFlex}
@@ -537,18 +536,11 @@ export function ClientPostJobScreen() {
                 skills={skills}
                 query={modalQuery}
                 onQueryChange={setModalQuery}
-                isSkillSelected={(skillId) =>
-                  skillsModalMode === 'primary'
-                    ? skillId === modalPrimaryId
-                    : skillId === lockedModalPrimaryId || modalAdditionalIds.includes(skillId)
-                }
+                isSkillSelected={(skillId) => postJobSkillRole(modalSelection, skillId) !== null}
                 onToggleSkill={toggleModalSkill}
                 disabled={busy}
-                renderAfterSkill={(skill) =>
-                  skill.id === lockedModalPrimaryId ? (
-                    <Text style={styles.help}>Primary — cannot be removed.</Text>
-                  ) : null
-                }
+                badgeForSkill={(skill) => postJobSkillRole(modalSelection, skill.id)}
+                isSkillUnavailable={(skillId) => !canAddPostJobSkill(modalSelection, skillId)}
               />
             </ScrollView>
             <AppButton
@@ -575,64 +567,110 @@ export function ClientPostJobScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   container: {
     flexGrow: 1,
-    backgroundColor: colors.background,
-    paddingBottom: spacing.xxxl + spacing.sm,
-  },
-  titleBlock: {
-    paddingHorizontal: spacing.gutter,
-    paddingTop: spacing.lg,
-    gap: spacing.sm,
-    marginBottom: spacing.xl,
-  },
-  greeting: {
-    ...type.helper,
-    color: colors.textSecondary,
-  },
-  displayTitle: {
-    ...type.display,
-    color: colors.textPrimary,
-  },
-  serviceArea: {
-    ...type.helper,
-    color: colors.textSecondary,
+    backgroundColor: colors.canvas,
+    paddingBottom: spacing.xxxxl,
   },
   form: {
     paddingHorizontal: spacing.gutter,
-    gap: spacing.xxl,
-  },
-  bookingBlock: {
-    marginBottom: spacing.xl,
+    paddingTop: spacing.lg,
+    gap: spacing.xl,
   },
   section: {
     gap: spacing.md,
   },
-  wizardProgress: {
-    ...type.helper,
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  wizardActions: {
+  progressBand: {
     gap: spacing.sm,
   },
-  reviewValue: {
-    ...type.body,
+  progressTrack: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  progressSegment: {
+    flex: 1,
+    height: spacing.xs,
+    backgroundColor: colors.hairline,
+    borderRadius: radius.pill,
+  },
+  progressSegmentComplete: {
+    backgroundColor: colors.accent,
+  },
+  wizardProgress: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  stepTitle: {
+    ...type.screenTitle,
     color: colors.textPrimary,
   },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-    color: colors.primary,
+  descriptionInput: {
+    minHeight: 140,
   },
-  locationAddress: { ...type.body, color: colors.textPrimary },
+  wizardActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  wizardAction: {
+    flexGrow: 1,
+    flexBasis: 120,
+    flexShrink: 1,
+  },
+  choiceRow: {
+    minHeight: size.listRowMinHeight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  choiceRowPressed: {
+    backgroundColor: colors.surfaceSunken,
+  },
+  choiceCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: spacing.xxs,
+  },
+  choiceLabel: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  choiceValue: {
+    ...type.bodyEmphasis,
+    color: colors.textPrimary,
+  },
+  choicePlaceholder: {
+    ...type.body,
+    color: colors.textSecondary,
+  },
+  choiceAction: {
+    ...type.label,
+    color: colors.accent,
+    flexShrink: 0,
+  },
+  skillRow: {
+    minHeight: size.listRowMinHeight,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  skillName: {
+    ...type.bodyEmphasis,
+    color: colors.textPrimary,
+    flexShrink: 1,
+  },
   feePresetGroup: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -640,33 +678,35 @@ const styles = StyleSheet.create({
   },
   feePreset: {
     minHeight: size.ghostButton,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
-    paddingHorizontal: spacing.md,
+    borderRadius: radius.control,
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.controlBorder,
     justifyContent: 'center',
   },
   feePresetSelected: {
-    backgroundColor: colors.selected,
+    backgroundColor: colors.accentSubtle,
+    borderWidth: 2,
+    borderColor: colors.accent,
   },
   feePresetLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    lineHeight: 20,
-    color: colors.textSecondary,
+    ...type.label,
+    color: colors.textPrimary,
   },
   feePresetLabelSelected: {
-    fontWeight: '700',
-    color: colors.primary,
+    color: colors.accentPressed,
   },
   budgetField: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: size.fieldHeight,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
+    minHeight: size.fieldHeight,
+    borderRadius: radius.control,
+    backgroundColor: colors.surface,
     paddingLeft: spacing.md,
     borderWidth: 1.5,
-    borderColor: 'transparent',
+    borderColor: colors.controlBorder,
     borderCurve: 'continuous',
   },
   budgetPrefix: {
@@ -678,74 +718,65 @@ const styles = StyleSheet.create({
     ...type.body,
     color: colors.textPrimary,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 0,
+    paddingVertical: spacing.md,
   },
   paymentGroup: {
     gap: spacing.sm,
-  },
-  paymentOption: {
-    minHeight: size.ghostButton,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
-    paddingHorizontal: spacing.md,
-    justifyContent: 'center',
-  },
-  paymentOptionSelected: {
-    backgroundColor: colors.surface,
-  },
-  paymentLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    lineHeight: 20,
-    color: colors.textSecondary,
-  },
-  paymentLabelSelected: {
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  primarySelected: {
-    minHeight: size.ghostButton,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.selected,
-  },
-  primarySelectedName: {
-    flex: 1,
-    flexShrink: 1,
-    ...type.bodyEmphasis,
-    color: colors.primary,
-  },
-  changePrimary: {
-    ...type.helper,
-    fontWeight: '600',
-    color: colors.primary,
-    textDecorationLine: 'underline',
   },
   help: {
     ...type.helper,
     color: colors.textSecondary,
   },
-  submitBlock: {
-    gap: spacing.md,
+  dock: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.gutter,
+    paddingTop: spacing.md,
+    backgroundColor: colors.canvas,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+  },
+  dockRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.lg,
+  },
+  dockSummary: {
+    gap: spacing.xxs,
+  },
+  dockCaption: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
+  dockAmount: {
+    ...type.money,
+    color: colors.textPrimary,
+  },
+  dockAction: {
+    flex: 1,
+    minWidth: 148,
   },
   success: {
     ...type.helper,
     color: colors.success,
-    textAlign: 'center',
+  },
+  successRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  successCopy: {
+    flex: 1,
   },
   modalFlex: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   modalScreen: {
     flex: 1,
     paddingHorizontal: spacing.gutter,
     gap: spacing.md,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   modalTitle: {
     ...type.screenTitle,

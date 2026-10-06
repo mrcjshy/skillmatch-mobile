@@ -21,6 +21,7 @@ function controls() {
       compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
     }).outputText;
     runInNewContext(code, { exports, require: (name: string) => {
+      if (name === '@/components/refinement-theme') return { useUiTheme: () => modules['@/constants/theme'].SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children };
       if (!(name in modules)) throw Error(`Unexpected import: ${name}`);
       return modules[name];
     } });
@@ -29,22 +30,23 @@ function controls() {
   const theme = compile('src/constants/theme.ts', { 'react-native': native, '@/global.css': {} });
   const { AppButton } = compile('src/components/app-button.tsx', {
     'react-native': native, 'react/jsx-runtime': { jsx, jsxs: jsx }, '@/constants/theme': theme,
+    '@/components/app-symbol': { AppSymbol: 'SymbolView' },
   });
   return { theme, render: (props: Props): Element => AppButton(props) };
 }
 
 describe('Shared control dimensions', () => {
-  it('uses the approved minimum target tokens and retains legacy aliases', () => {
+  it('uses the approved minimum target tokens (no legacy size shape since Wave 5)', () => {
     const { theme } = controls();
-    expect(theme.SkillMatchTheme.ui.size).toMatchObject({ primaryButton: 56, fieldHeight: 52,
-      secondaryButton: 52, searchHeight: 52, ghostButton: 48, compactButton: 48,
+    expect(theme.SkillMatchTheme.ui.size).toMatchObject({ primaryButton: 52, fieldHeight: 52,
+      secondaryButton: 48, searchHeight: 52, ghostButton: 48, compactButton: 48,
       segmentHeight: 40, chipHeight: 28 });
-    expect(theme.SkillMatchTheme.size).toEqual({ iconTarget: 48, primaryCtaHeight: 52 });
+    expect(theme.SkillMatchTheme).not.toHaveProperty('size');
   });
 });
 
 describe('AppButton growing targets', () => {
-  for (const [variant, minHeight] of Object.entries({ primary: 56, secondary: 52, destructive: 52, ghost: 48, compact: 48 })) {
+  for (const [variant, minHeight] of Object.entries({ primary: 52, secondary: 48, destructive: 48, ghost: 48, compact: 48, inverse: 52 })) {
     it(`${variant} grows around scalable, wrapping labels without hitSlop dependence`, () => {
       const button = controls().render({ label: 'A long control label that can wrap', variant });
       const style = flatten(button.props.style({ pressed: false }));
@@ -64,35 +66,42 @@ describe('AppButton growing targets', () => {
 });
 
 describe('AppButton blocked presentation', () => {
-  for (const variant of ['primary', 'secondary', 'ghost', 'destructive', 'compact']) {
+  for (const variant of ['primary', 'secondary', 'ghost', 'destructive', 'compact', 'inverse']) {
     it(`${variant} disabled surface and label stay neutral and readable without opacity`, () => {
       const button = controls().render({ label: 'Continue', variant, disabled: true });
       for (const pressed of [false, true]) {
         const style = flatten(button.props.style({ pressed }));
         expect(style.opacity).toBeUndefined();
-        expect(style.backgroundColor).toBe('#F4F4EC');
-        expect(style.borderColor).toBe('#737A70');
+        // A blocked text action is flat and borderless; every other blocked control keeps the grey surface.
+        expect(style.backgroundColor).toBe(variant === 'ghost' ? 'transparent' : '#EFEEEA');
+        expect(style.borderColor).toBe('#7A818C');
+        if (variant === 'ghost') expect(style.borderWidth).toBe(0);
       }
-      expect(flatten(button.props.children.props.style).color).toBe('#5F6360');
+      expect(flatten(button.props.children.props.style).color).toBe('#59606B');
     });
     it(`${variant} loading surface has no opacity and a contrasting spinner`, () => {
       const button = controls().render({ label: 'Continue', variant, loading: true });
       expect(flatten(button.props.style({ pressed: true })).opacity).toBeUndefined();
-      expect(flatten(button.props.style({ pressed: false })).backgroundColor).toBe('#F4F4EC');
+      expect(flatten(button.props.style({ pressed: false })).backgroundColor).toBe(variant === 'ghost' ? 'transparent' : '#EFEEEA');
       expect(button.props.children.type).toBe('ActivityIndicator');
-      expect(button.props.children.props.color).toBe(variant === 'destructive' ? '#B91C1C' : '#163300');
+      expect(button.props.children.props.color).toBe(variant === 'destructive' ? '#B3261E' : '#1C3AA6');
     });
   }
 });
 
 describe('AppButton essential boundaries', () => {
-  for (const [variant, borderColor] of Object.entries({ primary: '#163300', secondary: '#737A70',
-    ghost: '#737A70', destructive: '#B91C1C', compact: '#163300' })) {
-    it(`${variant} has an essential visible boundary`, () => {
+  for (const [variant, borderColor] of Object.entries({ primary: '#1C3AA6', secondary: '#7A818C',
+    ghost: '#7A818C', destructive: '#B3261E', compact: '#1C3AA6' })) {
+    it(`${variant} has a visible boundary or text-action affordance`, () => {
       const button = controls().render({ label: 'Action', variant });
       const style = flatten(button.props.style({ pressed: false }));
       expect(style.borderColor).toBe(borderColor);
-      expect(style.borderWidth).toBeGreaterThanOrEqual(1.5);
+      if (variant === 'ghost') {
+        expect(style.borderWidth).toBe(0);
+        expect(button.props.accessibilityRole).toBe('button');
+        expect(flatten(button.props.children.props.style).color).toBe('#1C3AA6');
+        expect(style.minHeight).toBeGreaterThanOrEqual(48);
+      } else expect(style.borderWidth).toBeGreaterThanOrEqual(1);
     });
   }
 });
@@ -113,7 +122,7 @@ describe('AppButton pressed contrast', () => {
       const button = controls().render({ label: 'Action', variant });
       const style = flatten(button.props.style({ pressed: true }));
       const text = flatten(button.props.children.props.style).color;
-      for (const surface of ['#FFFFFF', '#F4F4EC']) {
+      for (const surface of ['#FFFFFF', '#EFEEEA']) {
         const background = style.backgroundColor === 'transparent' ? surface : style.backgroundColor;
         const alpha = style.opacity ?? 1;
         expect(ratio(composite(style.borderColor, surface, alpha), surface)).toBeGreaterThanOrEqual(3);
@@ -127,10 +136,10 @@ describe('AppButton preserved interaction contract', () => {
   it('keeps exact primary normal/pressed colors, destructive text and compact enabled text', () => {
     const { render } = controls();
     const primary = render({ label: 'Continue' });
-    expect(flatten(primary.props.style({ pressed: false })).backgroundColor).toBe('#9FE870');
-    expect(flatten(primary.props.style({ pressed: true })).backgroundColor).toBe('#7ED856');
-    expect(flatten(primary.props.children.props.style).color).toBe('#163300');
-    expect(flatten(render({ label: 'Delete', variant: 'destructive' }).props.children.props.style).color).toBe('#B91C1C');
+    expect(flatten(primary.props.style({ pressed: false })).backgroundColor).toBe('#1C3AA6');
+    expect(flatten(primary.props.style({ pressed: true })).backgroundColor).toBe('#142B7F');
+    expect(flatten(primary.props.children.props.style).color).toBe('#FFFFFF');
+    expect(flatten(render({ label: 'Delete', variant: 'destructive' }).props.children.props.style).color).toBe('#B3261E');
     expect(flatten(render({ label: 'Next', variant: 'compact' }).props.children.props.style).color).toBe('#FFFFFF');
   });
   it('retains action identity, accessible names and accurate disabled/busy state through transitions', () => {

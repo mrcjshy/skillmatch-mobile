@@ -2,10 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { AppCard } from '@/components/app-card';
-import { AppNotice } from '@/components/app-notice';
+import { AppSheet } from '@/components/app-sheet';
+import { AppSymbol } from '@/components/app-symbol';
+import { FormMessage } from '@/components/form-message';
 import { InlineStatus } from '@/components/inline-status';
+import { RadioRow } from '@/components/radio-row';
 import { SectionHeader } from '@/components/section-header';
+import { SurfaceGroup } from '@/components/surface-group';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatCardDateTime } from '@/lib/date-time';
 import {
@@ -106,6 +109,7 @@ export default function SkillGap() {
   const [requirements, setRequirements] = useState<RequirementsState>({ kind: 'idle' });
   const [retryToken, setRetryToken] = useState(0);
   const [requirementsToken, setRequirementsToken] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const loadBase = useCallback(
     async (run: { cancelled: boolean }) => {
@@ -250,25 +254,40 @@ export default function SkillGap() {
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
       <SectionHeader title={SKILL_GAP_COPY.compareWith} />
-      <View style={styles.picker} accessibilityRole="radiogroup">
-        {opportunities.map((o) => {
-          const selected = o.jobId === selectedJob.jobId;
-          return (
-            <Pressable
+      {/* The chosen job is one row; changing it opens the shared sheet, so the result stays in view. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${SKILL_GAP_COPY.compareWith}: ${selectedJob.title}`}
+        accessibilityHint="Choose a different job opportunity"
+        accessibilityState={{ expanded: pickerOpen }}
+        onPress={() => setPickerOpen(true)}
+        style={({ pressed }) => [styles.chosen, pressed ? styles.chosenPressed : null]}
+      >
+        <View style={styles.chosenCopy}>
+          <Text style={styles.chosenTitle}>{selectedJob.title}</Text>
+          {describeOpportunity(selectedJob) === null ? null : (
+            <Text style={styles.muted}>{describeOpportunity(selectedJob)}</Text>
+          )}
+        </View>
+        <AppSymbol synchronousGlyph name={{ android: 'expand_more', ios: 'chevron.down' }} size={20} tintColor={colors.textSecondary} />
+      </Pressable>
+      <AppSheet visible={pickerOpen} onClose={() => setPickerOpen(false)} title={SKILL_GAP_COPY.compareWith}>
+        <View style={styles.picker} accessibilityRole="radiogroup" accessibilityLabel={SKILL_GAP_COPY.compareWith}>
+          {opportunities.map((o) => (
+            <RadioRow
               key={o.jobId}
-              style={[styles.pickerRow, selected && styles.pickerRowSelected]}
-              onPress={() => setSelectedJobId(o.jobId)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected }}
-            >
-              <Text style={[styles.pickerTitle, selected && styles.pickerTitleSelected]}>{o.title}</Text>
-              {describeOpportunity(o) === null ? null : (
-                <Text style={styles.muted}>{describeOpportunity(o)}</Text>
-              )}
-            </Pressable>
-          );
-        })}
-      </View>
+              label={o.title}
+              meaning={describeOpportunity(o) ?? undefined}
+              selected={o.jobId === selectedJob.jobId}
+              accessibilityLabel={o.title}
+              onPress={() => {
+                setSelectedJobId(o.jobId);
+                setPickerOpen(false);
+              }}
+            />
+          ))}
+        </View>
+      </AppSheet>
 
       {current === null || current.kind === 'loading' ? (
         <InlineStatus variant="loading" message={SKILL_GAP_COPY.loadingRequirements} />
@@ -309,9 +328,9 @@ function describeOpportunity(o: GapOpportunity): string | null {
 }
 
 /**
- * Wrapping skill pill. AppChip is height-locked at 28 and clips the Worker
- * `✓ ` prefix plus proficiency suffix, so these match AppChip fills/type
- * with wrap allowed.
+ * Wrapping skill pill. AppChip is height-locked at 28 and would clip a long skill name with its
+ * proficiency suffix, so this matches AppChip fills and type with wrapping allowed. Meaning is
+ * carried by an icon and the group it sits in, never by colour alone.
  */
 function SkillPill({
   label,
@@ -320,16 +339,23 @@ function SkillPill({
   label: string;
   variant?: 'neutral' | 'positive' | 'warning';
 }) {
+  const ink = pillInk[variant];
   return (
     <View style={[styles.chip, chipFills[variant]]}>
+      {variant === 'positive' ? (
+        <AppSymbol synchronousGlyph name={{ android: 'check', ios: 'checkmark' }} size={14} tintColor={ink} />
+      ) : variant === 'warning' ? (
+        <AppSymbol synchronousGlyph name={{ android: 'warning', ios: 'exclamationmark.triangle' }} size={14} tintColor={ink} />
+      ) : null}
       <Text style={[styles.chipText, chipLabels[variant]]}>{label}</Text>
     </View>
   );
 }
 
 /**
- * The equation. `computeSkillGap` normalizes both sides, so this component
- * renders exactly what the pure function returns and adds nothing.
+ * The comparison, read top to bottom: what the job asks for, what you have, what is missing.
+ * `computeSkillGap` normalizes both sides, so this component renders exactly what the pure
+ * function returns and adds nothing. One surface, three labelled blocks.
  */
 function GapEquation({
   required,
@@ -345,11 +371,7 @@ function GapEquation({
   const gap = computeSkillGap(required, mine);
 
   if (gap.requiredSkills.length === 0) {
-    return (
-      <AppCard>
-        <Text style={styles.muted}>{SKILL_GAP_COPY.noRequirements}</Text>
-      </AppCard>
-    );
+    return <Text style={styles.muted}>{SKILL_GAP_COPY.noRequirements}</Text>;
   }
 
   const matchedIds = new Set(gap.matchedSkills.map((s) => s.id));
@@ -357,58 +379,54 @@ function GapEquation({
 
   return (
     <>
-      <AppCard>
-        <Text style={styles.cardTitle}>{SKILL_GAP_COPY.required}</Text>
-        <View style={styles.chips}>
-          {gap.requiredSkills.map((s) => (
-            <SkillPill key={s.id} label={s.name} />
-          ))}
-        </View>
-      </AppCard>
-
-      <Text style={styles.operator}>{SKILL_GAP_COPY.minus}</Text>
-
-      <AppCard>
-        <Text style={styles.cardTitle}>{SKILL_GAP_COPY.yours}</Text>
-        {gap.workerSkills.length === 0 ? (
-          <Text style={styles.muted}>{SKILL_GAP_COPY.noWorkerSkills}</Text>
-        ) : (
+      <SurfaceGroup>
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>{SKILL_GAP_COPY.required}</Text>
           <View style={styles.chips}>
-            {gap.workerSkills.map((s) => {
-              const matched = matchedIds.has(s.id);
-              return (
-                <SkillPill
-                  key={s.id}
-                  variant={matched ? 'positive' : 'neutral'}
-                  label={`${matched ? '✓ ' : ''}${s.name}${
-                    s.proficiency === null ? '' : ` · ${PROFICIENCY_LABEL[s.proficiency]}`
-                  }`}
-                />
-              );
-            })}
+            {gap.requiredSkills.map((s) => (
+              <SkillPill key={s.id} label={s.name} />
+            ))}
           </View>
-        )}
-      </AppCard>
+        </View>
 
-      <Text style={styles.operator}>{SKILL_GAP_COPY.equals}</Text>
-
-      <AppCard variant="status" tone={hasMissing ? 'warning' : 'success'}>
-        <Text style={styles.cardTitle}>
-          {SKILL_GAP_COPY.missing} · {gap.missingSkills.length}
-        </Text>
-        {hasMissing ? (
-          <>
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>{SKILL_GAP_COPY.yours}</Text>
+          {gap.workerSkills.length === 0 ? (
+            <Text style={styles.muted}>{SKILL_GAP_COPY.noWorkerSkills}</Text>
+          ) : (
             <View style={styles.chips}>
-              {gap.missingSkills.map((s) => (
-                <SkillPill key={s.id} variant="warning" label={`− ${s.name}`} />
-              ))}
+              {gap.workerSkills.map((s) => {
+                const matched = matchedIds.has(s.id);
+                return (
+                  <SkillPill
+                    key={s.id}
+                    variant={matched ? 'positive' : 'neutral'}
+                    label={`${s.name}${s.proficiency === null ? '' : ` · ${PROFICIENCY_LABEL[s.proficiency]}`}`}
+                  />
+                );
+              })}
             </View>
-            <AppNotice variant="warning" message={SKILL_GAP_COPY.missingHint} />
-          </>
-        ) : (
-          <Text style={styles.zeroGap}>{SKILL_GAP_COPY.zeroGap}</Text>
-        )}
-      </AppCard>
+          )}
+        </View>
+
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>
+            {SKILL_GAP_COPY.missing} · {gap.missingSkills.length}
+          </Text>
+          {hasMissing ? (
+            <>
+              <View style={styles.chips}>
+                {gap.missingSkills.map((s) => (
+                  <SkillPill key={s.id} variant="warning" label={s.name} />
+                ))}
+              </View>
+              <FormMessage tone="warning" message={SKILL_GAP_COPY.missingHint} />
+            </>
+          ) : (
+            <Text style={styles.zeroGap}>{SKILL_GAP_COPY.zeroGap}</Text>
+          )}
+        </View>
+      </SurfaceGroup>
 
       <GuidanceSection
         key={guidanceKey}
@@ -454,13 +472,13 @@ export function GuidanceSection({
   const requestGuidance = useCallback(() => runner.request(setState), [runner]);
 
   return (
-    <AppCard variant="status">
-      <Text style={styles.cardTitle}>{SKILL_GAP_GUIDANCE_COPY.title}</Text>
+    <View style={styles.guidance}>
+      <SectionHeader title={SKILL_GAP_GUIDANCE_COPY.title} />
 
       {state.kind === 'idle' ? (
         <AppButton
           label={buttonLabel}
-          variant="primary"
+          variant="secondary"
           onPress={requestGuidance}
         />
       ) : state.kind === 'loading' ? (
@@ -487,76 +505,72 @@ export function GuidanceSection({
           </Text>
         </>
       )}
-    </AppCard>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   container: {
     flexGrow: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     padding: spacing.gutter,
-    gap: spacing.md,
-    paddingBottom: spacing.xxxl,
+    gap: spacing.lg,
+    paddingBottom: spacing.xxxxl,
   },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.gutter,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   picker: {
     gap: spacing.sm,
+    paddingBottom: spacing.sm,
   },
-  pickerRow: {
-    backgroundColor: colors.surfaceSubtle,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: spacing.xxs,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+  chosen: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    minHeight: 56,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.controlBorder,
     borderCurve: 'continuous',
   },
-  pickerRowSelected: {
-    backgroundColor: colors.accentSoft,
-    borderColor: colors.selected,
-  },
-  pickerTitle: {
-    ...type.bodyEmphasis,
-    color: colors.textPrimary,
-  },
-  pickerTitleSelected: {
-    color: colors.primary,
-  },
-  cardTitle: {
-    ...type.caption,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    color: colors.textPrimary,
-  },
-  operator: {
-    ...type.bodyEmphasis,
+  chosenPressed: { backgroundColor: colors.surfaceSunken },
+  chosenCopy: { flex: 1, minWidth: 0, gap: spacing.xxs },
+  chosenTitle: { ...type.bodyEmphasis, color: colors.textPrimary },
+  block: { gap: spacing.md, padding: spacing.lg },
+  blockTitle: {
+    ...type.label,
     color: colors.textSecondary,
-    textAlign: 'center',
   },
+  guidance: { gap: spacing.md },
   chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
   chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     borderRadius: radius.pill,
     paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
     maxWidth: '100%',
   },
   chipText: {
     ...type.badge,
+    flexShrink: 1,
   },
   zeroGap: {
     ...type.bodyEmphasis,
@@ -573,13 +587,15 @@ const styles = StyleSheet.create({
 });
 
 const chipFills = StyleSheet.create({
-  neutral: { backgroundColor: colors.surfaceSubtle },
-  positive: { backgroundColor: colors.accentSoft },
+  neutral: { backgroundColor: colors.surfaceSunken },
+  positive: { backgroundColor: colors.successTint },
   warning: { backgroundColor: colors.warningTint },
 });
 
 const chipLabels = StyleSheet.create({
-  neutral: { color: colors.primary },
-  positive: { color: colors.primary },
+  neutral: { color: colors.textPrimary },
+  positive: { color: colors.success },
   warning: { color: colors.warning },
 });
+
+const pillInk = { neutral: colors.textPrimary, positive: colors.success, warning: colors.warning } as const;

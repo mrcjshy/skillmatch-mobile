@@ -108,7 +108,14 @@ export function createClientPostJobDraftOwner(ownerId: string, onChange = () => 
     },
     updateDraft(update: DraftUpdate) {
       if (!isOwnerCurrent() || operation || pendingCreate || indeterminate) return false;
-      draft = copyDraft({ ...draft, ...(typeof update === 'function' ? update(copyDraft(draft)) : update) });
+      const next = copyDraft({ ...draft, ...(typeof update === 'function' ? update(copyDraft(draft)) : update) });
+      // Settlement has already reset the form. Keep its receipt through neutral UI
+      // updates; meaningful input (including a working skill choice) starts the next draft.
+      if (draft.postSuccess && (next.description.trim() || next.modalQuery.trim() ||
+        next.primarySkillId || next.additionalSkillIds.length || next.modalPrimaryId || next.modalAdditionalIds.length ||
+        next.wizardStep > 1 || next.address.trim() || next.pin || next.scheduleDate || next.scheduleTime ||
+        next.budgetText.trim() || next.feePreset !== null || next.paymentMethod || next.jobPhotos.length)) next.postSuccess = null;
+      draft = next;
       changed(); return true;
     },
     beginPost() {
@@ -172,6 +179,9 @@ const DraftContext = createContext<ClientPostJobDraftContextValue | undefined>(u
 /** Private memory survives route removal. Only local lifecycle notifications;
  * no service loader, Auth SDK subscription, database/Storage reader or watcher. */
 export function ClientPostJobDraftMemoryProvider({ children, session, account }: { children: ReactNode; session: SessionContextValue; account: AccountContextValue }) {
+  // React Compiler would memoise the spread context value on the stable owner object, so draft changes
+  // never reached consumers (typed text and skill choices were dropped). Keep this component uncompiled.
+  'use no memo';
   const [memory] = useState(() => {
     let authority: { session: SessionContextValue; account: AccountContextValue } | null = null;
     return {

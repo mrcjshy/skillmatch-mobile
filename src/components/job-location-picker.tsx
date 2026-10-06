@@ -18,6 +18,7 @@ import { JOB_MAP_STYLE, jobMapRuntime as mapsRuntime } from '@/lib/native-job-ma
 import { pinFromMapCenter, pinToLngLat } from '@/lib/map-coordinates';
 import { findNearbyMappedFeatures, findNearbySnap, SNAP_MIN_ZOOM, type NearbyMappedFeature, type SnapKind } from '@/lib/job-location-snap';
 import { AppButton } from '@/components/app-button';
+import { AppSymbol } from '@/components/app-symbol';
 import { AppNotice } from '@/components/app-notice';
 import { inspectLocationPermission, type LocationPermissionState } from '@/lib/location-permission';
 import { LOCATION_SEARCH_DEBOUNCE_MS, LOCATION_SEARCH_MIN_LENGTH, searchPhoton, type LocationSuggestion } from '@/lib/location-search';
@@ -338,21 +339,21 @@ export function JobLocationPicker({
               onPress={onCancel}
               accessibilityRole="button"
               accessibilityLabel="Back to Post Job"
-            ><Text style={styles.controlText}>←</Text></Pressable>
+            ><AppSymbol name={{ android: 'arrow_back', ios: 'chevron.left' }} size={24} tintColor={colors.textPrimary} /></Pressable>
             <Pressable
               style={[styles.floatingControl, styles.currentControl]}
               onPress={() => { void handleUseCurrentLocation(); }}
               disabled={busy}
               accessibilityRole="button"
               accessibilityLabel={COPY.useCurrentLocation}
-            >{locating ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.controlText}>◎</Text>}</Pressable>
+            >{locating ? <ActivityIndicator color={colors.accent} /> : <AppSymbol name={{ android: 'my_location', ios: 'location' }} size={24} tintColor={colors.accent} />}</Pressable>
           </View>
         </MapErrorBoundary>
       ) : (
         <View style={styles.unavailable} accessibilityLabel="Job location map unavailable">
           <Pressable style={[styles.floatingControl, styles.backControl, { top: insets.top + spacing.sm }]}
             onPress={onCancel} accessibilityRole="button" accessibilityLabel="Back to Post Job">
-            <Text style={styles.controlText}>←</Text>
+            <AppSymbol name={{ android: 'arrow_back', ios: 'chevron.left' }} size={24} tintColor={colors.textPrimary} />
           </Pressable>
           <Text style={styles.addressText}>{COPY.mapUnavailable}</Text>
         </View>
@@ -365,7 +366,7 @@ export function JobLocationPicker({
             value={searchQuery}
             onChangeText={handleSearchQueryChange}
             placeholder="Search for location"
-            placeholderTextColor={colors.textDisabled}
+            placeholderTextColor={colors.textMuted}
             style={styles.searchInput}
             editable={!busy}
             accessibilityLabel="Search for location"
@@ -427,14 +428,14 @@ export function JobLocationPicker({
           {permission && permission !== 'granted' ? (
             <View>
               <AppNotice message="Device location is optional. You can choose and confirm a location by moving the map." />
-              <AppButton label={permission === 'settings' ? 'Open Settings' : 'Enable Current Location'}
+              <AppButton label={permission === 'settings' ? 'Open settings' : 'Enable current location'}
                 onPress={() => { if (permission === 'settings') void Linking.openSettings().catch(() => onNote('Unable to open Settings. Open Android app settings manually.')); else void handleUseCurrentLocation(); }} disabled={busy || moving} />
             </View>
           ) : null}
           {note ? <AppNotice variant="warning" message={note} /> : null}
         </ScrollView>
         <AppButton
-          label="Choose This Location"
+          label="Choose this location"
           variant="primary"
           disabled={busy || moving || checkingSnap || mapAvailable !== 'ready' || selectionState.status !== 'ready'}
           onPress={() => { if (!movingRef.current) { const confirmed = selection.confirm(); if (confirmed) onConfirm(confirmed); } }}
@@ -445,15 +446,15 @@ export function JobLocationPicker({
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  destination: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.primary, borderWidth: 4, borderColor: '#ffffff', elevation: 4 },
+  screen: { flex: 1, backgroundColor: colors.canvas },
+  destination: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.accent, borderWidth: 4, borderColor: colors.onAccent, elevation: 4 },
   centerPinOverlay: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   loading: { ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center' },
   mapFrame: {
     flex: 1,
     minHeight: 200,
     overflow: 'hidden',
-    backgroundColor: colors.surfaceSubtle,
+    backgroundColor: colors.surfaceSunken,
   },
   map: {
     width: '100%',
@@ -464,7 +465,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
-    backgroundColor: colors.surfaceSubtle,
+    backgroundColor: colors.surfaceSunken,
   },
   floatingControl: {
     position: 'absolute',
@@ -478,10 +479,9 @@ const styles = StyleSheet.create({
   },
   backControl: { left: spacing.gutter },
   currentControl: { right: spacing.gutter, bottom: spacing.lg },
-  controlText: { fontSize: 28, color: colors.primary, lineHeight: 34 },
   sheet: {
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.gutter,
     paddingTop: spacing.sm,
@@ -489,42 +489,42 @@ const styles = StyleSheet.create({
   },
   handle: {
     alignSelf: 'center',
-    width: 44,
-    height: 5,
+    width: SkillMatchTheme.ui.size.sheetHandleWidth,
+    height: SkillMatchTheme.ui.size.sheetHandleHeight,
     borderRadius: radius.pill,
-    backgroundColor: colors.border,
+    backgroundColor: colors.hairline,
   },
   sheetBody: { flexShrink: 1 },
   sheetContent: { gap: spacing.sm, paddingBottom: spacing.sm },
   sheetTitle: { ...type.screenTitle, color: colors.textPrimary },
   addressCard: {
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.control,
+    backgroundColor: colors.surfaceSunken,
     padding: spacing.md,
   },
   addressText: { ...type.bodyEmphasis, color: colors.textPrimary },
   searchInput: {
     minHeight: 48,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.control,
+    backgroundColor: colors.surfaceSunken,
     color: colors.textPrimary,
     paddingHorizontal: spacing.md,
     ...type.body,
   },
   searchRow: {
-    minHeight: 44,
+    minHeight: SkillMatchTheme.ui.size.minTarget,
     justifyContent: 'center',
     paddingVertical: spacing.sm,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.hairline,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   recentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  clearText: { ...type.helper, color: colors.primary },
+  clearText: { ...type.helper, color: colors.accent },
   nearbyBlock: { gap: spacing.xs },
-  nearbyTitle: { ...type.bodyEmphasis, color: colors.primary },
+  nearbyTitle: { ...type.bodyEmphasis, color: colors.accent },
   nearbyRow: {
     paddingVertical: spacing.sm,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.hairline,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   nearbyLabel: { ...type.bodyEmphasis, color: colors.textPrimary },

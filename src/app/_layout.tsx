@@ -1,11 +1,11 @@
 import { Stack, type Href } from 'expo-router';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { TamaguiProvider } from 'tamagui';
 
 import { tamaguiConfig } from '../../tamagui.config';
 
 import { PushNotificationInboxIntent } from '@/components/push-notification-inbox-intent';
 import { IncomingMessageBannerHost } from '@/components/incoming-message-banner-host';
+import { StateScreen } from '@/components/state-screen';
 import { isRecoverySurfaceActive } from '@/lib/auth-recovery';
 import { isPhoneOtpEnabled } from '@/lib/phone-verification';
 import { canEnterWorkerApp } from '@/lib/worker-onboarding';
@@ -121,32 +121,23 @@ export const ACCESS_ROUTE: Partial<Record<AccessState, Href>> = {
   'account-failure': '/bootstrap-error',
 };
 
-function InlineGate({ title, note, spinner }: { title: string; note: string; spinner: boolean }) {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>{title}</Text>
-      <Text style={styles.note}>{note}</Text>
-      {spinner ? <ActivityIndicator /> : null}
-    </View>
-  );
-}
-
 function RootNavigator() {
   const access = deriveAccessState(useSession(), useAccount());
 
   // Inline-only states: no route tree.
   if (access === 'session-restoring') {
-    return <InlineGate title="Loading SkillMatch" note="Restoring your session…" spinner />;
+    return <StateScreen loading title="Loading SkillMatch" message="Restoring your session…" />;
   }
   if (access === 'account-pending') {
-    return <InlineGate title="Loading SkillMatch" note="Checking your account…" spinner />;
+    return <StateScreen loading title="Loading SkillMatch" message="Checking your account…" />;
   }
   if (access === 'session-error') {
     return (
-      <InlineGate
-        title="Session Error"
-        note="Your session could not be restored. Please close and reopen the app."
-        spinner={false}
+      <StateScreen
+        tone="error"
+        icon={{ android: 'cloud_off', ios: 'icloud.slash' }}
+        title="Session error"
+        message="Your session could not be restored. Please close and reopen the app."
       />
     );
   }
@@ -161,7 +152,7 @@ function RootNavigator() {
       {/* `index` is declared first so it is the fallback route whenever a
           guard flips and purges the current screen from history. */}
       <Stack.Screen name="index" />
-      <Stack.Screen name="+not-found" />
+      <Stack.Screen name="+not-found" options={{ statusBarStyle: 'dark' }} />
       <Stack.Protected
         guard={
           access === 'signed-out' ||
@@ -170,13 +161,13 @@ function RootNavigator() {
           access === 'worker-identity'
         }
       >
-        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(auth)" options={{ statusBarStyle: 'dark' }} />
       </Stack.Protected>
       <Stack.Protected guard={access === 'password-recovery'}>
-        <Stack.Screen name="update-password" />
+        <Stack.Screen name="update-password" options={{ statusBarStyle: 'dark' }} />
       </Stack.Protected>
       <Stack.Protected guard={access === 'blocked'}>
-        <Stack.Screen name="blocked" />
+        <Stack.Screen name="blocked" options={{ statusBarStyle: 'dark' }} />
       </Stack.Protected>
       <Stack.Protected guard={access === 'worker'}>
         <Stack.Screen name="(worker)" />
@@ -188,7 +179,7 @@ function RootNavigator() {
         <Stack.Screen name="(admin)" />
       </Stack.Protected>
       <Stack.Protected guard={access === 'account-failure'}>
-        <Stack.Screen name="bootstrap-error" />
+        <Stack.Screen name="bootstrap-error" options={{ statusBarStyle: 'dark' }} />
       </Stack.Protected>
       {/* Loading is inline-only; the route is never navigable. */}
       <Stack.Protected guard={false}>
@@ -211,24 +202,3 @@ export default function RootLayout() {
     </SessionProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    gap: 12,
-    backgroundColor: '#F5F3EF',
-  },
-  heading: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  note: {
-    fontSize: 14,
-    textAlign: 'center',
-    opacity: 0.7,
-  },
-});

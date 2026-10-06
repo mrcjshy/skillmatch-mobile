@@ -204,7 +204,7 @@ export default function FaqChatbot() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   transcript: {
     flex: 1,
@@ -214,18 +214,18 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   bubble: {
-    borderRadius: radius.lg,
+    borderRadius: radius.card,
     padding: spacing.md,
     maxWidth: '92%',
     borderCurve: 'continuous',
   },
   userBubble: {
     alignSelf: 'flex-end',
-    backgroundColor: colors.accentSoft,
+    backgroundColor: colors.accentSubtlePressed,
   },
   botBubble: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.surfaceSubtle,
+    backgroundColor: colors.surfaceSunken,
   },
   speaker: {
     ...type.caption,

@@ -211,10 +211,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   label: {
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-    color: colors.primary,
+    ...type.label,
+    color: colors.textPrimary,
   },
   count: {
     ...type.caption,
@@ -237,8 +235,8 @@ const styles = StyleSheet.create({
   thumbnail: {
     width: 104,
     height: 104,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.control,
+    backgroundColor: colors.surfaceSunken,
     borderCurve: 'continuous',
   },
   position: {
@@ -253,8 +251,8 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   orderButton: {
-    minHeight: 44,
-    minWidth: 48,
+    minHeight: SkillMatchTheme.ui.size.minTarget,
+    minWidth: SkillMatchTheme.ui.size.minTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -262,18 +260,16 @@ const styles = StyleSheet.create({
     opacity: 0.35,
   },
   orderButtonText: {
-    ...type.caption,
-    fontWeight: '600',
-    color: colors.primary,
+    ...type.label,
+    color: colors.accent,
   },
   removeButton: {
-    minHeight: 44,
+    minHeight: SkillMatchTheme.ui.size.minTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },
   removeButtonText: {
-    ...type.helper,
-    fontWeight: '600',
-    color: colors.danger,
+    ...type.label,
+    color: colors.error,
   },
 });

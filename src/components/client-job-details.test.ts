@@ -4,6 +4,10 @@ import ClientJobDetails from './client-job-details';
 import { ClientJobsProvider } from '@/providers/client-jobs-provider';
 import { createClientPostJobDraftOwner } from '@/providers/client-post-job-draft-provider';
 import { AppButton } from '@/components/app-button';
+import { SkillMatchTheme } from '@/constants/theme';
+
+const { colors } = SkillMatchTheme.ui;
+vi.mock('@/components/refinement-theme', () => ({ useUiTheme: () => SkillMatchTheme.ui }));
 
 const b = vi.hoisted(() => ({
   nodes: new Map<string, any>(), owner: null as any, session: null as any, account: null as any,
@@ -21,9 +25,13 @@ function Native({ kind, children, ...props }: any) {
 vi.mock('react-native', () => ({
   ...Object.fromEntries(['View', 'Text', 'ScrollView', 'Pressable', 'ActivityIndicator', 'Modal'].map(kind => [kind, (props: any) => createElement(Native, { ...props, kind })])),
   StyleSheet: { create: (s: any) => s }, Platform: { OS: 'web', select: (s: any) => s.default },
+  useWindowDimensions: () => ({ width: 412, height: 915, fontScale: 1 }),
   AppState: { get currentState() { return b.active; }, addEventListener: (_: string, fn: (s: string) => void) => { b.appEvents.add(fn); return { remove: () => b.appEvents.delete(fn) }; } },
 }));
 vi.mock('expo-image', () => ({ Image: (props: any) => createElement(Native, { ...props, kind: 'Image' }) }));
+vi.mock('expo-font', () => ({ useFonts: () => [true] }));
+vi.mock('expo-symbols/androidWeights/regular', () => ({ default: { name: 'MaterialSymbols_400Regular', font: 1 } }));
+vi.mock('expo-symbols', () => ({ SymbolView: () => null }));
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: b.push }),
   useFocusEffect: (fn: () => void | (() => void)) => { const focused = b.focus; useLayoutEffect(() => focused ? fn() : undefined, [fn, focused]); } }));
 vi.mock('@/providers/account-provider', () => ({ useAccount: () => b.account }));
@@ -86,9 +94,9 @@ async function mount(jobId: any = JOB) {
 describe('actual owner-provider / detail / private-photo composition', () => {
   it('renders provider description and only resolved open/no-booking waiting context', async () => {
     await mount(); expect(text()).toContain('Real provider description\nUnicode ñ'); expect(text()).toContain('Waiting for acceptance');
-    expect(text()).toContain('1,500'); expect(text()).toContain('Schedule:'); expect(text()).toContain('Skills: None');
+    expect(text()).toContain('1,500'); expect(text()).toContain('Schedule'); expect(text()).toContain('Skills'); expect(text()).toContain('None');
     expect(b.rpc).toHaveBeenCalledWith('list_my_client_bookings'); expect(b.list).toHaveBeenCalledWith(CLIENT + '/' + JOB, expect.any(Object));
-    expect(text()).toContain('No job photos'); expect(button('View/Edit Location')).toBeDefined();
+    expect(text()).toContain('No job photos'); expect(button('View or edit location')).toBeDefined();
   });
   it.each([null, '', '   '])('uses missing description fallback for %s', async description => {
     b.jobs[0].description = description; await mount(); expect(text()).toContain('No description provided.');
@@ -104,7 +112,7 @@ describe('actual owner-provider / detail / private-photo composition', () => {
   it('links only actual booking ID and does not duplicate counterparty data', async () => {
     b.bookingReply = Promise.resolve({ data: [{ booking_id: 'booking-a', job_id: JOB, booking_status: 'confirmed', job_title: 'job', worker_user_id: 'worker-a', worker_full_name: 'Private person', worker_phone: 'private-phone' }], error: null });
     await mount(); expect(text()).toContain('Assigned'); expect(text()).not.toContain('Private person');
-    button('Booking Details').onPress(); expect(b.push).toHaveBeenCalledWith({ pathname: '/client/booking-details', params: { bookingId: 'booking-a' } });
+    button('Booking details').onPress(); expect(b.push).toHaveBeenCalledWith({ pathname: '/client/booking-details', params: { bookingId: 'booking-a' } });
   });
   it.each(['blur', 'background', 'session', 'termination', 'pending-account', 'route', 'suspense'])('irreversibly invalidates pending listing on %s then permits a new lifetime', async kind => {
     const pending = deferred(); b.listReply = pending.promise; const h = await mount(); expect(b.list).toHaveBeenCalledTimes(1);
@@ -137,8 +145,8 @@ describe('actual owner-provider / detail / private-photo composition', () => {
     expect(text()).toContain('Job photos are unavailable'); expect(text()).not.toContain('No job photos'); expect(nodes('Image')).toHaveLength(0);
   });
   it('passes a current open lifetime to location, closes locally, and invalidates acceptance', async () => {
-    const h = await mount(); await act(async () => button('View/Edit Location').onPress()); await flush(); const location = nodes('ClientJobLocation')[0];
-    expect(location.dismissalLabel).toBe('Back to Job Details'); expect(location.isOperationCurrent()).toBe(true);
+    const h = await mount(); await act(async () => button('View or edit location').onPress()); await flush(); const location = nodes('ClientJobLocation')[0];
+    expect(location.dismissalLabel).toBe('Back to job details'); expect(location.isOperationCurrent()).toBe(true);
     await act(async () => location.onClose()); await flush(); expect(nodes('ClientJobLocation')).toHaveLength(0);
     await h.route('bad'); expect(location.isOperationCurrent()).toBe(false);
   });
@@ -147,7 +155,7 @@ describe('actual owner-provider / detail / private-photo composition', () => {
     await mount(); expect(b.list).not.toHaveBeenCalled(); expect(b.rpc).not.toHaveBeenCalled(); expect(release).toHaveBeenCalled();
   });
   it('cancels missing-row refresh errors and stale callbacks across blur', async () => {
-    b.jobs = []; const h = await mount(); const retry = button('Retry / Refresh Job');
+    b.jobs = []; const h = await mount(); const retry = button('Refresh job');
     const pending = deferred(); b.jobsReply = pending.promise;
     await act(async () => retry.onPress()); b.focus = false; await h.render();
     await act(async () => pending.resolve({ data: null, error: { code: '503', message: 'private' } })); await flush();
@@ -155,7 +163,7 @@ describe('actual owner-provider / detail / private-photo composition', () => {
   });
   it('removes a settled missing-row refresh error on blur instead of restoring it on refocus', async () => {
     b.jobs = []; const h = await mount(); b.jobsReply = Promise.resolve({ data: null, error: { code: '503', message: 'private' } });
-    await act(async () => button('Retry / Refresh Job').onPress()); await flush(); expect(text()).toContain('Could not refresh.');
+    await act(async () => button('Refresh job').onPress()); await flush(); expect(text()).toContain('Could not refresh.');
     b.focus = false; await h.render(); expect(text()).not.toContain('Could not refresh.');
     b.focus = true; await h.render(); expect(text()).not.toContain('Could not refresh.');
   });
@@ -170,8 +178,8 @@ describe('actual owner-provider / detail / private-photo composition', () => {
   });
   it('clears settled photos and actions when authoritative membership disappears', async () => {
     b.listReply = Promise.resolve({ data: [{ name: '1' }], error: null }); await mount(); expect(nodes('Image')).toHaveLength(1);
-    b.jobs = []; await act(async () => button('Retry / Refresh Job').onPress()); await flush();
-    expect(nodes('Image')).toHaveLength(0); expect(button('View/Edit Location')).toBeUndefined(); expect(text()).not.toContain('Real provider description');
+    b.jobs = []; await act(async () => button('Refresh job').onPress()); await flush();
+    expect(nodes('Image')).toHaveLength(0); expect(button('View or edit location')).toBeUndefined(); expect(text()).not.toContain('Real provider description');
   });
   it('shows partial signing as actual remaining photos without empty/error success', async () => {
     b.listReply = Promise.resolve({ data: [{ name: '1' }, { name: '3' }], error: null });
@@ -213,14 +221,14 @@ describe('actual owner-provider / detail / private-photo composition', () => {
     checkMounted(); // Actual InlineStatus loading tint and status-chip nested surfaces.
     await act(async () => pending.resolve({ data: [], error: null })); await flush(); checkMounted();
     const refresh = deferred(); b.jobsReply = refresh.promise;
-    await act(async () => button('Retry / Refresh Job').onPress()); checkMounted(); // Actual loading button.
+    await act(async () => button('Refresh job').onPress()); checkMounted(); // Actual loading button.
     await act(async () => refresh.resolve({ data: [], error: { code: '503', message: 'private' } })); await flush(); checkMounted(); // Actual error tint.
     for (const state of [{ disabled: true }, { loading: true }, {}]) {
-      const element = AppButton({ label: 'Retry / Refresh Job', variant: 'secondary', ...state });
+      const element = AppButton({ label: 'Refresh job', variant: 'secondary', ...state });
       const props = element.props as any;
       for (const pressed of [false, true]) {
         const style = flatten(props.style({ pressed })), child = props.children.props;
-        const background = style.backgroundColor;
+        const background = style.backgroundColor === 'transparent' ? colors.canvas : style.backgroundColor;
         expect(contrast(style.borderColor, background)).toBeGreaterThanOrEqual(3);
         if (state.loading) expect(contrast(child.color, background)).toBeGreaterThanOrEqual(3);
         else expect(contrast(flatten(child.style).color, background)).toBeGreaterThanOrEqual(4.5);

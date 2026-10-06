@@ -14,3 +14,13 @@ export function greetingForLocalHour(hour: number): HomeGreeting {
 export function homeGreeting(now: Date = new Date()): HomeGreeting {
   return greetingForLocalHour(now.getHours());
 }
+
+/**
+ * Today's device-local calendar date as "Friday · October 3": the weekday, then the locale's own
+ * month-and-day wording, so the order and spelling still follow the device locale.
+ */
+export function homeDate(now: Date = new Date()): string {
+  const weekday = new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(now);
+  const day = new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric' }).format(now);
+  return `${weekday} · ${day}`;
+}

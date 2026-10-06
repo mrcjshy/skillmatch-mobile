@@ -21,6 +21,7 @@ function field() {
       compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
     }).outputText;
     runInNewContext(code, { exports, require: (name: string) => {
+      if (name === '@/components/refinement-theme') return { useUiTheme: () => modules['@/constants/theme'].SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children };
       if (!(name in modules)) throw Error(`Unexpected import: ${name}`);
       return modules[name];
     } });
@@ -60,15 +61,15 @@ describe('AppField essential boundary and event identity', () => {
       const props = { variant, onFocus: vi.fn(), onBlur: vi.fn() };
       const focusEvent = { nativeEvent: { target: 17 } };
       const blurEvent = { nativeEvent: { target: 17 } };
-      expect(flatten(input(h.render(props)).props.style).borderColor).toBe('#737A70');
+      expect(flatten(input(h.render(props)).props.style).borderColor).toBe('#7A818C');
       input(h.render(props)).props.onFocus(focusEvent);
       expect(props.onFocus).toHaveBeenCalledExactlyOnceWith(focusEvent);
-      expect(flatten(input(h.render(props)).props.style).borderColor).toBe('#163300');
-      expect(flatten(input(h.render({ ...props, errorText: 'Required' })).props.style).borderColor).toBe('#B91C1C');
+      expect(flatten(input(h.render(props)).props.style).borderColor).toBe('#1C3AA6');
+      expect(flatten(input(h.render({ ...props, errorText: 'Required' })).props.style).borderColor).toBe('#B3261E');
       input(h.render(props)).props.onBlur(blurEvent);
       expect(props.onBlur).toHaveBeenCalledExactlyOnceWith(blurEvent);
-      expect(flatten(input(h.render(props)).props.style).borderColor).toBe('#737A70');
-      expect(flatten(input(h.render({ ...props, errorText: 'Required' })).props.style).borderColor).toBe('#B91C1C');
+      expect(flatten(input(h.render(props)).props.style).borderColor).toBe('#7A818C');
+      expect(flatten(input(h.render({ ...props, errorText: 'Required' })).props.style).borderColor).toBe('#B3261E');
     });
   }
 });
@@ -79,8 +80,8 @@ describe('AppField noneditable presentation and state', () => {
       const node = input(field().render(props));
       expect(node.props.editable).toBe(false);
       expect(flatten(node.props.style).opacity).toBeUndefined();
-      expect(flatten(node.props.style).backgroundColor).toBe('#F4F4EC');
-      expect(flatten(node.props.style).color).toBe('#5F6360');
+      expect(flatten(node.props.style).backgroundColor).toBe('#EFEEEA');
+      expect(flatten(node.props.style).color).toBe('#59606B');
     });
     it(`merges disabled state without losing unrelated accessibility state for ${JSON.stringify(props)}`, () => {
       const node = input(field().render({ ...props, 'aria-disabled': false,
@@ -100,17 +101,23 @@ describe('AppField noneditable presentation and state', () => {
 });
 
 describe('AppField accessible naming and unchanged descriptions', () => {
-  it('uses the visible label as fallback name without helper/error concatenation', () => {
-    const node = input(field().render({ label: 'Job title', helperText: 'Use a short title', errorText: 'Required' }));
-    expect(node.props.accessibilityLabel).toBe('Job title');
-    expect(node.props.accessibilityHint).toBeUndefined();
+  // Wave 6.5 (A11Y-03) supersedes the earlier "unchanged across error states" pin: a field's error
+  // is now part of its own accessible name. Helper text is still never concatenated.
+  it('uses the visible label as fallback name; the error, never the helper, joins it', () => {
+    const h = field();
+    const valid = input(h.render({ label: 'Job title', helperText: 'Use a short title' }));
+    expect(valid.props.accessibilityLabel).toBe('Job title');
+    expect(valid.props.accessibilityHint).toBeUndefined();
+    const invalid = input(h.render({ label: 'Job title', helperText: 'Use a short title', errorText: 'Required' }));
+    expect(invalid.props.accessibilityLabel).toBe('Job title, Error: Required');
+    expect(invalid.props.accessibilityHint).toBeUndefined();
   });
-  it('keeps an explicit accessible name and caller hint unchanged across helper/error states', () => {
+  it('keeps an explicit accessible name and caller hint; an error is appended to that name only', () => {
     const h = field();
     for (const errorText of [undefined, 'Required']) {
       const tree = h.render({ label: 'Job title', accessibilityLabel: 'Title of job',
         accessibilityHint: 'Enter the title used in your posting', helperText: 'Use a short title', errorText });
-      expect(input(tree).props.accessibilityLabel).toBe('Title of job');
+      expect(input(tree).props.accessibilityLabel).toBe(errorText ? 'Title of job, Error: Required' : 'Title of job');
       expect(input(tree).props.accessibilityHint).toBe('Enter the title used in your posting');
       expect(tree.props.accessible).toBeUndefined();
       expect(tree.props.accessibilityLabel).toBeUndefined();

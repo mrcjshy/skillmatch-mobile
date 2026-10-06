@@ -4,10 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { AppCard } from '@/components/app-card';
+import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
 import { AppNotice } from '@/components/app-notice';
+import { FactRow } from '@/components/fact-row';
+import { InitialsAvatar } from '@/components/initials-avatar';
 import { InlineStatus } from '@/components/inline-status';
+import { RefinementThemeProvider } from '@/components/refinement-theme';
+import { SectionHeader } from '@/components/section-header';
+import { SurfaceGroup } from '@/components/surface-group';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatDetailDateTime } from '@/lib/date-time';
 import {
@@ -46,6 +51,10 @@ function detailsLoadErrorCopy(error: unknown): string {
 }
 
 export default function AdminVerificationDetails() {
+  return <RefinementThemeProvider><AdminVerificationDetailsContent /></RefinementThemeProvider>;
+}
+
+function AdminVerificationDetailsContent() {
   const params = useLocalSearchParams<{ userId?: string | string[] }>();
   const userId = firstParam(params.userId);
   const inFlight = useRef(false);
@@ -216,53 +225,77 @@ export default function AdminVerificationDetails() {
           onRefresh={() => {
             void refresh();
           }}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
         />
       }
     >
       {notice ? (
-        notice.tone === 'info' ? (
-          <AppCard variant="status">
-            <Text style={styles.infoNotice}>{notice.headline}</Text>
-          </AppCard>
-        ) : (
-          <AppNotice
-            variant={notice.tone === 'success' ? 'success' : 'warning'}
-            message={notice.headline}
-          />
-        )
+        <AppNotice
+          variant={notice.tone === 'info' ? 'info' : notice.tone === 'success' ? 'success' : 'warning'}
+          message={notice.headline}
+        />
       ) : null}
 
-      <AppCard>
-        <Text style={styles.sectionTitle}>Worker identity</Text>
-        <DetailLine label="Name" value={worker.fullName} />
-        <DetailLine label="Phone" value={worker.phone} />
-        <DetailLine label="Location" value={location.length > 0 ? location : null} />
-        <DetailLine label="ID type" value={identityTypeLabel(worker.idType)} />
-        <DetailLine
-          label="Skills"
-          value={worker.skills.length > 0 ? worker.skills.join(' • ') : 'No skills added'}
-        />
-        <DetailLine label="Submitted" value={submittedAt} />
-      </AppCard>
+      {/* 1. Who is asking to be verified. */}
+      <View style={styles.identity}>
+        <InitialsAvatar name={worker.fullName} accent={colors.accentSubtle} size={64} />
+        <View style={styles.identityCopy}>
+          <Text style={styles.name} accessibilityRole="header">{worker.fullName}</Text>
+          {submittedAt ? <Text style={styles.meta}>Submitted {submittedAt}</Text> : null}
+          <View style={styles.chips}>
+            <AppChip
+              label={submitted ? 'Review submitted' : 'Pending review'}
+              variant={submitted ? 'neutral' : 'warning'}
+            />
+          </View>
+        </View>
+      </View>
 
-      <AppCard>
-        <Text style={styles.sectionTitle}>ID preview</Text>
-        {imageUrl ? (
-          <Image
-            source={{ uri: imageUrl }}
-            style={styles.idImage}
-            contentFit="contain"
-            accessibilityLabel={`${worker.fullName} identity document`}
-          />
+      {/* 2. What they submitted. */}
+      <View style={styles.section}>
+        <SectionHeader title="Submitted information" />
+        <SurfaceGroup>
+          <FactRow label="ID type" value={identityTypeLabel(worker.idType)} />
+          <FactRow label="Phone" value={worker.phone} selectable />
+          <FactRow label="Location" value={location.length > 0 ? location : null} />
+        </SurfaceGroup>
+      </View>
+
+      {/* 3. The authorised ID evidence. */}
+      <View style={styles.section}>
+        <SectionHeader title="ID photo" />
+        <SurfaceGroup>
+          <View style={styles.evidence}>
+            {imageUrl ? (
+              <Image
+                source={{ uri: imageUrl }}
+                style={styles.idImage}
+                contentFit="contain"
+                accessibilityLabel={`${worker.fullName} identity document`}
+              />
+            ) : (
+              <Text style={styles.body}>ID image is not available.</Text>
+            )}
+          </View>
+        </SurfaceGroup>
+      </View>
+
+      {/* 4. Skills the Worker offers. */}
+      <View style={styles.section}>
+        <SectionHeader title="Skills" />
+        {worker.skills.length > 0 ? (
+          <View style={styles.chips}>
+            {worker.skills.map((skill, index) => <AppChip key={`${index}-${skill}`} label={skill} />)}
+          </View>
         ) : (
-          <Text style={styles.body}>ID image is not available.</Text>
+          <Text style={styles.body}>No skills added</Text>
         )}
-      </AppCard>
+      </View>
 
-      <AppCard>
-        <Text style={styles.sectionTitle}>Review</Text>
+      {/* 5. The decision, last. */}
+      <View style={styles.section}>
+        <SectionHeader title="Decision" />
         <Text style={styles.body}>
           Approve reviews the ID and verifies the Worker. Reject leaves verification unchanged.
         </Text>
@@ -294,69 +327,46 @@ export default function AdminVerificationDetails() {
           }}
           accessibilityLabel={`Reject identity for ${worker.fullName}`}
         />
-      </AppCard>
+      </View>
     </ScrollView>
-  );
-}
-
-function DetailLine({ label, value }: { label: string; value: string | null }) {
-  if (value === null) return null;
-  return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
-    </View>
   );
 }
 
 const styles = StyleSheet.create({
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   content: {
     flexGrow: 1,
-    backgroundColor: colors.background,
-    padding: spacing.gutter,
-    gap: spacing.md,
-    paddingBottom: spacing.xxxl + spacing.sm,
+    backgroundColor: colors.canvas,
+    paddingHorizontal: spacing.gutter,
+    paddingTop: spacing.lg,
+    gap: spacing.xl,
+    paddingBottom: spacing.xxxxl,
   },
   center: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.gutter,
   },
-  sectionTitle: {
-    ...type.sectionTitle,
-    color: colors.textPrimary,
-  },
+  identity: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.lg },
+  identityCopy: { flex: 1, minWidth: 0, gap: spacing.xs },
+  name: { ...type.screenTitle, color: colors.textPrimary },
+  meta: { ...type.helper, color: colors.textSecondary },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  section: { gap: spacing.md },
   body: {
     ...type.body,
     color: colors.textSecondary,
   },
-  infoNotice: {
-    ...type.helper,
-    color: colors.textPrimary,
-  },
+  evidence: { padding: spacing.md },
   idImage: {
     width: '100%',
-    height: 220,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
-  },
-  detailRow: {
-    gap: spacing.xxs,
-  },
-  detailLabel: {
-    ...type.caption,
-    color: colors.textSecondary,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  detailValue: {
-    ...type.body,
-    color: colors.textPrimary,
+    height: 240,
+    borderRadius: radius.control,
+    backgroundColor: colors.surfaceSunken,
   },
 });

@@ -66,9 +66,10 @@ vi.mock('react-native', () => ({
   View: () => null, Text: () => null, ActivityIndicator: () => null,
 }));
 vi.mock('tamagui', () => ({ TamaguiProvider: ({ children }: any) => createElement(GateObserver, null, children) }));
-vi.mock('C:/Users/JOSH/AppData/Local/Temp/skillmatch-ui-hig-w2-s1/candidate/tamagui.config.ts', () => ({ tamaguiConfig: {} }));
+vi.mock('../../tamagui.config', () => ({ tamaguiConfig: {} }));
 vi.mock('@/components/push-notification-inbox-intent', () => ({ PushNotificationInboxIntent: () => null }));
 vi.mock('@/components/incoming-message-banner-host', () => ({ IncomingMessageBannerHost: () => null }));
+vi.mock('@/components/state-screen', () => ({ StateScreen: () => null }));
 vi.mock('@/components/push-notification-registration', () => ({ PushNotificationRegistration: () => null }));
 vi.mock('expo-router', () => {
   const Stack = ({ children }: any) => children;

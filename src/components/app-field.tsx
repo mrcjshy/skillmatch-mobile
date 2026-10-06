@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode, type Ref } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,11 +10,11 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 
-const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
 
-type AppFieldProps = TextInputProps & {
+
+export type AppFieldProps = TextInputProps & {
   label?: string;
   helperText?: string;
   errorText?: string;
@@ -22,6 +22,13 @@ type AppFieldProps = TextInputProps & {
   variant?: 'default' | 'search';
   containerStyle?: StyleProp<ViewStyle>;
   inputStyle?: StyleProp<TextStyle>;
+  /** Imperative handle for focus management (e.g. focusing the first invalid field). */
+  inputRef?: Ref<TextInput>;
+  /**
+   * Optional control drawn inside the right edge of the input (e.g. a password
+   * visibility toggle). It reserves a 48dp target; when absent the layout is unchanged.
+   */
+  trailing?: ReactNode;
 };
 
 export function AppField({
@@ -32,6 +39,8 @@ export function AppField({
   variant = 'default',
   containerStyle,
   inputStyle,
+  inputRef,
+  trailing,
   style,
   editable,
   multiline = false,
@@ -42,6 +51,10 @@ export function AppField({
   accessibilityLabel,
   ...inputProps
 }: AppFieldProps) {
+  const ui = useUiTheme();
+  const { colors } = ui;
+  const { styles } = createStyles(ui);
+
   const [focused, setFocused] = useState(false);
   const isSearch = variant === 'search';
   const hasError = typeof errorText === 'string' && errorText.length > 0;
@@ -51,69 +64,90 @@ export function AppField({
     inputProps['aria-label'] !== undefined ||
     inputProps.accessibilityLabelledBy !== undefined ||
     inputProps['aria-labelledby'] !== undefined;
+  // React Native has no input-to-description relationship (no aria-describedby), so an error is
+  // tied to the input itself: appended to its name when the field names itself, otherwise given as
+  // its hint. The visible error line is then hidden from accessibility so it is not read twice.
+  const fieldName = accessibilityLabel ?? (hasExplicitNameOrReference ? undefined : label);
+  const errorDescription = hasError ? `Error: ${errorText}` : undefined;
+  const inputName = errorDescription && fieldName ? `${fieldName}, ${errorDescription}` : fieldName;
+  const inputHint = errorDescription && !fieldName ? errorDescription : inputProps.accessibilityHint;
+
+  const inputNode = (
+    <TextInput
+      {...inputProps}
+      ref={inputRef}
+      accessibilityLabel={inputName}
+      accessibilityHint={inputHint}
+      multiline={multiline}
+      editable={canEdit}
+      accessibilityState={{ ...accessibilityState, disabled: noneditable }}
+      aria-disabled={noneditable}
+      placeholderTextColor={placeholderTextColor ?? colors.textMuted}
+      underlineColorAndroid="transparent"
+      onFocus={(event) => {
+        setFocused(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        setFocused(false);
+        onBlur?.(event);
+      }}
+      style={[
+        styles.input,
+        isSearch ? styles.search : styles.defaultField,
+        multiline ? styles.multiline : null,
+        focused && !hasError ? styles.focused : null,
+        hasError ? styles.error : null,
+        trailing ? styles.withTrailing : null,
+        noneditable ? styles.disabled : null,
+        style,
+        inputStyle,
+      ]}
+    />
+  );
 
   return (
     <View style={containerStyle}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
-      <TextInput
-        {...inputProps}
-        accessibilityLabel={accessibilityLabel ?? (hasExplicitNameOrReference ? undefined : label)}
-        multiline={multiline}
-        editable={canEdit}
-        accessibilityState={{ ...accessibilityState, disabled: noneditable }}
-        aria-disabled={noneditable}
-        placeholderTextColor={placeholderTextColor ?? colors.textDisabled}
-        underlineColorAndroid="transparent"
-        onFocus={(event) => {
-          setFocused(true);
-          onFocus?.(event);
-        }}
-        onBlur={(event) => {
-          setFocused(false);
-          onBlur?.(event);
-        }}
-        style={[
-          styles.input,
-          isSearch ? styles.search : styles.defaultField,
-          multiline ? styles.multiline : null,
-          focused && !hasError ? styles.focused : null,
-          hasError ? styles.error : null,
-          noneditable ? styles.disabled : null,
-          style,
-          inputStyle,
-        ]}
-      />
-      {hasError ? <Text style={styles.errorText}>{errorText}</Text> : null}
+      {trailing ? (
+        <View style={styles.inputWrap}>
+          {inputNode}
+          <View style={styles.trailing}>{trailing}</View>
+        </View>
+      ) : (
+        inputNode
+      )}
+      {hasError ? <Text style={styles.errorText} accessibilityElementsHidden importantForAccessibility="no">{errorText}</Text> : null}
       {!hasError && helperText ? <Text style={styles.helper}>{helperText}</Text> : null}
     </View>
   );
 }
 
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing, radius, size } = ui;
 const styles = StyleSheet.create({
   label: {
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-    color: colors.primary,
+    ...type.label,
+    color: colors.textPrimary,
     marginBottom: spacing.sm,
   },
   input: {
     ...type.body,
     color: colors.textPrimary,
     paddingHorizontal: spacing.md,
-    backgroundColor: colors.surfaceSubtle,
+    backgroundColor: colors.surface,
   },
   defaultField: {
     minHeight: size.fieldHeight,
-    borderRadius: radius.md,
-    borderWidth: 1.5,
+    borderRadius: radius.control,
+    borderWidth: 1,
     borderColor: colors.controlBorder,
     borderCurve: 'continuous',
   },
   search: {
     minHeight: size.searchHeight,
     borderRadius: radius.pill,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: colors.controlBorder,
   },
   multiline: {
@@ -122,16 +156,25 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   focused: {
-    borderWidth: 1.5,
-    borderColor: colors.primary,
+    borderColor: colors.accent,
   },
   error: {
-    borderWidth: 1.5,
-    borderColor: colors.danger,
+    borderColor: colors.error,
   },
   disabled: {
-    backgroundColor: colors.surfaceSubtle,
+    backgroundColor: colors.surfaceSunken,
     color: colors.textSecondary,
+  },
+  inputWrap: { position: 'relative' },
+  withTrailing: { paddingRight: size.iconButton },
+  trailing: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: size.iconButton,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   helper: {
     ...type.helper,
@@ -140,7 +183,10 @@ const styles = StyleSheet.create({
   },
   errorText: {
     ...type.helper,
-    color: colors.danger,
+    color: colors.error,
     marginTop: spacing.xs,
   },
 });
+
+  return { styles };
+}

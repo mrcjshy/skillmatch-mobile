@@ -1,6 +1,7 @@
 import { Component, useState, type ErrorInfo, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { AppSymbol } from '@/components/app-symbol';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatScheduleDate, formatScheduleTime } from '@/lib/date-time';
 import { scheduleMinimumDate } from '@/lib/job-posting-schedule';
@@ -90,18 +91,26 @@ export function JobSchedulePicker({
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.label}>Date</Text>
+      <View style={styles.group}>
       <Pressable
-        style={[styles.row, disabled && styles.rowDisabled]}
+        style={({ pressed }) => [styles.row, disabled && styles.rowDisabled, pressed && !disabled ? styles.rowPressed : null]}
         onPress={openDate}
         disabled={disabled || !pickerAvailable}
         accessibilityRole="button"
-        accessibilityLabel="Scheduled Date"
+        accessibilityLabel="Scheduled date"
+        // The chosen date is the row's value ("Scheduled date, <date>"); the hint names the action.
+        accessibilityValue={{ text: dateLabel ?? 'Not selected' }}
+        accessibilityHint={dateLabel ? 'Change date' : 'Choose date'}
         accessibilityState={{ disabled: disabled || !pickerAvailable }}
       >
-        <Text style={dateLabel ? styles.value : styles.placeholder}>
-          {dateLabel ?? 'Choose date'}
-        </Text>
+        <AppSymbol name={{ android: 'event', ios: 'calendar' }} size={size.icon} tintColor={colors.accent} />
+        <View style={styles.rowCopy}>
+          <Text style={styles.label}>Date</Text>
+          <Text style={dateLabel ? styles.value : styles.placeholder}>
+            {dateLabel ?? 'Choose date'}
+          </Text>
+        </View>
+        <Text style={styles.action}>{dateLabel ? 'Change' : 'Choose'}</Text>
       </Pressable>
 
       {pickerAvailable && showDate && DateTimePicker ? (
@@ -118,7 +127,7 @@ export function JobSchedulePicker({
             presentation="dialog"
             minimumDate={scheduleMinimumDate()}
             is24Hour={false}
-            accentColor={colors.primary}
+            accentColor={colors.accent}
             disabled={disabled}
             onValueChange={(_event, selected) => {
               onChangeDate(selected);
@@ -129,19 +138,27 @@ export function JobSchedulePicker({
         </PickerErrorBoundary>
       ) : null}
 
-      <Text style={styles.label}>Time</Text>
+      <View style={styles.divider} />
       <Pressable
-        style={[styles.row, disabled && styles.rowDisabled]}
+        style={({ pressed }) => [styles.row, disabled && styles.rowDisabled, pressed && !disabled ? styles.rowPressed : null]}
         onPress={openTime}
         disabled={disabled || !pickerAvailable}
         accessibilityRole="button"
-        accessibilityLabel="Scheduled Time"
+        accessibilityLabel="Scheduled time"
+        accessibilityValue={{ text: timeLabel ?? 'Not selected' }}
+        accessibilityHint={timeLabel ? 'Change time' : 'Choose time'}
         accessibilityState={{ disabled: disabled || !pickerAvailable }}
       >
-        <Text style={timeLabel ? styles.value : styles.placeholder}>
-          {timeLabel ?? 'Choose time'}
-        </Text>
+        <AppSymbol name={{ android: 'schedule', ios: 'clock' }} size={size.icon} tintColor={colors.accent} />
+        <View style={styles.rowCopy}>
+          <Text style={styles.label}>Time</Text>
+          <Text style={timeLabel ? styles.value : styles.placeholder}>
+            {timeLabel ?? 'Choose time'}
+          </Text>
+        </View>
+        <Text style={styles.action}>{timeLabel ? 'Change' : 'Choose'}</Text>
       </Pressable>
+      </View>
 
       {pickerAvailable && showTime && DateTimePicker ? (
         <PickerErrorBoundary
@@ -156,7 +173,7 @@ export function JobSchedulePicker({
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             presentation="dialog"
             is24Hour={false}
-            accentColor={colors.primary}
+            accentColor={colors.accent}
             disabled={disabled}
             onValueChange={(_event, selected) => {
               onChangeTime(selected);
@@ -180,32 +197,53 @@ const styles = StyleSheet.create({
   wrap: {
     gap: spacing.md,
   },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-    color: colors.primary,
+  group: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.hairline,
   },
   row: {
-    height: size.fieldHeight,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
-    paddingHorizontal: spacing.md,
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-    borderCurve: 'continuous',
+    minHeight: size.listRowMinHeight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  rowPressed: {
+    backgroundColor: colors.surfaceSunken,
   },
   rowDisabled: {
     opacity: 0.6,
   },
+  rowCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: spacing.xxs,
+  },
+  label: {
+    ...type.helper,
+    color: colors.textSecondary,
+  },
   value: {
-    ...type.body,
+    ...type.bodyEmphasis,
     color: colors.textPrimary,
   },
   placeholder: {
     ...type.body,
-    color: colors.textDisabled,
+    color: colors.textSecondary,
+  },
+  action: {
+    ...type.label,
+    color: colors.accent,
+    flexShrink: 0,
   },
   note: {
     ...type.helper,

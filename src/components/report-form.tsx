@@ -1,12 +1,12 @@
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
-import { AppNotice } from '@/components/app-notice';
+import { FormMessage } from '@/components/form-message';
 import { InlineStatus } from '@/components/inline-status';
+import { RadioRow } from '@/components/radio-row';
 import { SectionHeader } from '@/components/section-header';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
@@ -115,24 +115,17 @@ export default function ReportForm(props: Props) {
       {props.variant === 'booking' ? (
         <View style={styles.section}>
           <SectionHeader title={COPY.categoryLabel} />
-          <View style={styles.chipWrap}>
-            {BOOKING_REPORT_CATEGORIES.map((value) => {
-              const selected = category === value;
-              return (
-                <Pressable
-                  key={value}
-                  onPress={() => setCategory(value)}
-                  disabled={isSubmitting}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                >
-                  <AppChip
-                    label={formatReportCategory(value)}
-                    variant={selected ? 'selected' : 'neutral'}
-                  />
-                </Pressable>
-              );
-            })}
+          <View style={styles.choices} accessibilityRole="radiogroup" accessibilityLabel={COPY.categoryLabel}>
+            {BOOKING_REPORT_CATEGORIES.map((value) => (
+              <RadioRow
+                key={value}
+                label={formatReportCategory(value)}
+                selected={category === value}
+                disabled={isSubmitting}
+                accessibilityLabel={formatReportCategory(value)}
+                onPress={() => setCategory(value)}
+              />
+            ))}
           </View>
         </View>
       ) : null}
@@ -151,7 +144,7 @@ export default function ReportForm(props: Props) {
         {remaining} / {REPORT_DESCRIPTION_MAX}
       </Text>
 
-      {error ? <AppNotice variant="danger" message={error} /> : null}
+      {error ? <FormMessage tone="error" message={error} /> : null}
 
       <AppButton
         label={submitLabel}
@@ -166,18 +159,18 @@ export default function ReportForm(props: Props) {
 const styles = StyleSheet.create({
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   container: {
     flexGrow: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     padding: spacing.gutter,
-    gap: spacing.md,
-    paddingBottom: spacing.xxxl + spacing.sm,
+    gap: spacing.lg,
+    paddingBottom: spacing.xxxxl,
   },
   center: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.gutter,
@@ -185,9 +178,7 @@ const styles = StyleSheet.create({
   section: {
     gap: spacing.sm,
   },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  choices: {
     gap: spacing.sm,
   },
   counter: {
@@ -196,7 +187,7 @@ const styles = StyleSheet.create({
   },
   counterOver: {
     ...type.caption,
-    color: colors.danger,
+    color: colors.error,
     fontWeight: '600',
   },
 });

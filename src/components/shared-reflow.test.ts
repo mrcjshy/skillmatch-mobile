@@ -7,7 +7,7 @@ import { expect, it } from 'vitest';
 
 type Props = Record<string, any>;
 const flat = (s: any): Props => Array.isArray(s) ? Object.assign({}, ...s.filter(Boolean).map(flat)) : s || {};
-const native = { Platform: { select: (v: Props) => v.android ?? v.default }, StyleSheet: { create: (s: Props) => s }, Pressable: 'Pressable', Text: 'Text', View: 'View' };
+const native = { Platform: { select: (v: Props) => v.android ?? v.default }, StyleSheet: { create: (s: Props) => s }, Pressable: 'Pressable', Text: 'Text', View: 'View', ScrollView: 'ScrollView' };
 const jsx = (type: any, props: Props) => ({ type, props });
 const cache: Props = {};
 function load(file: string): Props {
@@ -15,10 +15,12 @@ function load(file: string): Props {
   const exports: Props = {};
   runInNewContext(ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText,
     { exports, require: (name: string) => {
+      if (name === '@/components/refinement-theme') return { useUiTheme: () => load('src/constants/theme.ts').SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children };
       if (name === 'react-native') return native;
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'Fragment' };
       if (name === '@/global.css') return {};
       if (name === '@expo/vector-icons') return { Ionicons: 'Icon' };
+      if (name === '@/components/app-symbol') return { AppSymbol: 'SymbolView' };
       if (name === 'expo-image') return { Image: 'Image' };
       if (name === 'react') return { useState: (v: any) => [v, () => {}] };
       if (name.startsWith('@/')) return load('src/' + name.slice(2) + (name.startsWith('@/components/') ? '.tsx' : '.ts'));
@@ -55,9 +57,10 @@ function callerExpression(file: string, tag: string, locals: Props): any {
   visit(ast);
   if (!found) throw Error('Missing actual caller ' + tag);
   const exports: Props = {};
-  const code = source.slice(source.lastIndexOf('const styles = StyleSheet.create(')) + '\nexports.tree = (' + found.getText(ast) + ');';
+  const stylesSource = source.includes('function createStyles') ? source.slice(source.lastIndexOf('function createStyles')) + '\nconst {styles} = createStyles(ui);' : source.slice(source.lastIndexOf('const styles = StyleSheet.create('));
+  const code = stylesSource + '\nexports.tree = (' + found.getText(ast) + ');';
   runInNewContext(ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText,
-    { exports, StyleSheet: native.StyleSheet, ...load('src/constants/theme.ts').SkillMatchTheme.ui, ...locals,
+    { exports, StyleSheet: native.StyleSheet, ui: load('src/constants/theme.ts').SkillMatchTheme.ui, ...load('src/constants/theme.ts').SkillMatchTheme.ui, ...locals,
       require: () => ({ jsx, jsxs: jsx, Fragment: 'Fragment' }) });
   return exports.tree;
 }
@@ -114,13 +117,19 @@ it('preserves ActiveBooking header gutter, real View-all control and separate st
   expect(disabledButton.props.disabled).toBe(true);
   expect(disabledButton.props.accessibilityState).toEqual({ disabled: true, busy: false });
   expect(flat(disabledButton.props.style({ pressed: true }))).toEqual(flat(disabledButton.props.style({ pressed: false })));
-  expect(flat(disabledButton.props.style({ pressed: false })).backgroundColor).not.toBe(rest.backgroundColor);
+  // A blocked text action is a flat line: it is told apart from the live one by its label colour, not a slab.
+  expect(flat(disabledButton.props.style({ pressed: false })).backgroundColor).toBe('transparent');
+  expect(flat(disabledButton.props.children.props.style).color).not.toBe(flat(button.props.children.props.style).color);
   checkContrast(disabled); checkContrast(disabled, true);
 });
 
 it('retains real directory row and user-detail compositions, dates, navigation arguments and static detail rows', () => {
-  const { AppListRow } = load('src/components/app-list-row.tsx');
   const dates = load('src/lib/date-time.ts');
+  const presentation = load('src/lib/admin-presentation.ts');
+  const { AdminRow } = load('src/components/admin-rows.tsx');
+  const { InitialsAvatar } = load('src/components/initials-avatar.tsx');
+  const { AppChip } = load('src/components/app-chip.tsx');
+  const { groupPosition, groupedRowStyle } = load('src/components/grouped-row.ts');
   const timestamp = '2026-09-30T07:00:00.000Z';
   const formatted = dates.formatCardDateTime(timestamp);
   expect(formatted).toMatch(/Sep.*30.*(?:AM|PM)/);
@@ -128,26 +137,40 @@ it('retains real directory row and user-detail compositions, dates, navigation a
   const summarySource = source.slice(source.indexOf('function summary('), source.indexOf('export function AdminDirectory'));
   const exports: Props = {};
   runInNewContext(ts.transpileModule(summarySource + '\nexports.summary = summary;', { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText,
-    { exports, formatCardDateTime: dates.formatCardDateTime });
+    { exports, formatCardDateTime: dates.formatCardDateTime, workerVerificationStatus: presentation.workerVerificationStatus, availabilityLabel: presentation.availabilityLabel });
   for (const kind of ['worker', 'client']) {
     const pushed: any[] = [];
     const item = { user_id: 'worker-fixture', full_name: longName, is_active: true, has_profile: true, is_verified: true, availability_status: 'available', created_at: timestamp };
-    const tree = render(callerExpression('src/components/admin-directory.tsx', 'AppListRow', { AppListRow, item, kind, summary: exports.summary, router: { push: (value: any) => pushed.push(value) } }));
+    const chip = presentation.directoryRowStatus(kind, item);
+    const tree = render(callerExpression('src/components/admin-directory.tsx', 'AdminRow', {
+      AdminRow, InitialsAvatar, AppChip, groupPosition, groupedRowStyle, item, index: 0, items: [item], kind, chip,
+      line: exports.summary(item, kind), router: { push: (value: any) => pushed.push(value) },
+    }));
     expect(tree.props.accessibilityLabel).toBe('View ' + kind + ' details for ' + longName);
-    expect(all(tree, 'Text')[0].props.children).toBe(longName);
-    expect(all(tree, 'Text')[1].props.children).toContain(formatted);
+    const texts = all(tree, 'Text').map(x => x.props.children);
+    expect(texts).toContain(longName);
+    expect(texts.some(x => typeof x === 'string' && x.includes(formatted))).toBe(true);
+    expect(texts).toContain(kind === 'worker' ? 'Verified' : 'Active');
+    if (kind === 'worker') expect(texts.some(x => typeof x === 'string' && x.includes('Available'))).toBe(true);
     tree.props.onPress();
     expect(pushed).toEqual([{ pathname: '/admin/user-detail', params: { userId: item.user_id, kind } }]);
     checkContrast(tree); checkContrast(tree, true);
   }
-  const detail = { full_name: longName, is_active: true, created_at: timestamp, posted_jobs_count: 9999999 };
-  const tree = render(callerExpression('src/app/(admin)/admin/user-detail.tsx', 'ScrollView', { AppListRow, detail, worker: null, formatDetailDateTime: dates.formatDetailDateTime, ScrollView: 'ScrollView', View: 'View', Text: 'Text' }));
-  expect(all(tree, 'Text').map(x => x.props.children)).toContain(longName);
-  expect(all(tree, 'Text').map(x => x.props.children)).toContain('9999999');
-  expect(all(tree, 'Text').map(x => x.props.children)).toContain(dates.formatDetailDateTime(timestamp));
+  const { AdminUserDetailView } = load('src/components/admin-user-detail-view.tsx');
+  const client = { full_name: longName, is_active: true, created_at: timestamp, posted_jobs_count: 9999999 };
+  const tree = render(jsx(AdminUserDetailView, { detail: client }));
+  const texts = all(tree, 'Text').map(x => x.props.children);
+  expect(texts).toContain(longName);
+  expect(texts).toContain('Client account');
+  expect(texts).toContain('9999999');
+  expect(texts).toContain(dates.formatDetailDateTime(timestamp));
   expect(dates.formatDetailDateTime(timestamp)).toMatch(/2026/);
   expect(all(tree, 'Pressable')).toHaveLength(0);
   checkContrast(tree);
+  const worker = { full_name: longName, is_active: false, created_at: null, has_profile: true, is_verified: false, availability_status: 'busy', completed_bookings_count: 3 };
+  const workerTexts = all(render(jsx(AdminUserDetailView, { detail: worker })), 'Text').map(x => x.props.children);
+  expect(workerTexts).toEqual(expect.arrayContaining(['Worker account', 'Inactive', 'Unverified', 'Busy', '3', 'Not recorded']));
+  expect(all(render(jsx(AdminUserDetailView, { detail: worker })), 'Pressable')).toHaveLength(0);
 });
 
 it('keeps every static chip variant bounded, growing and fully labeled with caller-last styling', () => {
@@ -173,54 +196,6 @@ it('keeps every static chip variant bounded, growing and fully labeled with call
   const tree = AppChip({ label: longName, style: caller });
   expect(tree.props.style.at(-1)).toBe(caller);
   expect(flat(tree.props.style).maxWidth).toBe(160);
-});
-
-it('bounds row copy and static trailing composition while preserving order, divider and activation ownership', () => {
-  const { AppListRow } = load('src/components/app-list-row.tsx');
-  const { AppChip } = load('src/components/app-chip.tsx');
-  const caller = { paddingHorizontal: 20, maxWidth: 190 };
-  let calls = 0; const callback = () => { calls++; };
-  for (const interactive of [false, true]) {
-    const tree = render(AppListRow({ leading: jsx('Text', { children: 'L' }), title: longName, subtitle: longName, trailing: jsx(AppChip, { label: 'Malaking halaga at kasanayan', variant: 'selected' }), showDivider: true, style: caller, ...(interactive ? { onPress: callback, accessibilityLabel: 'View worker details for ' + longName } : {}) }));
-    expect(all(tree, 'Pressable')).toHaveLength(interactive ? 1 : 0);
-    const rootStyle = flat(interactive ? tree.props.style({ pressed: false }) : tree.props.style);
-    expect(rootStyle.maxWidth).toBe(190);
-    expect(rootStyle.height).toBeUndefined();
-    const [row, divider] = tree.props.children.props.children;
-    expect(flat(row.props.style).flexWrap).toBe('wrap');
-    expect(flat(row.props.style).maxWidth).toBe('100%');
-    const [leading, copy, trailing] = row.props.children;
-    expect(all(leading, 'Text')[0].props.children).toBe('L');
-    expect(all(copy, 'Text').map(x => x.props.children)).toEqual([longName, longName]);
-    expect(flat(copy.props.style).flexBasis).toBe('auto');
-    expect(flat(copy.props.style).minWidth).toBe(0);
-    expect(flat(copy.props.style).flexGrow).toBe(1);
-    expect(flat(copy.props.style).flexShrink).toBe(1);
-    expect(flat(copy.props.style).maxWidth).toBe('100%');
-    expect(flat(trailing.props.style).maxWidth).toBe('100%');
-    expect(flat(trailing.props.style).flexShrink).toBe(1);
-    expect(flat(divider.props.style).height).toBe(1);
-    expect(flat(divider.props.style).marginLeft).toBe(52);
-    for (const text of all(tree, 'Text')) expect(text.props.numberOfLines).toBeUndefined();
-    if (interactive) {
-      expect(tree.props.accessibilityRole).toBe('button');
-      expect(tree.props.accessibilityLabel).toBe('View worker details for ' + longName);
-      expect(tree.props.onPress).toBe(callback);
-      const rest = flat(tree.props.style({ pressed: false })), pressed = flat(tree.props.style({ pressed: true }));
-      expect(pressed.backgroundColor).toBe(colors.surfaceSubtle);
-      expect(pressed.backgroundColor).not.toBe(rest.backgroundColor);
-      expect(pressed.opacity).toBeUndefined();
-      expect(flat(tree.props.style({ pressed: false }))).toEqual(rest);
-      tree.props.onPress(); expect(calls).toBe(1);
-    }
-  }
-  const textTrailing = render(AppListRow({ title: 'Amount', trailing: 'PHP 9,999,999.99' }));
-  expect(flat(all(textTrailing, 'Text').at(-1).props.style).maxWidth).toBe('100%');
-  expect(flat(all(textTrailing, 'Text').at(-1).props.style).flexShrink).toBe(1);
-  const bare = render(AppListRow({ title: 'Name', subtitle: null, trailing: null }));
-  expect(all(bare, 'Text').map(x => x.props.children)).toEqual(['Name']);
-  expect(all(bare, 'Pressable')).toHaveLength(0);
-  expect(render(AppListRow({ title: longName, onPress: callback })).props.accessibilityLabel).toBe(longName);
 });
 
 it('reflows SectionHeader copy and trailing action without duplicating or grouping their semantics', () => {

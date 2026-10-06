@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { AppSymbol as SymbolView } from '@/components/app-symbol';
 import { Image, Linking, StyleSheet, Text, View } from 'react-native';
 
+import { AppNotice } from '@/components/app-notice';
 import { AppButton } from '@/components/app-button';
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import { formatJobPaymentLabel, type JobPaymentMethod } from '@/lib/job-payment';
 import {
   BookingPayment as BookingPaymentState,
@@ -23,7 +25,7 @@ import {
   selectErrorCopy,
 } from '@/lib/payments';
 
-const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+
 
 /**
  * The payment section of one confirmed forward-lifecycle or completed legacy
@@ -86,6 +88,10 @@ export default function BookingPayment({
   jobPaymentMethod: JobPaymentMethod | null;
   onChanged: () => Promise<void>;
 }) {
+  const ui = useUiTheme();
+  const { colors } = ui;
+  const { styles } = createStyles(ui);
+
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -207,7 +213,10 @@ export default function BookingPayment({
   if (role === 'client') {
     return (
       <View style={styles.section}>
-        <Text style={styles.heading}>{COPY.heading}</Text>
+        <View style={styles.paymentHeading}>
+          <SymbolView name={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} size={22} tintColor={colors.accent} />
+          <Text style={styles.heading}>{COPY.heading}</Text>
+        </View>
 
         {entry === 'legacy-choice' ? (
           <>
@@ -322,7 +331,7 @@ export default function BookingPayment({
         )}
 
         {notice ? <Text style={styles.line}>{notice}</Text> : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? <AppNotice variant="danger" message={error} /> : null}
       </View>
     );
   }
@@ -330,7 +339,10 @@ export default function BookingPayment({
   /* ---------------- Worker ---------------- */
   return (
     <View style={styles.section}>
-      <Text style={styles.heading}>{COPY.heading}</Text>
+      <View style={styles.paymentHeading}>
+        <SymbolView name={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} size={22} tintColor={colors.accent} />
+        <Text style={styles.heading}>{COPY.heading}</Text>
+      </View>
 
       {entry === 'cash' ? (
         <>
@@ -375,18 +387,20 @@ export default function BookingPayment({
         </>
       ) : null}
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <AppNotice variant="danger" message={error} /> : null}
     </View>
   );
 }
 
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing, radius } = ui;
 const styles = StyleSheet.create({
   section: {
-    marginTop: spacing.md,
-    gap: spacing.sm,
+    gap: spacing.md,
   },
+  paymentHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   heading: {
-    ...type.sectionTitle,
+    ...type.bodyEmphasis,
     color: colors.textPrimary,
   },
   line: {
@@ -394,13 +408,8 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   paid: {
-    ...type.helper,
-    fontWeight: '600',
+    ...type.label,
     color: colors.success,
-  },
-  error: {
-    ...type.helper,
-    color: colors.danger,
   },
   qrIsland: {
     gap: spacing.md,
@@ -408,8 +417,8 @@ const styles = StyleSheet.create({
   qrPlate: {
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    borderRadius: radius.md,
+    borderColor: colors.hairline,
+    borderRadius: radius.control,
     borderCurve: 'continuous',
     padding: spacing.md,
     alignSelf: 'center',
@@ -422,7 +431,7 @@ const styles = StyleSheet.create({
   },
   testBanner: {
     backgroundColor: colors.warningTint,
-    borderRadius: radius.md,
+    borderRadius: radius.control,
     borderCurve: 'continuous',
     padding: spacing.md,
     gap: spacing.xxs,
@@ -437,3 +446,6 @@ const styles = StyleSheet.create({
     color: colors.warning,
   },
 });
+
+  return { styles };
+}

@@ -1,11 +1,9 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { SkillMatchTheme } from '@/constants/theme';
+import { FormMessage } from '@/components/form-message';
+import { StateScreen } from '@/components/state-screen';
 import { signOutCurrentUser } from '@/lib/sign-out';
-
-const { colors, type, spacing } = SkillMatchTheme.ui;
 
 /**
  * Reserved for a successfully resolved authoritative account whose
@@ -31,40 +29,14 @@ export default function BlockedScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>Access Blocked</Text>
-      <Text style={styles.note}>
-        Your SkillMatch account is currently inactive. Please contact the
-        administrator for assistance.
-      </Text>
-      <AppButton label="Sign Out" onPress={handleSignOut} loading={isSigningOut} />
-      {signOutError ? <Text style={styles.error}>{signOutError}</Text> : null}
-    </View>
+    <StateScreen
+      tone="warning"
+      icon={{ android: 'block', ios: 'nosign' }}
+      title="Account inactive"
+      message="Your SkillMatch account is currently inactive. Please contact the administrator for assistance."
+    >
+      <AppButton label="Sign out" onPress={handleSignOut} loading={isSigningOut} />
+      {signOutError ? <FormMessage tone="error" message={signOutError} /> : null}
+    </StateScreen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
-    gap: spacing.lg,
-    backgroundColor: colors.background,
-  },
-  heading: {
-    ...type.screenTitle,
-    color: colors.textPrimary,
-    textAlign: 'center',
-  },
-  note: {
-    ...type.helper,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  error: {
-    ...type.helper,
-    color: colors.danger,
-    textAlign: 'center',
-  },
-});

@@ -1,13 +1,11 @@
 import { Stack } from 'expo-router';
+import { APP_STACK_SCREEN_OPTIONS } from '@/components/app-header-options';
 import { useLayoutEffect, useMemo } from 'react';
 
 import { PushNotificationRegistration } from '@/components/push-notification-registration';
-import { SkillMatchTheme } from '@/constants/theme';
 import { useAccount } from '@/providers/account-provider';
 import { useSession } from '@/providers/session-provider';
 import { ClientJobsProvider } from '@/providers/client-jobs-provider';
-
-const { colors } = SkillMatchTheme.ui;
 
 // The tab shell is one headerless Stack child. Help, Notifications and Booking
 // Chat remain pushed Stack screens with their existing header/back behavior.
@@ -38,13 +36,7 @@ export default function ClientLayout() {
   return (
     <ClientJobsProvider key={lifetime.ownerId} ownerId={lifetime.ownerId} isOwnerCurrent={lifetime.isOwnerCurrent}>
       <PushNotificationRegistration role="client" />
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.textPrimary,
-          contentStyle: { backgroundColor: colors.background },
-        }}
-      >
+      <Stack screenOptions={APP_STACK_SCREEN_OPTIONS}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       </Stack>
     </ClientJobsProvider>

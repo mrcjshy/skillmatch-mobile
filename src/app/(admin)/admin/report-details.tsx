@@ -1,13 +1,19 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { AppCard, type AppCardTone } from '@/components/app-card';
+import { AppChip } from '@/components/app-chip';
+import { AppDialog } from '@/components/app-dialog';
 import { AppField } from '@/components/app-field';
 import { AppNotice } from '@/components/app-notice';
+import { FactRow } from '@/components/fact-row';
 import { InlineStatus } from '@/components/inline-status';
+import { RefinementThemeProvider } from '@/components/refinement-theme';
+import { SectionHeader } from '@/components/section-header';
+import { SurfaceGroup } from '@/components/surface-group';
 import { SkillMatchTheme } from '@/constants/theme';
+import { reportStatusVariant } from '@/lib/status-presentation';
 import { formatDetailDateTime } from '@/lib/date-time';
 import {
   AdminReportDetail,
@@ -32,9 +38,10 @@ import {
   shouldShowStrikeAction,
   validateAdminResponse,
   isReportId,
+  reportContextLabel,
 } from '@/lib/reports';
 
-const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+const { colors, type, spacing } = SkillMatchTheme.ui;
 
 const REVIEW_LABEL: Record<ReviewStatus, string> = {
   under_review: COPY.markUnderReview,
@@ -42,14 +49,11 @@ const REVIEW_LABEL: Record<ReviewStatus, string> = {
   dismissed: COPY.dismiss,
 };
 
-function reportStatusTone(status: string): AppCardTone | undefined {
-  if (status === 'resolved') return 'success';
-  if (status === 'dismissed') return 'danger';
-  if (status === 'under_review') return 'warning';
-  return undefined;
+export default function AdminReportDetails() {
+  return <RefinementThemeProvider><AdminReportDetailsContent /></RefinementThemeProvider>;
 }
 
-export default function AdminReportDetails() {
+function AdminReportDetailsContent() {
   const { reportId: rawReportId } = useLocalSearchParams<{ reportId?: string | string[] }>();
   const reportId = typeof rawReportId === 'string' ? rawReportId : null;
   const inFlight = useRef(false);
@@ -68,6 +72,7 @@ export default function AdminReportDetails() {
   const [evidence, setEvidence] = useState<ReportBookingMessage[] | null>(null);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const [strikeConfirm, setStrikeConfirm] = useState<{ response: string; body: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!isReportId(reportId)) {
@@ -237,21 +242,11 @@ export default function AdminReportDetails() {
       setReviewError(COPY.responseRequired);
       return;
     }
-    const adminResponse = validated.response;
-    Alert.alert(
-      COPY.strikeConfirmTitle,
-      discipline.wouldSuspend ? COPY.strikeSuspendBody : COPY.strikeConfirmBody,
-      [
-        { text: 'Not now', style: 'cancel' },
-        {
-          text: COPY.strikeAction,
-          style: 'destructive',
-          onPress: () => {
-            void applyStrike(adminResponse);
-          },
-        },
-      ]
-    );
+    // Same validated response and same RPC as before; only the confirmation is the shared dialog.
+    setStrikeConfirm({
+      response: validated.response,
+      body: discipline.wouldSuspend ? COPY.strikeSuspendBody : COPY.strikeConfirmBody,
+    });
   }
 
   async function applyStrike(adminResponse: string) {
@@ -337,15 +332,20 @@ export default function AdminReportDetails() {
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={refresh}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
         />
       }
     >
-      <AppCard variant="status" tone={reportStatusTone(detail.status)}>
-        <Text style={styles.eyebrow}>STATUS</Text>
-        <Text style={styles.status}>{formatReportStatus(detail.status)}</Text>
-      </AppCard>
+      {/* 1. Status: where this report stands. */}
+      <View style={styles.header}>
+        <View style={styles.chips}>
+          <AppChip label={formatReportStatus(detail.status)} variant={reportStatusVariant(detail.status)} />
+        </View>
+        <Text style={styles.title} accessibilityRole="header">{formatReportCategory(detail.category)}</Text>
+        {created ? <Text style={styles.meta}>Submitted {created}</Text> : null}
+        {reviewedAt ? <Text style={styles.meta}>Reviewed {reviewedAt}</Text> : null}
+      </View>
 
       {notice ? (
         <AppNotice
@@ -360,57 +360,74 @@ export default function AdminReportDetails() {
         />
       ) : null}
 
-      <AppCard>
-        <DetailLine label="Category" value={formatReportCategory(detail.category)} />
-        <DetailLine label="Reporter" value={detail.reporter_full_name} />
-        <DetailLine label="Reporter ID" value={detail.reporter_id} />
-        <DetailLine label="Reported" value={detail.reported_full_name} />
-        <DetailLine label="Reported user ID" value={detail.reported_user_id} />
-        <DetailLine label="Job" value={detail.job_title} />
-        <DetailLine label="Booking ID" value={detail.booking_id} />
-        <DetailLine label="Created" value={created} />
-        <DetailLine label="Reviewed" value={reviewedAt} />
-      </AppCard>
+      {/* 2. Booking or app context. */}
+      <View style={styles.section}>
+        <SectionHeader title="Context" />
+        <SurfaceGroup>
+          <FactRow label="Type" value={reportContextLabel(detail.booking_id)} />
+          <FactRow label="Job" value={detail.job_title} />
+          <FactRow label="Booking ID" value={detail.booking_id} selectable />
+        </SurfaceGroup>
+      </View>
 
-      <AppCard>
-        <Text style={styles.sectionTitle}>Description</Text>
-        <Text style={styles.body}>{detail.description}</Text>
-      </AppCard>
+      {/* 3. Who reported whom. */}
+      <View style={styles.section}>
+        <SectionHeader title="People" />
+        <SurfaceGroup>
+          <FactRow label="Reporter" value={detail.reporter_full_name} strong />
+          <FactRow label="Reporter ID" value={detail.reporter_id} selectable />
+          <FactRow label="Reported" value={detail.reported_full_name} strong />
+          <FactRow label="Reported user ID" value={detail.reported_user_id} selectable />
+        </SurfaceGroup>
+      </View>
+
+      {/* 4. What happened, with the booking's recorded messages as evidence. */}
+      <View style={styles.section}>
+        <SectionHeader title="Description" />
+        <SurfaceGroup>
+          <Text style={styles.prose}>{detail.description}</Text>
+        </SurfaceGroup>
+      </View>
 
       {detail.booking_id !== null ? (
-        <AppCard>
-          <Text style={styles.sectionTitle}>{COPY.evidenceTitle}</Text>
+        <View style={styles.section}>
+          <SectionHeader title={COPY.evidenceTitle} />
           {evidenceLoading ? (
             <InlineStatus variant="loading" message={COPY.evidenceLoading} />
           ) : evidenceError ? (
             <InlineStatus variant="error" message={evidenceError} />
           ) : evidence === null || evidence.length === 0 ? (
-            <InlineStatus variant="empty" message={COPY.evidenceEmpty} />
+            <InlineStatus variant="empty" icon={{ android: 'chat_bubble_outline', ios: 'bubble.left' }} message={COPY.evidenceEmpty} />
           ) : (
-            evidence.map((row) => {
-              const sentAt = formatDetailDateTime(row.created_at);
-              return (
-                <View key={row.message_id} style={styles.evidenceRow}>
-                  <Text style={styles.detailLabel}>
-                    {row.sender_role === 'worker' ? COPY.evidenceWorker : COPY.evidenceClient}
-                  </Text>
-                  <Text style={styles.body}>{row.content}</Text>
-                  {sentAt ? <Text style={styles.evidenceTime}>{sentAt}</Text> : null}
-                </View>
-              );
-            })
+            <SurfaceGroup>
+              {evidence.map((row) => {
+                const sentAt = formatDetailDateTime(row.created_at);
+                return (
+                  <View key={row.message_id} style={styles.evidenceRow}>
+                    <Text style={styles.evidenceSender}>
+                      {row.sender_role === 'worker' ? COPY.evidenceWorker : COPY.evidenceClient}
+                    </Text>
+                    <Text style={styles.evidenceBody}>{row.content}</Text>
+                    {sentAt ? <Text style={styles.meta}>{sentAt}</Text> : null}
+                  </View>
+                );
+              })}
+            </SurfaceGroup>
           )}
-        </AppCard>
+        </View>
       ) : null}
 
-      <AppCard>
-        <Text style={styles.sectionTitle}>Admin response</Text>
-        <Text style={styles.body}>{detail.admin_response ?? COPY.noAdminResponse}</Text>
-      </AppCard>
+      <View style={styles.section}>
+        <SectionHeader title="Admin response" />
+        <SurfaceGroup>
+          <Text style={styles.prose}>{detail.admin_response ?? COPY.noAdminResponse}</Text>
+        </SurfaceGroup>
+      </View>
 
+      {/* 5. The existing review actions, last. */}
       {reviewTargets.length > 0 ? (
-        <AppCard>
-          <Text style={styles.sectionTitle}>Review</Text>
+        <View style={styles.section}>
+          <SectionHeader title="Review" />
           <AppField
             label={COPY.responseLabel}
             value={response}
@@ -447,12 +464,12 @@ export default function AdminReportDetails() {
               onPress={promptStrike}
             />
           ) : null}
-        </AppCard>
+        </View>
       ) : null}
 
       {detail.status === 'resolved' || detail.status === 'dismissed' ? (
-        <AppCard>
-          <Text style={styles.sectionTitle}>Outcome email</Text>
+        <View style={styles.section}>
+          <SectionHeader title="Outcome email" />
           <Text style={styles.body}>
             Send or retry the privacy-safe outcome email without changing this report review.
           </Text>
@@ -463,89 +480,73 @@ export default function AdminReportDetails() {
             disabled={busy}
             onPress={retryOutcomeEmail}
           />
-        </AppCard>
+        </View>
       ) : null}
-    </ScrollView>
-  );
-}
 
-function DetailLine({ label, value }: { label: string; value: string | null }) {
-  if (value === null) return null;
-  return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
-    </View>
+      <AppDialog
+        visible={strikeConfirm !== null}
+        onRequestClose={() => setStrikeConfirm(null)}
+        title={COPY.strikeConfirmTitle}
+        message={strikeConfirm?.body}
+        actions={
+          <>
+            <AppButton
+              variant="destructive"
+              label={COPY.strikeAction}
+              onPress={() => {
+                const confirmed = strikeConfirm;
+                setStrikeConfirm(null);
+                if (confirmed) void applyStrike(confirmed.response);
+              }}
+            />
+            <AppButton variant="ghost" label="Not now" onPress={() => setStrikeConfirm(null)} />
+          </>
+        }
+      />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   content: {
     flexGrow: 1,
-    backgroundColor: colors.background,
-    padding: spacing.gutter,
-    gap: spacing.md,
-    paddingBottom: spacing.xxxl + spacing.sm,
+    backgroundColor: colors.canvas,
+    paddingHorizontal: spacing.gutter,
+    paddingTop: spacing.lg,
+    gap: spacing.xl,
+    paddingBottom: spacing.xxxxl,
   },
   center: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.gutter,
   },
-  eyebrow: {
-    ...type.caption,
-    color: colors.textSecondary,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-  },
-  status: {
-    ...type.screenTitle,
-    color: colors.textPrimary,
-  },
-  sectionTitle: {
-    ...type.sectionTitle,
-    color: colors.textPrimary,
-  },
+  header: { gap: spacing.xs },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, paddingBottom: spacing.xs },
+  title: { ...type.screenTitle, color: colors.textPrimary },
+  meta: { ...type.helper, color: colors.textSecondary },
+  section: { gap: spacing.md },
   body: {
     ...type.body,
     color: colors.textSecondary,
   },
+  prose: { ...type.body, color: colors.textPrimary, padding: spacing.lg },
   counter: {
     ...type.caption,
     color: colors.textSecondary,
   },
   counterOver: {
     ...type.caption,
-    color: colors.danger,
+    color: colors.error,
     fontWeight: '600',
   },
-  evidenceRow: {
-    backgroundColor: colors.surfaceSubtle,
-    borderRadius: radius.sm,
-    padding: spacing.md,
-    gap: spacing.xs,
-  },
-  evidenceTime: {
-    ...type.caption,
-    color: colors.textSecondary,
-  },
-  detailRow: {
-    gap: spacing.xxs,
-  },
-  detailLabel: {
-    ...type.caption,
-    color: colors.textSecondary,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  detailValue: {
-    ...type.body,
-    color: colors.textPrimary,
-  },
+  evidenceRow: { gap: spacing.xxs, paddingVertical: spacing.md, paddingHorizontal: spacing.lg },
+  evidenceSender: { ...type.label, color: colors.textSecondary },
+  evidenceBody: { ...type.body, color: colors.textPrimary },
 });

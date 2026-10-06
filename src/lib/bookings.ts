@@ -67,7 +67,7 @@ const BOOKING_STATUS_LABEL: Record<BookingStatus, string> = {
   confirmed: 'Confirmed',
   completed: 'Completed',
   cancelled: 'Cancelled',
-  no_show: 'No Show',
+  no_show: 'No show',
 };
 
 export function isBookingStatus(v: string): v is BookingStatus {
@@ -238,7 +238,7 @@ export function formatSkills(skills: string[] | null): string {
  * never projected by the RPC and is never shown.
  */
 export function formatVerification(isVerified: boolean | null): string {
-  return isVerified === true ? 'Verified Worker' : 'Not yet verified';
+  return isVerified === true ? 'Verified worker' : 'Not yet verified';
 }
 
 /* ------------------------------------------------------------------ *

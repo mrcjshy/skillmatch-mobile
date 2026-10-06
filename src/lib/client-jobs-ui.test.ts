@@ -8,10 +8,11 @@ vi.mock('./supabase', () => ({ supabase: {} }));
 type Props = Record<string, unknown>;
 type Element = { type: unknown; props: Props };
 const noop = () => {};
-const node = (type: unknown, props: Props): Element => ({ type, props });
+const node = (type: unknown, props: Props): Element => typeof type === 'function' ? type(props) : ({ type, props });
 function load(path: string, seams: Record<string, Props>): Props {
   const raw = readFileSync(path, 'utf8'); const exports = {};
   const requireSeam = (id: string): Props => {
+    if (id === '@/components/refinement-theme') return { useUiTheme: () => (load('src/constants/theme.ts', seams).SkillMatchTheme as { ui: unknown }).ui, RefinementThemeProvider: ({ children }: Props) => children };
     if (seams[id]) return seams[id];
     if (id === '@/global.css') return {};
     if (id === 'react/jsx-runtime') return { jsx: node, jsxs: node, Fragment: 'Fragment' };
@@ -38,6 +39,7 @@ function setup(overrides: Props = {}) {
   const sessionListeners = new Set<() => void>(); const appListeners = new Set<(next: string) => void>(); const effects: (() => unknown)[] = [];
   const native = { ...Object.fromEntries(['Text','View','ScrollView','FlatList','RefreshControl','Pressable','ActivityIndicator'].map(n => [n,n])), StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 }, Platform: { select: (p: Props) => p.default }, AppState: { currentState: 'active', addEventListener: (_: string, fn: (next: string) => void) => { appListeners.add(fn); return { remove: () => appListeners.delete(fn) }; } } };
   const seams: Record<string, Props> = {
+    '@/components/app-symbol': { AppSymbol: 'SymbolView' },
     react: { useState: (initial: unknown) => { const index = cursor++; if (!(index in state)) state[index] = typeof initial === 'function' ? initial() : initial; return [state[index], (next: unknown) => { state[index] = typeof next === 'function' ? next(state[index]) : next; }]; }, useRef: (initial: unknown) => { const index = cursor++; if (!(index in state)) state[index] = { current: initial }; return state[index]; }, useCallback: (fn: unknown) => fn, useEffect: (fn: () => unknown) => { effects.push(fn); }, useLayoutEffect: (fn: () => unknown) => { fn(); } },
     'react-native': native, 'expo-router': { useRouter: () => ({ push }), useFocusEffect: (fn: typeof focus) => { focus = fn; } },
     '@/providers/account-provider': { useAccount: () => ({ account: { id: 'client-a', role: 'client', is_active: true }, clientDraftTermination: { subscribe: () => noop } }) },
@@ -46,6 +48,8 @@ function setup(overrides: Props = {}) {
     '@/providers/client-jobs-provider': { useClientJobs: () => jobsState }, '@/lib/date-time': { formatCardDateTime }, '@/lib/job-payment': { formatClientPostedPaymentLine },
     '@/lib/job-photos': { listJobPhotos: photo }, '@/lib/booking-records': { loadClientBookings: booking }, '@/components/client-job-location': { ClientJobLocation: location },
   };
+  seams['@/components/grouped-row'] = load('src/components/grouped-row.ts', seams);
+  seams['@/lib/status-presentation'] = load('src/lib/status-presentation.ts', seams);
   const screen = load('src/app/(client)/(tabs)/client/jobs.tsx', seams).default as () => Element;
   const render = () => { cursor = 0; return screen(); };
   return { render, seams, appListenerCount: () => appListeners.size, mountEffects: () => { effects.forEach(fn => fn()); }, app: (next: string) => { native.AppState.currentState = next; for (const fn of [...appListeners]) fn(next); }, jobsState, push, photo, booking, location, focus: () => focus(), revoke: () => { authorized = false; for (const fn of sessionListeners) fn(); }, restore: () => { authorized = true; } };
@@ -61,9 +65,10 @@ describe('My Jobs actual static/offline composition; no native or Argent executi
     const row = (rows.props.renderItem as (p: Props) => Element)({ item: sample });
     expect(text(row)).toContain(sample.title); expect(text(row)).toContain(sample.description);
     expect(text(row)).toContainEqual(['Schedule: ', formatCardDateTime(sample.scheduled_at)]);
-    expect(text(row)).toContainEqual(['Budget: ', '\u20b1' + sample.budget.toLocaleString()]);
+    expect(text(row)).toContain('\u20b1' + sample.budget.toLocaleString());
+    expect(all(row).find(e => e.props.accessibilityLabel === 'Budget: \u20b1' + sample.budget.toLocaleString())).toBeDefined();
     expect(text(row)).toContain(formatClientPostedPaymentLine(null));
-    expect(all(row).find(e => e.type === 'AppChip')!.props.label).toBe('Status: open');
+    expect(all(row).find(e => e.type === 'AppChip')!.props).toMatchObject({ label: 'Open', variant: 'info' });
     const details = all(row).find(e => e.type === 'AppButton')!;
     expect(details.props.label).toBe('Details'); expect(details.props.accessibilityLabel).toBe('Details for ' + sample.title);
     (details.props.onPress as () => void)(); expect(s.push).toHaveBeenCalledExactlyOnceWith({ pathname: '/client/job-details', params: { jobId: sample.id } });
@@ -73,8 +78,8 @@ describe('My Jobs actual static/offline composition; no native or Argent executi
   it('renders sparse/unknown facts without guessing values or changing status', () => {
     const sparse = { ...sample, description: null, status: 'unknown-existing-status', scheduled_at: 'invalid', budget: null, skills: [], payment_method_readable: false };
     const s = setup({ jobs: [sparse] }); const row = (list(s.render()).props.renderItem as (p: Props) => Element)({ item: sparse });
-    expect(text(row)).toContainEqual(['Schedule: ', 'No schedule']); expect(text(row)).toContainEqual(['Budget: ', 'Not set']); expect(text(row)).toContainEqual(['Skills: ', 'None']);
-    expect(text(row)).not.toContain(formatClientPostedPaymentLine(null)); expect(all(row).find(e => e.type === 'AppChip')!.props.label).toBe('Status: unknown-existing-status');
+    expect(text(row)).toContainEqual(['Schedule: ', 'No schedule']); expect(text(row)).toContain('Budget not set'); expect(text(row)).toContainEqual(['Skills: ', 'None']);
+    expect(text(row)).not.toContain(formatClientPostedPaymentLine(null)); expect(all(row).find(e => e.type === 'AppChip')!.props).toMatchObject({ label: 'Unknown-existing-status', variant: 'neutral' });
   });
   it.each(['loading', 'error', 'empty'])('preserves %s state and never flashes empty during loading/error', state => {
     const s = setup({ jobs: [], isLoading: state === 'loading', loadError: state === 'error' ? 'Safe failure' : null });
@@ -119,7 +124,7 @@ function checkComposed(element: Element, background: string, seams: Record<strin
     expect(ratio(style.color as string, ownBackground)).toBeGreaterThanOrEqual(4.5);
     expect(element.props.allowFontScaling).toBeUndefined(); expect(element.props.maxFontSizeMultiplier).toBeUndefined(); expect(element.props.numberOfLines).toBeUndefined();
   }
-  if (element.type === 'Pressable' && style.borderColor) expect(ratio(style.borderColor as string, ownBackground)).toBeGreaterThanOrEqual(3);
+  if (element.type === 'Pressable' && style.borderColor && style.borderColor !== 'transparent') expect(ratio(style.borderColor as string, ownBackground)).toBeGreaterThanOrEqual(3);
   if (element.type === 'ActivityIndicator') expect(ratio(element.props.color as string, ownBackground)).toBeGreaterThanOrEqual(3);
   for (const child of all(element.props.children).filter((value, index, values) => values.indexOf(value) === index)) {
     // Recurse immediate children only: each subtree owns its nested surface.

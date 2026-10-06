@@ -94,22 +94,22 @@ export function WorkerJobLocationMapLibre({ pin }: { pin: JobPin }) {
 }
 
 const styles = StyleSheet.create({
-  destination: { width: 20, height: 20, borderRadius: 10, backgroundColor: SkillMatchTheme.ui.colors.primary, borderWidth: 3, borderColor: '#ffffff' },
+  destination: { width: 20, height: 20, borderRadius: 10, backgroundColor: SkillMatchTheme.ui.colors.accent, borderWidth: 3, borderColor: SkillMatchTheme.ui.colors.onAccent },
   frame: {
     height: 180,
-    borderRadius: 8,
+    borderRadius: SkillMatchTheme.ui.radius.sm,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
+    borderColor: SkillMatchTheme.ui.colors.hairline,
   },
   fallback: {
     minHeight: 120,
     padding: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: SkillMatchTheme.surface.subtle,
+    backgroundColor: SkillMatchTheme.ui.colors.surfaceSunken,
     borderRadius: 8,
   },
-  help: { fontSize: 12, color: SkillMatchTheme.text.secondary },
+  help: { ...SkillMatchTheme.ui.type.caption, color: SkillMatchTheme.ui.colors.textSecondary },
   loading: { ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center' },
 });

@@ -76,10 +76,10 @@ export const COPY = {
   forbidden: "You don't have permission to post a job.",
   invalid: 'Check the job details and selected location, then try again.',
   generic: "Couldn't post your job. Please try again.",
-  useCurrentLocation: 'Use Current Location',
-  approximateHeading: 'Approximate Job Area',
+  useCurrentLocation: 'Use current location',
+  approximateHeading: 'Approximate job area',
   approximateCopy:
-    'Approximate Job area. Exact location becomes available after acceptance.',
+    'Approximate job area. Exact location becomes available after acceptance.',
   workerMapUnavailable: 'Map is unavailable. The general area is still shown as text.',
   workerLocationUnavailable: 'This job location is not available.',
   workerLocationGeneric: "Couldn't load the job location. Please try again.",

@@ -16,7 +16,10 @@ function load(file: string): Props {
   if (cache[file]) return cache[file];
   const exports: Props = {}; cache[file] = exports;
   const require = (name: string): any => {
+      if (name === '@/components/refinement-theme') return { useUiTheme: () => load('src/constants/theme.ts').SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children };
     if (name === 'react-native') return native;
+    if (name === 'expo-symbols') return { SymbolView: 'SymbolView' };
+      if (name === '@/components/app-symbol') return { AppSymbol: 'SymbolView' };
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
     if (name === '@/global.css') return {};
     if (name.endsWith('/supabase')) return { supabase: new Proxy({}, { get() { throw Error('No provider/database access permitted'); } }) };
@@ -43,14 +46,10 @@ function text(tree: any): string {
 function callerSurface(role: string): string {
   const source = readFileSync('src/app/(' + role + ')/(tabs)/' + role + '/index.tsx', 'utf8');
   const exports: Props = {};
-  runInNewContext(ts.transpileModule(source.slice(source.lastIndexOf('const styles = StyleSheet.create(')) + '\nexports.styles = styles;', { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports, StyleSheet: native.StyleSheet, ...theme.SkillMatchTheme.ui });
+  runInNewContext(ts.transpileModule((source.includes('function createStyles') ? source.slice(source.lastIndexOf('function createStyles')) + '\nconst result = createStyles(ui); const styles = result.styles ?? result;' : source.slice(source.lastIndexOf('const styles = StyleSheet.create('))) + '\nexports.styles = styles;', { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports, StyleSheet: native.StyleSheet, ui: theme.SkillMatchTheme.ui, ...theme.SkillMatchTheme.ui });
   return flat(exports.styles.scroll).backgroundColor;
 }
-function callerStyles(file: string): Props {
-  const source=readFileSync(file,'utf8'), exports:Props={};
-  runInNewContext(ts.transpileModule(source.slice(source.lastIndexOf('const styles = StyleSheet.create('))+'\nexports.styles = styles;', {compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText, {exports,StyleSheet:native.StyleSheet,...theme.SkillMatchTheme.ui});
-  return exports.styles;
-}
+
 function contrast(tree: any, pressed: boolean, parent: string, opacity = 1): void {
   if (Array.isArray(tree)) { tree.forEach(x => contrast(x, pressed, parent, opacity)); return; }
   if (!tree || typeof tree !== 'object') return;
@@ -74,28 +73,37 @@ const title = 'Pagkukumpuni ng bubong at paglalagay ng ligtas na kable para sa t
 const description = '  Kailangan ng masusing serbisyo sa pagkukumpuni ng malaking tahanan, paglilinis ng bubong at pagsusuri ng mga linya ng kuryente para sa kaligtasan ng buong pamilya. '.repeat(3);
 const skill = 'Pagkukumpuni ng bubong at masusing elektrikal na serbisyo';
 const opportunity = { job_id:'job-opportunity-1', title, description, barangay:'Barangay San Isidro Labrador na may mahabang pangalan', city:'Santa Ana Pampanga', budget:987654321.75, scheduled_at:timestamp, skill_points:50, location_points:30, rating_points:12.5, total_points:92.5, payment_method:'cod' };
-it('preserves full formatter output and callback in bounded stacked title/skill and metadata compositions', () => {
+it('preserves full formatter output and callback in a wrapping row that reads title, skill, area, schedule, budget, match', () => {
   let calls=0; const onPress=()=>{calls++;};
   const tree=JobOpportunityCompactCard({ opportunity, primarySkillName:skill, onPress });
+  expect(tree.type).toBe('Pressable');
   expect(tree.props.onPress).toBe(onPress); tree.props.onPress(); expect(calls).toBe(1); expect(tree.props.accessibilityRole).toBe('button');
   expect(tree.props.accessibilityLabel).toBe(title + ', Match Score: 92.5/100. View job opportunity details');
   const fields=compactOpportunityFields(opportunity,skill);
   expect(fields.schedule).toBeTruthy(); expect(fields.descriptionPreview).toBe(previewOpportunityDescription(description));
-  for (const value of [title, skill, description.trim(), fields.schedule, 'Barangay San Isidro Labrador na may mahabang pangalan, Santa Ana Pampanga', '\u20b1987,654,321.75', 'Match Score: 92.5/100']) expect(text(tree)).toContain(value);
+  for (const value of [title, skill, description.trim(), fields.schedule, 'Barangay San Isidro Labrador na may mahabang pangalan, Santa Ana Pampanga', '₱987,654,321.75', 'Match Score: 92.5/100']) expect(text(tree)).toContain(value);
+  const copy = text(tree);
+  const order = [title, skill, 'Barangay San Isidro', fields.schedule, '₱987,654,321.75', 'Match Score: 92.5/100'].map((value: string) => copy.indexOf(value));
+  expect(order).toEqual([...order].sort((a, b) => a - b)); expect(order.every((i: number) => i >= 0)).toBe(true);
   for(const label of all(tree,'Text')) { expect(label.props.numberOfLines).toBeUndefined(); expect(label.props.ellipsizeMode).toBeUndefined(); expect(flat(label.props.style).height).toBeUndefined(); }
-  const top=all(tree,'View')[0]; expect(flat(top.props.style).flexDirection).toBe('column'); expect(flat(top.props.style).maxWidth).toBe('100%');
-  expect(flat(all(tree,'Text')[0].props.style).flex).toBeUndefined(); expect(flat(all(tree,'Text')[0].props.style).width).toBe('100%');
-  for(const label of all(tree,'Text').filter((x:any)=>text(x)===fields.area||text(x)===fields.descriptionPreview)) { expect(flat(label.props.style).maxWidth).toBe('100%'); expect(flat(label.props.style).flexShrink).toBe(1); }
-  expect(all(tree,'Pressable')).toHaveLength(1); const chip=all(tree,'View').find((x:any)=>flat(x.props.style).minHeight===28); expect(chip.props.onPress).toBeUndefined();
+  const row = flat(tree.props.style({ pressed: false }));
+  expect(row).toMatchObject({ flexDirection: 'row', maxWidth: '100%' }); expect(row.minHeight).toBeGreaterThanOrEqual(56);
+  expect(all(tree,'View').some(x => flat(x.props.style).flex === 1 && flat(x.props.style).minWidth === 0)).toBe(true);
+  for(const label of all(tree,'Text').filter((x:any)=>text(x)===title||text(x)===fields.area||text(x)===fields.descriptionPreview)) { expect(flat(label.props.style).maxWidth).toBe('100%'); expect(flat(label.props.style).flexShrink).toBe(1); }
+  expect(all(tree,'Pressable')).toHaveLength(1);
 });
 
-it('uses contrasting resting/pressed/released surfaces with the real selected skill chip and no faded ancestry', () => {
+it('has no coloured side border; contrasting resting/pressed/released surfaces and one skill line, never a pill', () => {
   for(const primarySkillName of [skill,null,undefined]) {
     const tree=JobOpportunityCompactCard({ opportunity,primarySkillName,onPress(){} });
     const rest=flat(tree.props.style({pressed:false})),pressed=flat(tree.props.style({pressed:true}));
-    expect(rest.backgroundColor).toBe(colors.surface); expect(pressed.backgroundColor).toBe(colors.surfaceSubtle); expect(pressed.opacity).toBeUndefined(); expect(flat(tree.props.style({pressed:false}))).toEqual(rest);
-    const chips=all(tree,'View').filter((x:any)=>flat(x.props.style).minHeight===28); expect(chips).toHaveLength(primarySkillName?1:0);
-    if(primarySkillName) expect(flat(chips[0].props.style).backgroundColor).toBe(colors.selected);
+    expect(rest.backgroundColor).toBe(colors.surface); expect(pressed.backgroundColor).toBe(colors.surfaceSunken); expect(pressed.opacity).toBeUndefined(); expect(flat(tree.props.style({pressed:false}))).toEqual(rest);
+    // Banned pattern: a coloured left border above 1px. The group edge is a hairline.
+    expect(rest.borderLeftWidth).toBe(1); expect(rest.borderLeftColor ?? rest.borderColor).toBe(colors.hairline);
+    expect(all(tree,'View').filter((x:any)=>flat(x.props.style).minHeight===28)).toHaveLength(0);
+    const skillText = all(tree,'Text').find((x:any)=>text(x)===skill);
+    expect(Boolean(skillText)).toBe(Boolean(primarySkillName));
+    if (skillText) expect(flat(skillText.props.style).color).toBe(colors.accent);
     contrast(tree,false,callerSurface('worker')); contrast(tree,true,callerSurface('worker'));
   }
 });
@@ -103,18 +111,15 @@ it('preserves server order and separate missing optional-data cases without inve
   const rows=parseJobOpportunityRows([opportunity,{...opportunity,job_id:'second',total_points:1}]); expect(rows.map((x:Props)=>x.job_id)).toEqual(['job-opportunity-1','second']);
   for(const primarySkillName of [null,undefined,'   ']) {
     const tree=JobOpportunityCompactCard({opportunity:{...opportunity,description:null,barangay:null,city:null,budget:null,scheduled_at:null},primarySkillName,onPress(){}});
-    expect(text(tree)).toBe(title+'Match Score: 92.5/100View details \u2192'); expect(tree.props.disabled).toBeUndefined(); expect(tree.props.accessibilityState).toBeUndefined();
+    expect(text(tree)).toBe(title+'Match Score: 92.5/100'); expect(tree.props.disabled).toBeUndefined(); expect(tree.props.accessibilityState).toBeUndefined();
   }
   const blank=JobOpportunityCompactCard({opportunity:{...opportunity,description:'   '},primarySkillName:'   ',onPress(){}}); expect(text(blank)).not.toContain(description.trim());
 });
 
-it('composes the immutable Worker Home cardPad and constrained content with full fields and its original job callback', () => {
-  const styles=callerStyles('src/app/(worker)/(tabs)/worker/index.tsx');
-  expect(flat(styles.cardPad).paddingHorizontal).toBe(20);
-  const calls:string[]=[];
-  const tree=JobOpportunityCompactCard({opportunity,primarySkillName:skill,onPress:()=>calls.push(opportunity.job_id)});
-  tree.props.onPress();expect(calls).toEqual(['job-opportunity-1']);
-  const composed=jsx('View',{style:[styles.scroll,{width:220}],children:jsx('View',{style:styles.content,children:jsx('View',{style:styles.jobsBlock,children:jsx('View',{style:styles.cardPad,children:tree})})})});
-  expect(flat(composed.props.style).width).toBe(220); expect(text(composed)).toContain(description.trim());
-  contrast(composed,false,colors.background);contrast(composed,true,colors.background);
-});
+it('lists every Home opportunity as a compact row on Home itself, with no overlay and no truncated preview', () => {
+    const source = readFileSync('src/app/(worker)/(tabs)/worker/index.tsx', 'utf8');
+    expect(source).not.toContain('FindWorkOverlay');
+    expect(source).not.toMatch(/<Modal|AppSheet/);
+    expect(source).not.toContain('opportunities.slice');
+    expect(source).toMatch(/<JobOpportunityCompactCard\s+compact/);
+  });

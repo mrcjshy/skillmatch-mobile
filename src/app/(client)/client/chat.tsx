@@ -21,7 +21,7 @@ export default function ClientChat() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Booking Chat' }} />
+      <Stack.Screen options={{ title: 'Booking chat' }} />
       <BookingChat role="client" bookingId={typeof bookingId === 'string' ? bookingId : null} />
     </>
   );

@@ -1,7 +1,7 @@
 import { Link, Redirect } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
 
-import { SkillMatchTheme } from '@/constants/theme';
+import { AppButton } from '@/components/app-button';
+import { StateScreen } from '@/components/state-screen';
 import { useSession } from '@/providers/session-provider';
 
 export default function NotFoundScreen() {
@@ -14,31 +14,14 @@ export default function NotFoundScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>Page Not Found</Text>
-      <Link href="/" style={styles.link}>
-        Go to home
+    <StateScreen
+      icon={{ android: 'link_off', ios: 'link.badge.plus' }}
+      title="Page not found"
+      message="This page does not exist or may have moved."
+    >
+      <Link href="/" asChild>
+        <AppButton label="Go to home" />
       </Link>
-    </View>
+    </StateScreen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    gap: 12,
-  },
-  heading: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  link: {
-    fontSize: 18,
-    color: SkillMatchTheme.brand.primary,
-    padding: 4,
-  },
-});

@@ -1,192 +1,149 @@
 /**
- * SkillMatchTheme.ui is the light-only visual authority. Legacy exports below
- * remain compatibility adapters while screens migrate incrementally.
+ * SkillMatchTheme.ui is the light-only visual authority (Iteration 06 design language;
+ * see SKILLMATCH-DESIGN.md). Since Wave 5 there are no compatibility aliases: every consumer
+ * uses these canonical names.
  */
 
 import '@/global.css';
 
 import { Platform } from 'react-native';
 
-/** Role-neutral UI-HIG visual tokens; controls adopt sizing behavior in Wave 2. */
-const uiColors = {
-  background: '#FFFFFF',
+/**
+ * One accent (blue), one ink, one warm canvas. Success / warning / error are status colours
+ * only and are never the brand colour. All text pairs are verified by
+ * `src/constants/theme-contrast.test.ts` (text >= 4.5:1, control borders >= 3:1).
+ */
+const canonical = {
+  // Surfaces
+  canvas: '#F7F6F3',
   surface: '#FFFFFF',
-  surfaceSubtle: '#F4F4EC',
-  elevatedSurface: '#FFFFFF',
-  primary: '#163300',
-  primaryPressed: '#0F2400',
-  accent: '#9FE870',
-  accentPressed: '#7ED856',
-  accentSoft: '#E2F6D5',
-  textPrimary: '#111827',
-  textSecondary: '#5F6360',
-  textDisabled: '#6A6C6A',
-  textOnAccent: '#163300',
-  textInverse: '#FFFFFF',
-  border: '#D9DDD7',
-  controlBorder: '#737A70',
-  success: '#15803D',
-  warning: '#B45309',
-  danger: '#B91C1C',
-  info: '#1D4ED8',
-  selected: '#E2F6D5',
-  overlay: '#0E0F0C66',
-  warningTint: '#FFFBEB',
-  dangerTint: '#FEF2F2',
-  successTint: '#ECFDF3',
-  infoTint: '#EFF6FF',
+  surfaceRaised: '#FFFFFF', // sheets, dialogs, snackbars: separated by elevation, not by colour
+  surfaceSunken: '#EFEEEA', // input wells, disabled, segmented track
+  hairline: '#E1DFD9', // decorative dividers; never the only boundary of a control
+  controlBorder: '#7A818C', // control outlines, >= 3:1 on canvas / surface / sunken
+  // Accent
+  accent: '#1C3AA6', // deeper cobalt-navy; same single blue family
+  accentPressed: '#142B7F',
+  accentSubtle: '#E9EEFC',
+  accentSubtlePressed: '#DCE4FA', // pressed / selected-pressed state of an accentSubtle surface
+  onAccent: '#FFFFFF',
+  onAccentSecondary: '#E3E9FB',
+  // Text
+  textPrimary: '#1B1F24',
+  textSecondary: '#59606B',
+  textMuted: '#636A75', // metadata and placeholders; >= 4.5:1 on every surface
+  // Status (never brand)
+  success: '#1F7A45',
+  successTint: '#E7F4EC',
+  warning: '#8A5300',
+  warningTint: '#FFF4DC',
+  error: '#B3261E',
+  errorTint: '#FCEAE8',
+  info: '#1C3AA6', // informational state uses the accent family
+  infoTint: '#E9EEFC',
+  scrim: '#1B1F2466',
 } as const;
 
+// Use the platform-rendered sans deliberately: Roboto on Android, System on iOS.
+const nativeSans = Platform.select({ android: 'sans-serif', ios: 'System', default: 'system-ui' });
+
+const font = { fontFamily: nativeSans, includeFontPadding: false } as const;
+
 const ui = {
-  colors: {
-    ...uiColors,
-    // Transitional role aliases share the same brand accent.
-    accentWorker: uiColors.accent,
-    accentClient: uiColors.accent,
-    accentAdmin: uiColors.accent,
-  },
+  colors: canonical,
+  /**
+   * Hierarchy (sp at 100% text; all scale with the system font scale). Weights are limited to
+   * 400 / 600 / 700. Nothing tappable is below 14.
+   */
   type: {
-    display: { fontSize: 32, fontWeight: '700' as const, lineHeight: 38, letterSpacing: -0.3 },
-    screenTitle: { fontSize: 22, fontWeight: '700' as const, lineHeight: 28 },
-    sectionTitle: { fontSize: 17, fontWeight: '600' as const, lineHeight: 22 },
-    cardTitle: { fontSize: 17, fontWeight: '600' as const, lineHeight: 22 },
-    body: { fontSize: 16, fontWeight: '400' as const, lineHeight: 24 },
-    bodyEmphasis: { fontSize: 16, fontWeight: '600' as const, lineHeight: 24 },
-    helper: { fontSize: 14, fontWeight: '400' as const, lineHeight: 20 },
-    caption: { fontSize: 12, fontWeight: '500' as const, lineHeight: 16 },
-    button: { fontSize: 16, fontWeight: '600' as const, lineHeight: 20 },
-    badge: { fontSize: 12, fontWeight: '600' as const, lineHeight: 16 },
+    display: { ...font, fontSize: 28, fontWeight: '700' as const, lineHeight: 34, letterSpacing: -0.2 },
+    screenTitle: { ...font, fontSize: 22, fontWeight: '700' as const, lineHeight: 28, letterSpacing: -0.2 },
+    sectionTitle: { ...font, fontSize: 18, fontWeight: '700' as const, lineHeight: 24, letterSpacing: 0 },
+    body: { ...font, fontSize: 16, fontWeight: '400' as const, lineHeight: 24, letterSpacing: 0 },
+    bodyEmphasis: { ...font, fontSize: 16, fontWeight: '600' as const, lineHeight: 24, letterSpacing: 0 },
+    helper: { ...font, fontSize: 14, fontWeight: '400' as const, lineHeight: 20, letterSpacing: 0 },
+    label: { ...font, fontSize: 14, fontWeight: '600' as const, lineHeight: 20, letterSpacing: 0 },
+    caption: { ...font, fontSize: 12, fontWeight: '400' as const, lineHeight: 16, letterSpacing: 0 },
+    button: { ...font, fontSize: 16, fontWeight: '600' as const, lineHeight: 24, letterSpacing: 0 },
+    badge: { ...font, fontSize: 13, fontWeight: '600' as const, lineHeight: 18, letterSpacing: 0 },
+    money: { ...font, fontSize: 20, fontWeight: '700' as const, lineHeight: 26, letterSpacing: -0.2, fontVariant: ['tabular-nums'] as 'tabular-nums'[] },
+    numeric: { ...font, fontSize: 18, fontWeight: '600' as const, lineHeight: 24, letterSpacing: 0, fontVariant: ['tabular-nums'] as 'tabular-nums'[] },
   },
+  /**
+   * 4-pt grid. `xxs` (2) is the one retained sub-grid step: the gap between a row's title and its
+   * supporting line, used the same way by every role's rows.
+   */
   spacing: {
-    xxs: 2, // Transitional optical/legacy spacing; not a new layout step.
+    xxs: 2,
     xs: 4,
     sm: 8,
     md: 12,
     lg: 16,
     gutter: 20,
+    // Compact shared upper/header insets; body rows retain their existing gutter.
+    headerGutter: 24,
+    headerTop: 16,
+    headerGap: 4,
     xl: 24,
     xxl: 32,
-    xxxl: 40, // Transitional legacy spacing.
     xxxxl: 48,
-    legacyLarge: 64, // Preserve Spacing.six until its consumers migrate.
   },
+  /**
+   * control 12 (buttons, fields) - card 16 - sheet 24 - pill for chips / avatars. `sm` (8) is only for
+   * an element nested inside a control or card (checkbox, QR inset, a text button's pressed fill).
+   */
   radius: {
     sm: 8,
-    md: 12,
-    lg: 16,
+    control: 12,
+    card: 16,
+    sheet: 24,
     pill: 999,
   },
+  /** Two surface levels (canvas, surface) separated by hairlines; shadow only for floating layers. */
+  elevation: {
+    flat: {},
+    floating: {
+      shadowColor: '#1B1F24',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.14,
+      shadowRadius: 12,
+      elevation: 6,
+    },
+    sheet: {
+      shadowColor: '#1B1F24',
+      shadowOffset: { width: 0, height: -4 },
+      shadowOpacity: 0.12,
+      shadowRadius: 16,
+      elevation: 12,
+    },
+  },
   size: {
+    minTarget: 48,
     icon: 20,
     tabIcon: 24,
+    tabIndicatorWidth: 52,
+    tabIndicatorHeight: 32,
     iconCircle: 40,
     actionCircle: 56,
     fieldHeight: 52,
     searchHeight: 52,
-    primaryButton: 56,
-    secondaryButton: 52,
+    primaryButton: 52,
+    secondaryButton: 48,
     ghostButton: 48,
     compactButton: 48,
+    iconButton: 48,
     segmentHeight: 40,
     chipHeight: 28,
     homeAvatar: 40,
-    profileAvatar: 64,
+    profileAvatar: 72,
     listRowMinHeight: 56,
+    sheetMaxHeightRatio: 0.9,
+    sheetHandleWidth: 36,
+    sheetHandleHeight: 4,
     mapPickerHeight: 180,
     mapApproxHeight: 160,
   },
 } as const;
 
-/** Existing compatibility shapes derive from the operational ui authority. */
-export const SkillMatchTheme = {
-  brand: {
-    background: ui.colors.background,
-    primary: ui.colors.primary,
-    primaryPressed: ui.colors.primaryPressed,
-    primaryMuted: ui.colors.accentSoft,
-  },
-  surface: { default: ui.colors.surface, subtle: ui.colors.surfaceSubtle },
-  border: { default: ui.colors.border },
-  text: {
-    primary: ui.colors.textPrimary,
-    secondary: ui.colors.textSecondary,
-    inverse: ui.colors.textInverse,
-  },
-  feedback: {
-    success: ui.colors.success,
-    warning: ui.colors.warning,
-    danger: ui.colors.danger,
-    info: ui.colors.info,
-  },
-  status: {
-    open: ui.colors.info,
-    confirmed: ui.colors.info,
-    completed: ui.colors.success,
-    cancelled: ui.colors.danger,
-    pending: ui.colors.warning,
-    paid: ui.colors.success,
-  },
-  spacing: {
-    screenGutter: ui.spacing.gutter,
-    cardPadding: ui.spacing.lg,
-    cardGap: ui.spacing.md,
-    sectionGap: ui.spacing.xl,
-  },
-  radius: { card: ui.radius.lg, input: ui.radius.md },
-  // Transitional dimensions: minimum targets and control reflow are Wave 2.
-  size: { iconTarget: ui.size.ghostButton, primaryCtaHeight: ui.size.fieldHeight },
-  ui,
-} as const;
-
-const legacyColors = {
-  text: ui.colors.textPrimary,
-  background: ui.colors.background,
-  backgroundElement: ui.colors.surfaceSubtle,
-  backgroundSelected: ui.colors.selected,
-  textSecondary: ui.colors.textSecondary,
-} as const;
-
-export const Colors = {
-  light: legacyColors,
-  dark: legacyColors,
-} as const;
-
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
-
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'system-ui',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
-
-export const Spacing = {
-  half: ui.spacing.xxs,
-  one: ui.spacing.xs,
-  two: ui.spacing.sm,
-  three: ui.spacing.lg,
-  four: ui.spacing.xl,
-  five: ui.spacing.xxl,
-  six: ui.spacing.legacyLarge,
-} as const;
-
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+/** The single Iteration 06 visual authority. Screens read `SkillMatchTheme.ui` (or `useUiTheme()`). */
+export const SkillMatchTheme = { ui } as const;

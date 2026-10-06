@@ -10,8 +10,7 @@ import {
 } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { AppCard } from '@/components/app-card';
-import { AppChip } from '@/components/app-chip';
+import { AppDivider } from '@/components/app-divider';
 import { AppNotice } from '@/components/app-notice';
 import { InlineStatus } from '@/components/inline-status';
 import { SkillMatchTheme } from '@/constants/theme';
@@ -305,8 +304,8 @@ export default function NotificationList({
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={handleRefresh}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
         />
       }
     >
@@ -327,63 +326,77 @@ export default function NotificationList({
         // A successful call that returned nothing — not an error, not a block.
         <InlineStatus variant="empty" message={COPY.empty} />
       ) : (
-        notifications.map((n) => {
-          const unread = isUnread(n.is_read);
-          const canOpen = onNotificationPress !== undefined;
-          const created = formatTimestamp(n.created_at);
-          const isMarkingThis = markingId === n.id;
+        // One grouped surface; rows are separated by hairlines, never by nested cards.
+        <View style={styles.group}>
+          {notifications.map((n, index) => {
+            const unread = isUnread(n.is_read);
+            const canOpen = onNotificationPress !== undefined;
+            const created = formatTimestamp(n.created_at);
+            const isMarkingThis = markingId === n.id;
 
-          const body = (
-            <>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardLabel}>{formatNotificationLabel(n.type)}</Text>
-                {unread ? <AppChip label={COPY.unread} variant="neutral" /> : null}
-              </View>
-              {/*
-                The server's own message. After N12-DB only trusted
-                postgres-owned functions can create a notification, so this
-                text is authoritative rather than user-supplied.
-              */}
-              <Text style={[styles.message, unread && styles.messageUnread]}>{n.message}</Text>
-              {created ? <Text style={styles.timestamp}>{created}</Text> : null}
-              {isMarkingThis ? (
-                <View style={styles.markingRow}>
-                  <ActivityIndicator color={colors.primary} />
-                  <Text style={styles.note}>Marking as read…</Text>
+            const body = (
+              <>
+                <View style={styles.rowHeader}>
+                  <View style={styles.rowTitle}>
+                    {unread ? <View style={styles.dot} accessible={false} /> : null}
+                    <Text style={styles.rowLabel}>{formatNotificationLabel(n.type)}</Text>
+                  </View>
+                  {unread ? <Text style={styles.unreadWord}>{COPY.unread}</Text> : null}
                 </View>
-              ) : unread ? (
-                <Text style={styles.hint}>
-                  {canOpen ? 'Tap to mark as read and open' : 'Tap to mark as read'}
-                </Text>
-              ) : canOpen ? (
-                <Text style={styles.hint}>Tap to open</Text>
-              ) : null}
-            </>
-          );
+                {/*
+                  The server's own message. After N12-DB only trusted
+                  postgres-owned functions can create a notification, so this
+                  text is authoritative rather than user-supplied.
+                */}
+                <Text style={[styles.message, unread && styles.messageUnread]}>{n.message}</Text>
+                {created ? <Text style={styles.timestamp}>{created}</Text> : null}
+                {isMarkingThis ? (
+                  <View style={styles.markingRow}>
+                    <ActivityIndicator color={colors.accent} />
+                    <Text style={styles.note}>Marking as read…</Text>
+                  </View>
+                ) : unread ? (
+                  <Text style={styles.hint}>
+                    {canOpen ? 'Tap to mark as read and open' : 'Tap to mark as read'}
+                  </Text>
+                ) : canOpen ? (
+                  <Text style={styles.hint}>Tap to open</Text>
+                ) : null}
+              </>
+            );
 
-          // Worker/Client behavior stays mark-read-only. A caller may opt into
-          // activation (the Admin inbox does) so already-read rows can still
-          // open their trusted destination.
-          return unread || canOpen ? (
-            <Pressable
-              key={n.id}
-              onPress={() => { void handleNotificationPress(n); }}
-              disabled={busy}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: busy, busy: isMarkingThis }}
-              accessibilityLabel={`${formatNotificationLabel(n.type)}${unread ? ', unread' : ''}. ${n.message}`}
-              style={styles.cardTarget}
-            >
-              {({ pressed }) => (
-                <AppCard style={[styles.cardInteractive, unread && styles.cardUnread,
-                  !busy && pressed && (unread ? styles.cardUnreadPressed : styles.cardPressed),
-                  busy && styles.cardDisabled]}>{body}</AppCard>
-              )}
-            </Pressable>
-          ) : (
-            <AppCard key={n.id}>{body}</AppCard>
-          );
-        })
+            // Worker/Client behavior stays mark-read-only. A caller may opt into
+            // activation (the Admin inbox does) so already-read rows can still
+            // open their trusted destination.
+            const row =
+              unread || canOpen ? (
+                <Pressable
+                  onPress={() => { void handleNotificationPress(n); }}
+                  disabled={busy}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: busy, busy: isMarkingThis }}
+                  accessibilityLabel={`${formatNotificationLabel(n.type)}${unread ? ', unread' : ''}. ${n.message}`}
+                  style={({ pressed }) => [
+                    styles.row,
+                    unread && styles.rowUnread,
+                    !busy && pressed && (unread ? styles.rowUnreadPressed : styles.rowPressed),
+                    busy && styles.rowBusy,
+                  ]}
+                >
+                  {body}
+                </Pressable>
+              ) : (
+                <View style={styles.row}>{body}</View>
+              );
+
+            return (
+              <View key={n.id}>
+                {index > 0 ? <AppDivider /> : null}
+                {row}
+              </View>
+            );
+          })}
+        </View>
       )}
     </ScrollView>
   );
@@ -392,47 +405,64 @@ export default function NotificationList({
 const styles = StyleSheet.create({
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   content: {
     flexGrow: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     padding: spacing.gutter,
-    gap: spacing.md,
-    paddingBottom: spacing.xxxl + spacing.sm,
+    gap: spacing.lg,
+    paddingBottom: spacing.xxxxl,
   },
   note: {
     ...type.helper,
     color: colors.textSecondary,
   },
-  cardUnread: {
-    backgroundColor: colors.accentSoft,
-    borderRadius: radius.md,
+  group: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
+    overflow: 'hidden',
+    borderCurve: 'continuous',
   },
-  cardTarget: {
-    minHeight: size.ghostButton,
-    minWidth: size.ghostButton,
+  row: {
+    minHeight: size.listRowMinHeight,
+    minWidth: size.minTarget,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.xs,
   },
-  cardInteractive: {
-    minHeight: size.ghostButton,
-    borderWidth: 1.5,
-    borderColor: colors.controlBorder,
-  },
-  cardPressed: { backgroundColor: colors.selected },
-  cardUnreadPressed: { backgroundColor: colors.surfaceSubtle },
-  cardDisabled: {
-    backgroundColor: colors.surfaceSubtle,
-  },
-  cardHeader: {
+  rowUnread: { backgroundColor: colors.accentSubtle },
+  rowPressed: { backgroundColor: colors.surfaceSunken },
+  rowUnreadPressed: { backgroundColor: colors.accentSubtlePressed },
+  rowBusy: { backgroundColor: colors.surfaceSunken },
+  rowHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  cardLabel: {
-    ...type.cardTitle,
+  rowTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flexShrink: 1,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accent,
+  },
+  rowLabel: {
+    ...type.bodyEmphasis,
     color: colors.textPrimary,
     flexShrink: 1,
+  },
+  unreadWord: {
+    ...type.badge,
+    color: colors.accent,
   },
   message: {
     ...type.body,
@@ -447,8 +477,8 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   hint: {
-    ...type.bodyEmphasis,
-    color: colors.primary,
+    ...type.label,
+    color: colors.accent,
   },
   markingRow: {
     flexDirection: 'row',

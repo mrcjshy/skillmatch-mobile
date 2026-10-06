@@ -1,18 +1,12 @@
-import { Link, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Image,
-  KeyboardAvoidingView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StyleSheet, View, type TextInput } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
 import { AppField } from '@/components/app-field';
-import { SkillMatchTheme } from '@/constants/theme';
+import { AuthLink, AuthScreen, useAuthScroll } from '@/components/auth-screen';
+import { FormMessage } from '@/components/form-message';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import {
   EMAIL_VERIFICATION_COPY,
   getResendCooldownEndsAt,
@@ -27,10 +21,9 @@ import { supabase } from '@/lib/supabase';
 import { persistCurrentLegalConsentAfterSignup } from '@/lib/user-consent';
 import { useAccount } from '@/providers/account-provider';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
-
 export default function VerifyEmailScreen() {
-  const insets = useSafeAreaInsets();
+  const styles = createStyles(useUiTheme());
+  const { scrollRef, focusField } = useAuthScroll();
   const params = useLocalSearchParams<{ email?: string | string[] }>();
   const { retryAccountBootstrap } = useAccount();
   const phoneOtpEnabled = isPhoneOtpEnabled();
@@ -46,8 +39,10 @@ export default function VerifyEmailScreen() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [hasVerifiedSession, setHasVerifiedSession] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const codeRef = useRef<TextInput>(null);
   const [cooldownEndsAtMs, setCooldownEndsAtMs] = useState(() =>
     getResendCooldownEndsAt(Date.now())
   );
@@ -84,11 +79,13 @@ export default function VerifyEmailScreen() {
   async function handleVerify() {
     if (verifyInFlight.current || resendInFlight.current || !email) return;
 
+    setCodeError(null);
     setErrorMessage(null);
     setSuccessMessage(null);
 
     if (!hasVerifiedSession && !isValidEmailVerificationCode(code)) {
-      setErrorMessage(EMAIL_VERIFICATION_COPY.invalidCode);
+      setCodeError(EMAIL_VERIFICATION_COPY.invalidCode);
+      focusField(codeRef);
       return;
     }
 
@@ -98,7 +95,8 @@ export default function VerifyEmailScreen() {
       if (!hasVerifiedSession) {
         const session = await verifySignupEmailOtp(supabase.auth, email, code);
         if (session === null) {
-          setErrorMessage(EMAIL_VERIFICATION_COPY.verificationFailed);
+          setCodeError(EMAIL_VERIFICATION_COPY.verificationFailed);
+          focusField(codeRef);
           return;
         }
         setHasVerifiedSession(true);
@@ -129,6 +127,7 @@ export default function VerifyEmailScreen() {
 
     resendInFlight.current = true;
     setIsResending(true);
+    setCodeError(null);
     setErrorMessage(null);
     setSuccessMessage(null);
     setCooldownEndsAtMs(getResendCooldownEndsAt(requestNowMs));
@@ -154,131 +153,71 @@ export default function VerifyEmailScreen() {
       : 'Resend verification code';
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior="padding">
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.xxxl },
-        ]}
-      >
-        <View style={styles.brand}>
-          <Image
-            source={require('@/assets/images/skillmatch-logo.png')}
-            style={styles.brandLogo}
-            accessibilityIgnoresInvertColors
-          />
-          <Text style={styles.brandName}>SkillMatch</Text>
-        </View>
-
-        <Text style={styles.heading}>Verify Your Email</Text>
-        <Text style={styles.status}>
-          Enter the six-digit code sent to your email to finish creating your account.
-        </Text>
-
+    <AuthScreen
+      scrollRef={scrollRef}
+      title="Verify your email"
+      description={
+        missingEmail
+          ? 'Enter the six-digit code sent to your email to finish creating your account.'
+          : `We sent a six-digit code to ${email}. Enter it to finish creating your account.`
+      }
+      brand={false}
+      footer={<AuthLink dismissTo href="/register">Back to registration</AuthLink>}
+    >
+      {missingEmail ? (
+        <FormMessage tone="error" message={EMAIL_VERIFICATION_COPY.missingEmail} />
+      ) : (
         <View style={styles.form}>
-          {missingEmail ? (
-            <Text style={styles.error}>{EMAIL_VERIFICATION_COPY.missingEmail}</Text>
-          ) : (
-            <>
-              <AppField
-                label="Verification Code"
-                value={code}
-                onChangeText={setCode}
-                placeholder="000000"
-                keyboardType="number-pad"
-                autoCapitalize="none"
-                autoCorrect={false}
-                maxLength={6}
-                disabled={busy || hasVerifiedSession}
-                accessibilityLabel="Six-digit email verification code"
-              />
+          <AppField
+            inputRef={codeRef}
+            label="Verification code"
+            value={code}
+            onChangeText={setCode}
+            placeholder="000000"
+            keyboardType="number-pad"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="one-time-code"
+            textContentType="oneTimeCode"
+            maxLength={6}
+            disabled={busy || hasVerifiedSession}
+            inputStyle={styles.code}
+            errorText={codeError ?? undefined}
+            accessibilityLabel="Six-digit email verification code"
+          />
 
-              {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-              {successMessage ? (
-                <Text style={styles.success}>{successMessage}</Text>
-              ) : null}
+          {errorMessage ? <FormMessage tone="error" message={errorMessage} /> : null}
+          {successMessage ? <FormMessage tone="success" message={successMessage} /> : null}
 
+          <View style={styles.actions}>
+            <AppButton
+              label={hasVerifiedSession ? 'Finish account setup' : 'Verify email'}
+              onPress={handleVerify}
+              loading={isVerifying}
+              disabled={isResending || (hasVerifiedSession && phoneOtpEnabled)}
+            />
+            {!hasVerifiedSession ? (
               <AppButton
-                label={hasVerifiedSession ? 'Finish Account Setup' : 'Verify Email'}
-                onPress={handleVerify}
-                loading={isVerifying}
-                disabled={isResending || (hasVerifiedSession && phoneOtpEnabled)}
+                label={resendLabel}
+                onPress={handleResend}
+                variant="ghost"
+                loading={isResending}
+                disabled={isVerifying || cooldownSeconds > 0}
               />
-              {!hasVerifiedSession ? (
-                <AppButton
-                  label={resendLabel}
-                  onPress={handleResend}
-                  variant="ghost"
-                  loading={isResending}
-                  disabled={isVerifying || cooldownSeconds > 0}
-                />
-              ) : null}
-            </>
-          )}
-
-          <Link dismissTo href="/register" style={styles.link}>
-            Back to Registration
-          </Link>
+            ) : null}
+          </View>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      )}
+    </AuthScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  content: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.gutter,
-    paddingBottom: spacing.xxl,
-  },
-  brand: {
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  brandLogo: {
-    width: 48,
-    height: 48,
-  },
-  brandName: {
-    color: colors.primary,
-    fontSize: 18,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  heading: {
-    ...type.display,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginTop: spacing.lg,
-  },
-  status: {
-    ...type.helper,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-  },
-  form: {
-    marginTop: spacing.lg,
-    gap: spacing.lg,
-  },
-  error: {
-    ...type.helper,
-    color: colors.danger,
-  },
-  success: {
-    ...type.helper,
-    color: colors.success,
-  },
-  link: {
-    fontSize: 16,
-    fontWeight: '600',
-    lineHeight: 20,
-    color: colors.primary,
-    textAlign: 'center',
-    paddingVertical: 12,
-  },
-});
+function createStyles(ui: UiTheme) {
+  const { type, spacing } = ui;
+  return StyleSheet.create({
+    form: { gap: spacing.lg },
+    actions: { gap: spacing.sm },
+    // One-time code: large, centred, evenly tracked digits that stay legible at 130%.
+    code: { ...type.numeric, fontSize: 22, lineHeight: 28, letterSpacing: 8, textAlign: 'center' },
+  });
+}

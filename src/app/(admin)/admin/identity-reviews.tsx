@@ -1,6 +1,7 @@
 import { type Href, useRouter } from 'expo-router';
 
 import { IdentityReviewQueue } from '@/components/identity-review-queue';
+import { RefinementThemeProvider } from '@/components/refinement-theme';
 import { useAccount } from '@/providers/account-provider';
 
 /** Reuses the established queue and verification-details approval path. */
@@ -12,14 +13,16 @@ export default function AdminIdentityReviews() {
     : undefined;
 
   return (
-    <IdentityReviewQueue
-      adminId={adminId}
-      onSelectWorker={(userId) => {
-        router.push({
-          pathname: '/admin/verification-details',
-          params: { userId },
-        } as unknown as Href);
-      }}
-    />
+    <RefinementThemeProvider>
+      <IdentityReviewQueue
+        adminId={adminId}
+        onSelectWorker={(userId) => {
+          router.push({
+            pathname: '/admin/verification-details',
+            params: { userId },
+          } as unknown as Href);
+        }}
+      />
+    </RefinementThemeProvider>
   );
 }

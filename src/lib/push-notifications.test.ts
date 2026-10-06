@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ANDROID_CHANNEL_ID,
   ANDROID_CHANNEL_NAME,
+  ANDROID_NOTIFICATION_SOUND,
+  LEGACY_ANDROID_CHANNEL_ID,
+  chatTapDestination,
+  consumeReadyPushNavigation,
+  getPendingChatBookingId,
+  parseChatPushData,
   ADMIN_NOTIFICATIONS_HREF,
   ADMIN_REPORTS_HREF,
   CLIENT_NOTIFICATIONS_HREF,
@@ -44,18 +50,21 @@ function fakeNotifications(initialStatus = 'granted'): NotificationsLike & {
   permissionCalls: { get: number; request: number };
   tokensRequested: { projectId: string }[];
   channels: { id: string; name: string }[];
+  deletedChannels: string[];
   handlers: number;
 } {
   let status = initialStatus;
   const permissionCalls = { get: 0, request: 0 };
   const tokensRequested: { projectId: string }[] = [];
   const channels: { id: string; name: string }[] = [];
+  const deletedChannels: string[] = [];
   let handlers = 0;
 
   return {
     permissionCalls,
     tokensRequested,
     channels,
+    deletedChannels,
     get handlers() {
       return handlers;
     },
@@ -63,6 +72,9 @@ function fakeNotifications(initialStatus = 'granted'): NotificationsLike & {
     async setNotificationChannelAsync(id, channel) {
       channels.push({ id, name: channel.name });
       return { id };
+    },
+    async deleteNotificationChannelAsync(id) {
+      deletedChannels.push(id);
     },
     async getPermissionsAsync() {
       permissionCalls.get += 1;
@@ -99,6 +111,12 @@ function constantsWithProject(projectId?: string): ProjectIdSource {
 function tapResponse(data: unknown) {
   return { notification: { request: { content: { data } } } };
 }
+
+function notificationWith(data: unknown) {
+  return { request: { content: { data } } };
+}
+
+const BOOKING_ID = '44444444-4444-4444-8444-444444444444';
 
 describe('push-notifications', () => {
   beforeEach(() => {
@@ -296,7 +314,7 @@ describe('push-notifications', () => {
 
   it('configures a presentation-only foreground handler', async () => {
     const captured: {
-      handleNotification: () => Promise<Record<string, boolean>>;
+      handleNotification: (notification: unknown) => Promise<Record<string, boolean>>;
     }[] = [];
     const notifications = fakeNotifications('granted');
     notifications.setNotificationHandler = (next) => {
@@ -306,7 +324,7 @@ describe('push-notifications', () => {
     configureForegroundHandler(notifications);
     expect(isForegroundHandlerConfigured()).toBe(true);
     expect(captured).toHaveLength(1);
-    await expect(captured[0]?.handleNotification()).resolves.toEqual({
+    await expect(captured[0]?.handleNotification(notificationWith({ notification_id: 'x' }))).resolves.toEqual({
       shouldShowBanner: true,
       shouldShowList: true,
       shouldPlaySound: true,
@@ -314,14 +332,64 @@ describe('push-notifications', () => {
     });
   });
 
+  it('suppresses the OS presentation of a foreground chat push (the in-app banner covers it)', async () => {
+    const captured: { handleNotification: (n: unknown) => Promise<Record<string, boolean>> }[] = [];
+    const notifications = fakeNotifications('granted');
+    notifications.setNotificationHandler = (next) => {
+      captured.push(next);
+    };
+    configureForegroundHandler(notifications);
+    await expect(
+      captured[0]?.handleNotification(notificationWith({ kind: 'message', booking_id: BOOKING_ID }))
+    ).resolves.toEqual({
+      shouldShowBanner: false,
+      shouldShowList: false,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
+    });
+    // A general notification or a malformed chat payload keeps the normal presentation.
+    for (const data of [{ notification_id: 'x' }, { kind: 'message' }, null]) {
+      await expect(captured[0]?.handleNotification(notificationWith(data))).resolves.toMatchObject({
+        shouldShowBanner: true,
+        shouldPlaySound: true,
+      });
+    }
+  });
+
   it('sets the Android notification channel once for the same process', async () => {
     const notifications = fakeNotifications('granted');
+    const options: Record<string, unknown>[] = [];
+    const record = notifications.setNotificationChannelAsync;
+    notifications.setNotificationChannelAsync = async (id, channel) => {
+      options.push({ ...channel });
+      return record(id, channel);
+    };
     await ensureAndroidNotificationChannel(notifications, 'android');
     await ensureAndroidNotificationChannel(notifications, 'android');
     expect(isAndroidChannelReady()).toBe(true);
     expect(notifications.channels).toEqual([
       { id: ANDROID_CHANNEL_ID, name: ANDROID_CHANNEL_NAME },
     ]);
+    // The versioned channel carries the bundled Tugma file (expo-notifications `sounds`) at HIGH.
+    expect(options).toEqual([
+      { name: ANDROID_CHANNEL_NAME, importance: 6, sound: ANDROID_NOTIFICATION_SOUND },
+    ]);
+    expect(notifications.deletedChannels).toEqual([LEGACY_ANDROID_CHANNEL_ID]);
+  });
+
+  it('uses a new versioned channel id and the bundled Tugma file name', () => {
+    expect(ANDROID_CHANNEL_ID).toBe('skillmatch_alerts_v1');
+    expect(LEGACY_ANDROID_CHANNEL_ID).toBe('default');
+    expect(ANDROID_NOTIFICATION_SOUND).toBe('skillmatch_tugma.wav');
+  });
+
+  it('keeps the channel usable when the legacy channel cannot be deleted', async () => {
+    const notifications = fakeNotifications('granted');
+    notifications.deleteNotificationChannelAsync = async () => {
+      throw new Error('no such channel');
+    };
+    await ensureAndroidNotificationChannel(notifications, 'android');
+    expect(isAndroidChannelReady()).toBe(true);
   });
 
   it('does not expose or wrap the R5 realtime helper', async () => {
@@ -551,5 +619,96 @@ describe('pending OPEN_NOTIFICATIONS_INBOX intent', () => {
     clearPendingNotificationsInboxIntent();
     expect(hasPendingNotificationsInboxIntent()).toBe(false);
     expect(consumeReadyInboxNavigation(readyClient())).toBeNull();
+  });
+});
+
+describe('W7 booking chat push tap', () => {
+  function ready(role: 'worker' | 'client' | 'administrator'): PendingInboxNavInput {
+    return {
+      hasPendingInboxIntent: true,
+      isSessionLoading: false,
+      hasSession: true,
+      accountStatus: 'resolved',
+      role,
+      isActive: true,
+      isNotificationTypeResolved: true,
+      notificationType: null,
+    };
+  }
+
+  beforeEach(() => {
+    resetPushClientState();
+  });
+
+  it('parses only kind=message with a UUID booking id', () => {
+    expect(parseChatPushData({ kind: 'message', booking_id: BOOKING_ID })).toEqual({ bookingId: BOOKING_ID });
+    expect(parseChatPushData({ kind: 'message', booking_id: 'abc' })).toBeNull();
+    expect(parseChatPushData({ booking_id: BOOKING_ID })).toBeNull();
+    expect(parseChatPushData({ kind: 'notification', booking_id: BOOKING_ID })).toBeNull();
+    expect(parseChatPushData(null)).toBeNull();
+  });
+
+  it('records a pending chat booking id from a chat tap, and none from a general tap', () => {
+    captureNotificationResponse(tapResponse({ kind: 'message', booking_id: BOOKING_ID }));
+    expect(hasPendingNotificationsInboxIntent()).toBe(true);
+    expect(getPendingChatBookingId()).toBe(BOOKING_ID);
+    expect(getPendingNotificationId()).toBeNull();
+    captureNotificationResponse(tapResponse({ notification_id: '33333333-3333-4333-8333-333333333333' }));
+    expect(getPendingChatBookingId()).toBeNull();
+  });
+
+  it('opens the role chat only when the Booking was re-authorized', () => {
+    expect(chatTapDestination('client', BOOKING_ID, true)).toEqual({
+      kind: 'chat', pathname: '/client/chat', bookingId: BOOKING_ID,
+    });
+    expect(chatTapDestination('worker', BOOKING_ID, true)).toEqual({
+      kind: 'chat', pathname: '/worker/chat', bookingId: BOOKING_ID,
+    });
+  });
+
+  it('falls back to the role inbox when the Booking is not authorized or not confirmed', () => {
+    expect(chatTapDestination('client', BOOKING_ID, false)).toEqual({ kind: 'inbox', href: '/client/notifications' });
+    expect(chatTapDestination('worker', BOOKING_ID, false)).toEqual({ kind: 'inbox', href: '/worker/notifications' });
+    expect(chatTapDestination('worker', null, true)).toEqual({ kind: 'inbox', href: '/worker/notifications' });
+  });
+
+  it('never opens a chat for an Administrator or an unknown role', () => {
+    expect(chatTapDestination('administrator', BOOKING_ID, true)).toEqual({ kind: 'inbox', href: '/admin/notifications' });
+    expect(chatTapDestination('guest', BOOKING_ID, true)).toBeNull();
+  });
+
+  it('waits (does not consume) until session and account are resolved', () => {
+    captureNotificationResponse(tapResponse({ kind: 'message', booking_id: BOOKING_ID }));
+    expect(consumeReadyPushNavigation({ ...ready('client'), hasSession: false }, true)).toBeNull();
+    expect(consumeReadyPushNavigation({ ...ready('client'), accountStatus: 'pending' }, true)).toBeNull();
+    expect(consumeReadyPushNavigation({ ...ready('client'), isActive: false }, true)).toBeNull();
+    expect(getPendingChatBookingId()).toBe(BOOKING_ID);
+  });
+
+  it('consumes a ready chat intent exactly once', () => {
+    captureNotificationResponse(tapResponse({ kind: 'message', booking_id: BOOKING_ID }));
+    expect(consumeReadyPushNavigation(ready('worker'), true)).toEqual({
+      kind: 'chat', pathname: '/worker/chat', bookingId: BOOKING_ID,
+    });
+    expect(hasPendingNotificationsInboxIntent()).toBe(false);
+    expect(getPendingChatBookingId()).toBeNull();
+    expect(consumeReadyPushNavigation(ready('worker'), true)).toBeNull();
+  });
+
+  it('routes an unauthorized chat tap to the inbox and clears it', () => {
+    captureNotificationResponse(tapResponse({ kind: 'message', booking_id: BOOKING_ID }));
+    expect(consumeReadyPushNavigation(ready('client'), false)).toEqual({ kind: 'inbox', href: '/client/notifications' });
+    expect(hasPendingNotificationsInboxIntent()).toBe(false);
+  });
+
+  it('keeps general taps on the existing inbox path', () => {
+    captureNotificationResponse(tapResponse({ notification_id: '33333333-3333-4333-8333-333333333333' }));
+    expect(consumeReadyPushNavigation(ready('client'), false)).toEqual({ kind: 'inbox', href: '/client/notifications' });
+  });
+
+  it('clears a pending chat intent on sign-out', () => {
+    captureNotificationResponse(tapResponse({ kind: 'message', booking_id: BOOKING_ID }));
+    clearPendingNotificationsInboxIntent();
+    expect(getPendingChatBookingId()).toBeNull();
   });
 });

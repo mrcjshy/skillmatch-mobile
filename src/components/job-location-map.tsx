@@ -6,7 +6,7 @@ import { AppButton } from '@/components/app-button';
 import {
   WorkerJobLocationMapLibre,
 } from '@/components/worker-job-location-map';
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import {
   COPY,
   classifyMapAvailability,
@@ -18,7 +18,7 @@ import { formatLocation } from '@/lib/bookings';
 import { JOB_MAP_STYLE, jobMapRuntime as mapsRuntime } from '@/lib/native-job-map';
 import { pinToLngLat } from '@/lib/map-coordinates';
 
-const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+
 
 export function nativeJobMapsLoaded(): boolean {
   return mapsRuntime !== null;
@@ -51,6 +51,9 @@ function StaticJobMap({
   pin: JobPin;
   accessibilityLabel: string;
 }) {
+  const ui = useUiTheme();
+  const { styles } = createStyles(ui);
+
   const [mapReady, setMapReady] = useState(mapsRuntime !== null);
   const [loaded, setLoaded] = useState(false);
   const Map = mapsRuntime?.Map;
@@ -105,6 +108,9 @@ function StaticJobMap({
 }
 
 export function WorkerOpportunityJobLocation({ location }: { location: OpportunityLocation | null }) {
+  const ui = useUiTheme();
+  const { styles } = createStyles(ui);
+
   if (!location) return <Text style={styles.note}>{COPY.workerLocationUnavailable}</Text>;
   return (
     <View style={styles.block}>
@@ -127,6 +133,9 @@ export function WorkerAssignedJobLocation({
   onOpenMaps: () => void;
   allowNavigation?: boolean;
 }) {
+  const ui = useUiTheme();
+  const { styles } = createStyles(ui);
+
   if (surface.kind === 'suppressed' || surface.kind === 'unavailable') {
     if (surface.kind === 'unavailable') {
       return (
@@ -195,50 +204,34 @@ export async function openWorkerMapsUrl(url: string | null): Promise<boolean> {
   }
 }
 
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing, radius } = ui;
 const styles = StyleSheet.create({
-  destination: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.primary, borderWidth: 3, borderColor: '#ffffff' },
+  destination: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.accent, borderWidth: 3, borderColor: colors.onAccent },
   loading: { ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center' },
   block: {
-    gap: 8,
-    marginTop: 8,
-  },
-  mapFrame: {
-    height: 180,
-    borderRadius: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
+    gap: spacing.sm,
+    marginTop: spacing.sm,
   },
   map: {
     width: '100%',
     height: '100%',
   },
-  unavailable: {
-    height: 120,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: SkillMatchTheme.border.default,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    backgroundColor: SkillMatchTheme.surface.subtle,
-  },
   heading: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: SkillMatchTheme.text.primary,
+    ...type.label,
+    color: colors.textPrimary,
   },
   body: {
-    fontSize: 14,
-    color: SkillMatchTheme.text.primary,
+    ...type.helper,
+    color: colors.textPrimary,
   },
   help: {
-    fontSize: 12,
-    color: SkillMatchTheme.text.secondary,
+    ...type.caption,
+    color: colors.textSecondary,
   },
   note: {
-    fontSize: 14,
-    color: SkillMatchTheme.feedback.warning,
+    ...type.helper,
+    color: colors.warning,
   },
   exactBlock: {
     gap: spacing.sm,
@@ -246,21 +239,21 @@ const styles = StyleSheet.create({
   },
   exactMapFrame: {
     height: 200,
-    borderRadius: radius.md,
+    borderRadius: radius.control,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceSubtle,
+    borderColor: colors.hairline,
+    backgroundColor: colors.surfaceSunken,
   },
   exactUnavailable: {
     height: 200,
-    borderRadius: radius.md,
+    borderRadius: radius.control,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.hairline,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
-    backgroundColor: colors.surfaceSubtle,
+    backgroundColor: colors.surfaceSunken,
   },
   exactHeading: {
     ...type.sectionTitle,
@@ -284,3 +277,6 @@ const styles = StyleSheet.create({
     color: colors.warning,
   },
 });
+
+  return { styles };
+}

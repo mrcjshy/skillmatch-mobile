@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 
 import { AppButton } from '@/components/app-button';
-import { AppCard } from '@/components/app-card';
 import { InlineStatus } from '@/components/inline-status';
 import { SectionHeader } from '@/components/section-header';
+import { SurfaceGroup } from '@/components/surface-group';
 import {
   buildResumeHtml,
   loadResume,
@@ -16,7 +17,7 @@ import {
 import { SkillMatchTheme } from '@/constants/theme';
 import { useAccount } from '@/providers/account-provider';
 
-const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+const { colors, type, spacing } = SkillMatchTheme.ui;
 
 /**
  * The Auto Resume Builder screen body (AI-02, deterministic core).
@@ -49,6 +50,7 @@ type LoadState =
 
 export default function ResumeBuilder() {
   const { account } = useAccount();
+  const insets = useSafeAreaInsets();
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [isGenerating, setIsGenerating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -160,6 +162,7 @@ export default function ResumeBuilder() {
   const { model } = state;
 
   return (
+    <View style={styles.screen}>
     <ScrollView style={styles.scroll} contentContainerStyle={styles.container}>
       <View style={styles.intro}>
         <Text style={styles.heading}>{RESUME_COPY.heading}</Text>
@@ -168,73 +171,80 @@ export default function ResumeBuilder() {
 
       <SectionHeader title={RESUME_COPY.included} />
 
-      <AppCard style={styles.previewCard}>
-        <Text style={styles.cardTitle}>{RESUME_COPY.personal}</Text>
-        <View style={styles.stack}>
-          <Text style={styles.name}>{model.fullName}</Text>
-          <Text style={styles.line}>{model.email}</Text>
-          <Text style={styles.line}>{model.phone}</Text>
-          <Text style={styles.line}>
-            {model.barangay}, {model.city}
-          </Text>
-        </View>
-      </AppCard>
-
-      <AppCard style={styles.previewCard}>
-        <Text style={styles.cardTitle}>{RESUME_COPY.summary}</Text>
-        {model.summary === null ? (
-          <Text style={styles.muted}>{RESUME_COPY.noSummary}</Text>
-        ) : (
-          <Text style={styles.line}>{model.summary}</Text>
-        )}
-      </AppCard>
-
-      <AppCard style={styles.previewCard}>
-        <Text style={styles.cardTitle}>{RESUME_COPY.skills}</Text>
-        {model.skills.length === 0 ? (
-          <Text style={styles.muted}>{RESUME_COPY.noSkills}</Text>
-        ) : (
+      {/* One surface, one block per resume section, divided: a document preview, not a stack of cards. */}
+      <SurfaceGroup>
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>{RESUME_COPY.personal}</Text>
           <View style={styles.stack}>
-            {model.skills.map((s) => (
-              <Text key={s.name} style={styles.line}>
-                {s.name}
-                {s.proficiency === null ? '' : ` — ${capitalize(s.proficiency)}`}
-              </Text>
-            ))}
+            <Text style={styles.name}>{model.fullName}</Text>
+            <Text style={styles.line}>{model.email}</Text>
+            <Text style={styles.line}>{model.phone}</Text>
+            <Text style={styles.line}>
+              {model.barangay}, {model.city}
+            </Text>
           </View>
-        )}
-      </AppCard>
-
-      <AppCard style={styles.previewCard}>
-        <Text style={styles.cardTitle}>{RESUME_COPY.projects}</Text>
-        {model.projects.length === 0 ? (
-          <Text style={styles.muted}>{RESUME_COPY.noProjects}</Text>
-        ) : (
-          <View style={styles.stack}>
-            {model.projects.map((p, i) => (
-              <View key={`${p.title}-${i}`} style={styles.project}>
-                <Text style={styles.projectTitle}>{p.title}</Text>
-                {p.scale === null ? null : <Text style={styles.muted}>{capitalize(p.scale)} project</Text>}
-                {p.description === null ? null : <Text style={styles.line}>{p.description}</Text>}
-              </View>
-            ))}
-          </View>
-        )}
-      </AppCard>
-
-      <AppCard style={styles.previewCard}>
-        <Text style={styles.cardTitle}>{RESUME_COPY.profile}</Text>
-        <View style={styles.stack}>
-          <Text style={styles.line}>
-            {model.isVerified ? RESUME_COPY.pdfVerified : RESUME_COPY.pdfUnverified}
-          </Text>
-          <Text style={styles.line}>
-            {RESUME_COPY.pdfRating}:{' '}
-            {model.ratingAvg === null ? RESUME_COPY.pdfNoRating : `${model.ratingAvg.toFixed(1)} / 5`}
-          </Text>
         </View>
-      </AppCard>
 
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>{RESUME_COPY.summary}</Text>
+          {model.summary === null ? (
+            <Text style={styles.muted}>{RESUME_COPY.noSummary}</Text>
+          ) : (
+            <Text style={styles.line}>{model.summary}</Text>
+          )}
+        </View>
+
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>{RESUME_COPY.skills}</Text>
+          {model.skills.length === 0 ? (
+            <Text style={styles.muted}>{RESUME_COPY.noSkills}</Text>
+          ) : (
+            <View style={styles.stack}>
+              {model.skills.map((s) => (
+                <Text key={s.name} style={styles.line}>
+                  {s.name}
+                  {s.proficiency === null ? '' : ` — ${capitalize(s.proficiency)}`}
+                </Text>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>{RESUME_COPY.projects}</Text>
+          {model.projects.length === 0 ? (
+            <Text style={styles.muted}>{RESUME_COPY.noProjects}</Text>
+          ) : (
+            <View style={styles.stack}>
+              {model.projects.map((p, i) => (
+                <View key={`${p.title}-${i}`} style={styles.project}>
+                  <Text style={styles.projectTitle}>{p.title}</Text>
+                  {p.scale === null ? null : <Text style={styles.muted}>{capitalize(p.scale)} project</Text>}
+                  {p.description === null ? null : <Text style={styles.line}>{p.description}</Text>}
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>{RESUME_COPY.profile}</Text>
+          <View style={styles.stack}>
+            <Text style={styles.line}>
+              {model.isVerified ? RESUME_COPY.pdfVerified : RESUME_COPY.pdfUnverified}
+            </Text>
+            <Text style={styles.line}>
+              {RESUME_COPY.pdfRating}:{' '}
+              {model.ratingAvg === null ? RESUME_COPY.pdfNoRating : `${model.ratingAvg.toFixed(1)} / 5`}
+            </Text>
+          </View>
+        </View>
+      </SurfaceGroup>
+    </ScrollView>
+
+    {/* The one action stays reachable at any text size; the error stays beside it. */}
+    <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+      {actionError ? <InlineStatus variant="error" message={actionError} /> : null}
       <AppButton
         variant="primary"
         label={isGenerating ? RESUME_COPY.generating : RESUME_COPY.generate}
@@ -242,9 +252,8 @@ export default function ResumeBuilder() {
         disabled={isGenerating}
         loading={isGenerating}
       />
-
-      {actionError ? <InlineStatus variant="error" message={actionError} /> : null}
-    </ScrollView>
+    </View>
+    </View>
   );
 }
 
@@ -253,42 +262,40 @@ function capitalize(s: string): string {
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.canvas },
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   container: {
     flexGrow: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     padding: spacing.gutter,
     gap: spacing.lg,
-    paddingBottom: spacing.xxxl + spacing.sm,
+    paddingBottom: spacing.xl,
   },
   center: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.gutter,
   },
   intro: {
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   heading: {
     ...type.sectionTitle,
     color: colors.textPrimary,
   },
   disclosure: {
-    ...type.helper,
+    ...type.body,
     color: colors.textSecondary,
   },
-  previewCard: {
-    backgroundColor: colors.surfaceSubtle,
-    borderRadius: radius.md,
-  },
-  cardTitle: {
-    ...type.cardTitle,
-    color: colors.textPrimary,
+  block: { gap: spacing.sm, padding: spacing.lg },
+  blockTitle: {
+    ...type.label,
+    color: colors.textSecondary,
   },
   name: {
     ...type.bodyEmphasis,
@@ -311,5 +318,13 @@ const styles = StyleSheet.create({
   projectTitle: {
     ...type.bodyEmphasis,
     color: colors.textPrimary,
+  },
+  dock: {
+    gap: spacing.md,
+    paddingHorizontal: spacing.gutter,
+    paddingTop: spacing.md,
+    backgroundColor: colors.canvas,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
   },
 });

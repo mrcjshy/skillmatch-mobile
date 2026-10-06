@@ -101,13 +101,13 @@ export type GapOpportunity = {
  * ------------------------------------------------------------------ */
 
 export const SKILL_GAP_COPY = {
-  title: 'Skill Gap',
+  title: 'Skill gap',
   compareWith: 'Compare with',
-  required: 'REQUIRED JOB SKILLS',
+  required: 'Required job skills',
   minus: 'minus',
-  yours: 'YOUR SKILLS',
+  yours: 'Your skills',
   equals: 'equals',
-  missing: 'MISSING SKILLS',
+  missing: 'Missing skills',
   zeroGap: 'No missing skills. You meet every requirement for this job.',
   noOpportunities: 'No job opportunities are available to compare right now.',
   noWorkerSkills: 'No skills are currently saved on your Worker profile.',

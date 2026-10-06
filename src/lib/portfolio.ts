@@ -55,7 +55,7 @@ export const PORTFOLIO_COPY = {
   heading: 'Portfolio',
   helper: 'Projects you add here can appear in your generated resume.',
   empty: 'No portfolio items yet.',
-  add: 'Add Portfolio Item',
+  add: 'Add portfolio item',
   titleLabel: 'Title',
   descriptionLabel: 'Description (optional)',
   scaleLabel: 'Project scale',

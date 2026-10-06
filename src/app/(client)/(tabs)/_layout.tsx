@@ -1,63 +1,40 @@
-import { Tabs } from 'expo-router';
-import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { Text, type ColorValue } from 'react-native';
-
-import { NotificationBell } from '@/components/notification-bell';
+import { Tabs, useRouter, type Href } from 'expo-router';
+import { TabIcon, TabLabel, useAppTabScreenOptions } from '@/components/app-tab-bar';
+import { ClientTabBar } from '@/components/client-tab-bar';
 import { SkillMatchTheme } from '@/constants/theme';
+import { useClientJobs } from '@/providers/client-jobs-provider';
+import { useClientPostJobDraft } from '@/providers/client-post-job-draft-provider';
 
-const { colors, type, size } = SkillMatchTheme.ui;
-const ACTIVE_COLOR = colors.primary;
-const INACTIVE_COLOR = colors.textDisabled;
+const { size } = SkillMatchTheme.ui;
 
-function TabIcon({
-  name,
-  color,
-  size,
-}: {
-  name: SymbolViewProps['name'];
-  color: ColorValue;
-  size: number;
-}) {
-  return <SymbolView name={name} size={size} tintColor={color} />;
-}
-
-function TabLabel({
-  focused,
-  color,
-  children,
-}: {
-  focused: boolean;
-  color: ColorValue;
-  children: string;
-}) {
-  return (
-    <Text style={{ ...type.caption, color, fontWeight: focused ? '700' : '400' }}>{children}</Text>
-  );
-}
-
+// Home owns its own sticky header (name, bell), so it has no navigator header. Post a job is the
+// bar's central circular action (Wave 7), not a tab: it pushes the existing Post Job flow, guarded
+// exactly as the former Home button was.
 export default function ClientTabsLayout() {
+  const screenOptions = useAppTabScreenOptions();
+  const router = useRouter();
+  const { isLoading, loadError } = useClientJobs();
+  const { isPosting, isOwnerCurrent } = useClientPostJobDraft();
+  const postDisabled = isLoading || !!loadError || isPosting || !isOwnerCurrent();
   return (
       <Tabs
         backBehavior="initialRoute"
-        screenOptions={{
-          headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.textPrimary,
-          headerRight: () => <NotificationBell role="client" />,
-          tabBarActiveTintColor: ACTIVE_COLOR,
-          tabBarInactiveTintColor: INACTIVE_COLOR,
-          tabBarStyle: {
-            backgroundColor: colors.background,
-            borderTopWidth: 0,
-          },
-          sceneStyle: { backgroundColor: colors.background },
-        }}
+        screenOptions={screenOptions}
+        tabBar={(props) => (
+          <ClientTabBar
+            {...props}
+            postDisabled={postDisabled}
+            posting={isPosting}
+            onPostJob={() => { if (!postDisabled && isOwnerCurrent()) router.push('/client/post-job' as Href); }}
+          />
+        )}
       >
         <Tabs.Screen
           name="client/index"
           options={{
             title: 'Home',
             tabBarAccessibilityLabel: 'Home',
-            headerShown: true,
+            headerShown: false,
             tabBarIcon: ({ color }) => (
               <TabIcon name={{ android: 'home', ios: 'house.fill' }} color={color} size={size.tabIcon} />
             ),
@@ -69,8 +46,8 @@ export default function ClientTabsLayout() {
         <Tabs.Screen
           name="client/jobs"
           options={{
-            title: 'My Jobs',
-            tabBarAccessibilityLabel: 'My Jobs',
+            title: 'My jobs',
+            tabBarAccessibilityLabel: 'My jobs',
             tabBarIcon: ({ color }) => (
               <TabIcon
                 name={{ android: 'list_alt', ios: 'list.bullet.rectangle' }}
@@ -79,7 +56,7 @@ export default function ClientTabsLayout() {
               />
             ),
             tabBarLabel: ({ focused, color }) => (
-              <TabLabel focused={focused} color={color}>My Jobs</TabLabel>
+              <TabLabel focused={focused} color={color}>My jobs</TabLabel>
             ),
           }}
         />
@@ -90,7 +67,7 @@ export default function ClientTabsLayout() {
             tabBarAccessibilityLabel: 'Bookings',
             tabBarIcon: ({ color }) => (
               <TabIcon
-                name={{ android: 'event_list', ios: 'calendar' }}
+                name={{ android: 'calendar_month', ios: 'calendar' }}
                 color={color}
                 size={size.tabIcon}
               />

@@ -14,7 +14,7 @@ export default function WorkerOpportunityDetails() {
   const { jobId } = useLocalSearchParams<{ jobId?: string | string[] }>();
   return (
     <>
-      <Stack.Screen options={{ title: 'Job Opportunity' }} />
+      <Stack.Screen options={{ title: 'Job opportunity' }} />
       <JobOpportunityDetails jobId={typeof jobId === 'string' ? jobId : null} />
     </>
   );

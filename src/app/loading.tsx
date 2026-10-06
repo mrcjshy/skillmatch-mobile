@@ -1,33 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StateScreen } from '@/components/state-screen';
 
+/** Inline-only state: the route is guarded and never navigable (see the root layout). */
 export default function LoadingScreen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>Loading SkillMatch</Text>
-      <Text style={styles.note}>
-        This screen is reserved for session and bootstrap resolution in a later
-        piece. It represents a pending, unresolved state only.
-      </Text>
-    </View>
-  );
+  return <StateScreen loading title="Loading SkillMatch" message="Getting things ready…" />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    gap: 12,
-  },
-  heading: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  note: {
-    fontSize: 14,
-    textAlign: 'center',
-    opacity: 0.7,
-  },
-});

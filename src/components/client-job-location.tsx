@@ -13,7 +13,7 @@ import { SkillMatchTheme } from '@/constants/theme';
 const { colors, type, spacing } = SkillMatchTheme.ui;
 
 /** Modal lifetime owns protected data. No cached location survives blur/background. */
-export function ClientJobLocation({ jobId, clientId, onClose, dismissalLabel = 'Back to My Jobs', isOperationCurrent }: {
+export function ClientJobLocation({ jobId, clientId, onClose, dismissalLabel = 'Back to my jobs', isOperationCurrent }: {
   jobId: string; clientId: string; onClose: () => void; dismissalLabel?: string; isOperationCurrent?: () => boolean;
 }) {
   const generation = useRef(0);
@@ -87,16 +87,16 @@ export function ClientJobLocation({ jobId, clientId, onClose, dismissalLabel = '
   return <Modal visible onRequestClose={onClose}>
     {editing && visibleLocation ? <JobLocationPicker pin={visibleLocation.pin} initialAddress={visibleLocation.address ?? undefined}
       note={note} onNote={setNote} onCancel={() => setEditing(false)} onConfirm={(pair) => void save(pair, editorGeneration)} disabled={busy} /> :
-      <ScrollView style={{ backgroundColor: colors.background }} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: spacing.xl, gap: spacing.lg, backgroundColor: colors.background }}>
+      <ScrollView style={{ backgroundColor: colors.canvas }} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: spacing.xl, gap: spacing.lg, backgroundColor: colors.canvas }}>
         <AppButton label={dismissalLabel} onPress={onClose} />
         <Text selectable style={{ ...type.sectionTitle, color: colors.textPrimary }}>Job location</Text>
         {visibleLocation ? <View>
           <WorkerAssignedJobLocation surface={projectAssignedWorkerLocation({ bookingStatus: 'confirmed', exact: visibleLocation, mapAvailable: classifyMapAvailability(nativeJobMapsLoaded()) })}
             mapsNote={null} allowNavigation={false} onOpenMaps={() => {}} />
           {!visibleLocation.pin ? <Text selectable style={{ ...type.body, color: colors.textPrimary }}>Legacy address: no saved pin. Select a location to establish a pin-derived address.</Text> : null}
-          <AppButton label="Edit Location" onPress={() => { if (parentCurrent() && editorGeneration === generation.current) setEditing(true); }} disabled={busy} />
+          <AppButton label="Edit location" onPress={() => { if (parentCurrent() && editorGeneration === generation.current) setEditing(true); }} disabled={busy} />
         </View> : <Text selectable style={{ ...type.body, color: colors.textPrimary }}>{busy ? 'Saving location…' : note ?? 'Loading location…'}</Text>}
-        <AppButton label="Refresh Location" onPress={() => void refresh()} disabled={busy} />
+        <AppButton label="Refresh location" onPress={() => void refresh()} disabled={busy} />
         <Text selectable style={{ ...type.helper, color: colors.textSecondary }}>Location can be changed only while this Job remains open.</Text>
       </ScrollView>}
   </Modal>;

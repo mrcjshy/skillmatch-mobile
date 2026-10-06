@@ -1,10 +1,10 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 
-const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
-export type AppNoticeVariant = 'warning' | 'danger' | 'success';
+
+export type AppNoticeVariant = 'info' | 'warning' | 'danger' | 'success';
 
 type AppNoticeProps = {
   message: string;
@@ -13,16 +13,28 @@ type AppNoticeProps = {
 };
 
 export function AppNotice({ message, variant = 'warning', style }: AppNoticeProps) {
+  const ui = useUiTheme();
+  const { styles, fillStyles, textStyles } = createStyles(ui);
+
   return (
     <View style={[styles.base, fillStyles[variant], style]}>
-      <Text style={[styles.message, textStyles[variant]]}>{message}</Text>
+      {/* A danger notice is an error: an alert in a polite live region (see InlineStatus). */}
+      <Text
+        style={[styles.message, textStyles[variant]]}
+        accessibilityRole={variant === 'danger' ? 'alert' : undefined}
+        accessibilityLiveRegion={variant === 'danger' ? 'polite' : undefined}
+      >
+        {message}
+      </Text>
     </View>
   );
 }
 
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing, radius } = ui;
 const styles = StyleSheet.create({
   base: {
-    borderRadius: radius.md,
+    borderRadius: radius.control,
     padding: spacing.md,
     borderCurve: 'continuous',
   },
@@ -32,13 +44,18 @@ const styles = StyleSheet.create({
 });
 
 const fillStyles = StyleSheet.create({
+  info: { backgroundColor: colors.infoTint },
   warning: { backgroundColor: colors.warningTint },
-  danger: { backgroundColor: colors.dangerTint },
+  danger: { backgroundColor: colors.errorTint },
   success: { backgroundColor: colors.successTint },
 });
 
 const textStyles = StyleSheet.create({
+  info: { color: colors.info },
   warning: { color: colors.warning },
-  danger: { color: colors.danger },
+  danger: { color: colors.error },
   success: { color: colors.success },
 });
+
+  return { styles, fillStyles, textStyles };
+}

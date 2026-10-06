@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -7,7 +7,7 @@ import { AppButton } from '@/components/app-button';
 import { AppCard } from '@/components/app-card';
 import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
-import { AppNotice } from '@/components/app-notice';
+import { FormMessage } from '@/components/form-message';
 import { InlineStatus } from '@/components/inline-status';
 import { SectionHeader } from '@/components/section-header';
 import { SkillMatchTheme } from '@/constants/theme';
@@ -39,7 +39,7 @@ type ScreenState =
   | { kind: 'loading' }
   | { kind: 'error' }
   | { kind: 'no-profile' }
-  | { kind: 'ready'; workerProfileId: string; items: PortfolioItem[] };
+  | { kind: 'ready'; accountId: string; workerProfileId: string; items: PortfolioItem[] };
 
 function coverImage(images: PortfolioItemImage[]): PortfolioItemImage | null {
   return images.find((image) => image.position === 1) ?? null;
@@ -65,10 +65,10 @@ export default function WorkerPortfolio() {
 
   const load = useCallback(
     async (run: { cancelled: boolean }) => {
-      if (!account) return;
+      if (!account || !account.is_active || account.role !== 'worker') return;
       try {
         const result = await loadOwnPortfolio(account.id);
-        if (run.cancelled) return;
+        if (run.cancelled || AppState.currentState !== 'active') return;
         setFormError(null);
         if (result.kind === 'no-profile') {
           setState({ kind: 'no-profile' });
@@ -76,11 +76,12 @@ export default function WorkerPortfolio() {
         }
         setState({
           kind: 'ready',
+          accountId: account.id,
           workerProfileId: result.workerProfileId,
           items: result.items,
         });
       } catch {
-        if (run.cancelled) return;
+        if (run.cancelled || AppState.currentState !== 'active') return;
         setState((current) => (current.kind === 'ready' ? current : { kind: 'error' }));
         setFormError(PORTFOLIO_COPY.loadFailed);
       }
@@ -92,8 +93,14 @@ export default function WorkerPortfolio() {
   useEffect(() => {
     const run = { cancelled: false };
     void load(run);
+    const subscription = AppState.addEventListener('change', (next) => {
+      run.cancelled = true;
+      setState({ kind: 'loading' });
+      if (next === 'active') setRetryToken((token) => token + 1);
+    });
     return () => {
       run.cancelled = true;
+      subscription.remove();
     };
   }, [load, retryToken]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -181,6 +188,7 @@ export default function WorkerPortfolio() {
         resetForm();
         setState({
           kind: 'ready',
+          accountId: account.id,
           workerProfileId: result.workerProfileId,
           items: result.items,
         });
@@ -236,6 +244,14 @@ export default function WorkerPortfolio() {
         },
       },
     ]);
+  }
+
+  if (!account || !account.is_active || account.role !== 'worker') {
+    return <View style={styles.center}><InlineStatus variant="empty" message={PORTFOLIO_COPY.noProfile} /></View>;
+  }
+
+  if (state.kind === 'ready' && state.accountId !== account.id) {
+    return <View style={styles.center}><InlineStatus variant="loading" message={PORTFOLIO_COPY.loading} /></View>;
   }
 
   if (state.kind === 'loading') {
@@ -344,7 +360,6 @@ export default function WorkerPortfolio() {
                 accessibilityRole="radio"
                 accessibilityState={{ selected, disabled: busy }}
                 accessibilityLabel={option.label}
-                style={busy ? styles.chipDisabled : undefined}
               >
                 <AppChip label={option.label} variant={selected ? 'selected' : 'neutral'} />
               </Pressable>
@@ -384,8 +399,8 @@ export default function WorkerPortfolio() {
           </View>
         ) : null}
 
-        {formError ? <AppNotice variant="danger" message={formError} /> : null}
-        {success ? <AppNotice variant="success" message={success} /> : null}
+        {formError ? <FormMessage tone="error" message={formError} /> : null}
+        {success ? <FormMessage tone="success" message={success} /> : null}
 
         <AppButton
           label={PORTFOLIO_COPY.save}
@@ -430,31 +445,34 @@ function SavedThumb({ image }: { image: PortfolioItemImage }) {
 const styles = StyleSheet.create({
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   content: {
     flexGrow: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     padding: spacing.gutter,
     gap: spacing.lg,
-    paddingBottom: spacing.xxxl + spacing.sm,
+    paddingBottom: spacing.xxxxl,
   },
   center: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.gutter,
   },
   helper: {
-    ...type.helper,
+    ...type.body,
     color: colors.textSecondary,
   },
   section: {
     gap: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
   },
   itemTitle: {
-    ...type.cardTitle,
+    ...type.sectionTitle,
     color: colors.textPrimary,
   },
   body: {
@@ -466,10 +484,8 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   label: {
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-    color: colors.primary,
+    ...type.label,
+    color: colors.textPrimary,
   },
   row: {
     flexDirection: 'row',
@@ -487,15 +503,15 @@ const styles = StyleSheet.create({
   cover: {
     width: '100%',
     height: 180,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.control,
+    backgroundColor: colors.surfaceSunken,
     borderCurve: 'continuous',
   },
   coverFallback: {
     width: '100%',
     height: 180,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.control,
+    backgroundColor: colors.surfaceSunken,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.md,
@@ -507,17 +523,17 @@ const styles = StyleSheet.create({
   savedThumb: {
     width: 64,
     height: 64,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.control,
+    backgroundColor: colors.surfaceSunken,
     borderCurve: 'continuous',
   },
   savedThumbFallback: {
     width: 64,
     height: 64,
-    borderRadius: radius.md,
+    borderRadius: radius.control,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceSubtle,
+    backgroundColor: colors.surfaceSunken,
     padding: spacing.xs,
     borderCurve: 'continuous',
   },
@@ -533,21 +549,17 @@ const styles = StyleSheet.create({
   draftThumb: {
     width: 96,
     height: 96,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.control,
+    backgroundColor: colors.surfaceSunken,
     borderCurve: 'continuous',
   },
   removeThumb: {
-    minHeight: 44,
+    minHeight: SkillMatchTheme.ui.size.minTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },
   removeThumbText: {
-    ...type.helper,
-    fontWeight: '600',
-    color: colors.danger,
-  },
-  chipDisabled: {
-    opacity: 0.6,
+    ...type.label,
+    color: colors.error,
   },
 });

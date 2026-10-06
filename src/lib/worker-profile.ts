@@ -88,3 +88,27 @@ export function parseWorkerProfileAvailabilityStatus(
   if (value === 'available' || value === 'busy' || value === 'offline') return value;
   return null;
 }
+
+/** Profile header avatar diameter, in dp. */
+export const WORKER_PROFILE_AVATAR_SIZE = 64;
+/** Narrowest the identity (name, trade, verification) and contact columns may get at 100% text. */
+const PROFILE_IDENTITY_MIN_WIDTH = 96;
+const PROFILE_CONTACT_MIN_WIDTH = 160;
+
+export type WorkerProfileHeaderLayout =
+  | { columns: 'side-by-side'; identityMinWidth: number; identityMaxWidth: number; contactMinWidth: number }
+  | { columns: 'stacked' };
+
+/**
+ * Whether the contact column fits beside the identity column to the right of the avatar.
+ * Both minimum widths grow with the system font scale, so larger text stacks the contacts
+ * under the identity only when the two columns genuinely cannot share the row.
+ */
+export function workerProfileHeaderLayout(input: { windowWidth: number; fontScale: number; gutter: number; avatarGap: number; columnGap: number }): WorkerProfileHeaderLayout {
+  const scale = Math.max(1, input.fontScale);
+  const available = input.windowWidth - 2 * input.gutter - WORKER_PROFILE_AVATAR_SIZE - input.avatarGap;
+  const identityMinWidth = Math.ceil(PROFILE_IDENTITY_MIN_WIDTH * scale);
+  const contactMinWidth = Math.ceil(PROFILE_CONTACT_MIN_WIDTH * scale);
+  if (available < identityMinWidth + input.columnGap + contactMinWidth) return { columns: 'stacked' };
+  return { columns: 'side-by-side', identityMinWidth, identityMaxWidth: available - input.columnGap - contactMinWidth, contactMinWidth };
+}

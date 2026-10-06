@@ -43,7 +43,10 @@
       [
         "expo-notifications",
         {
-          "defaultChannel": "default"
+          "defaultChannel": "skillmatch_alerts_v1",
+          "sounds": ["./assets/sounds/skillmatch_tugma.wav"],
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#1C3AA6"
         }
       ],
       [

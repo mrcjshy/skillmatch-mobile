@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -10,12 +9,13 @@ import {
 } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { AppChip, type AppChipVariant } from '@/components/app-chip';
+import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
 import { AppNotice } from '@/components/app-notice';
 import { InitialsAvatar } from '@/components/initials-avatar';
 import { InlineStatus } from '@/components/inline-status';
 import { BookingLoadError, formatBookingStatus, isBookingChatAvailable } from '@/lib/bookings';
+import { bookingStatusVariant } from '@/lib/status-presentation';
 import {
   counterpartPresentation,
   findChatBooking,
@@ -47,6 +47,7 @@ import {
 } from '@/lib/realtime';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { XStack, YStack } from 'tamagui';
 
 const { colors, type, spacing, radius } = SkillMatchTheme.ui;
@@ -110,14 +111,6 @@ const RPC_FOR_ROLE: Record<ChatRole, string> = {
   client: 'list_my_client_bookings',
 };
 
-function statusChipVariant(status: string): AppChipVariant {
-  if (status === 'confirmed') return 'positive';
-  if (status === 'completed') return 'positive';
-  if (status === 'pending') return 'warning';
-  if (status === 'cancelled' || status === 'no_show') return 'danger';
-  return 'neutral';
-}
-
 /**
  * Find this Booking in the caller's own list. Returns null when the Booking is
  * not the caller's — which is indistinguishable from it not existing, and
@@ -140,6 +133,7 @@ export default function BookingChat({
   bookingId: string | null;
 }) {
   const { account } = useAccount();
+  const headerHeight = useHeaderHeight();
   /** The authenticated user id, from the session — never from a row or a route
    *  parameter. The policy re-checks it as `auth.uid() = sender_id`. */
   const senderId = account?.id ?? null;
@@ -416,10 +410,9 @@ export default function BookingChat({
   const isDraftSendable = validateContent(draft).ok;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    // Edge-to-edge Android does not resize the window for the keyboard, so pad on every platform and
+    // subtract the native header; otherwise a docked keyboard covers the composer and Send.
+    <KeyboardAvoidingView style={styles.flex} behavior="padding" keyboardVerticalOffset={headerHeight}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
@@ -431,7 +424,7 @@ export default function BookingChat({
               <InitialsAvatar
                 name={counterpart.name}
                 initials={counterpart.initials}
-                accent={role === 'worker' ? colors.accentClient : colors.accentWorker}
+                accent={role === 'worker' ? colors.accentSubtle : colors.accentSubtle}
                 size={48}
               />
               <YStack style={styles.headerText}>
@@ -441,7 +434,7 @@ export default function BookingChat({
             </XStack>
             <AppChip
               label={formatBookingStatus(visibleBooking.status)}
-              variant={statusChipVariant(visibleBooking.status)}
+              variant={bookingStatusVariant(visibleBooking.status)}
               style={styles.statusChip}
             />
           </>
@@ -495,7 +488,7 @@ export default function BookingChat({
                   <InitialsAvatar
                     name={counterpart.name}
                     initials={counterpart.initials}
-                    accent={role === 'worker' ? colors.accentClient : colors.accentWorker}
+                    accent={role === 'worker' ? colors.accentSubtle : colors.accentSubtle}
                     size={32}
                   />
                 ) : null}
@@ -560,19 +553,19 @@ export default function BookingChat({
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   scroll: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   content: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     padding: spacing.gutter,
     gap: spacing.md,
     paddingBottom: spacing.xl,
   },
   center: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     alignItems: 'center',
     gap: spacing.sm,
     paddingVertical: spacing.lg,
@@ -598,12 +591,12 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   bubble: {
-    borderRadius: radius.md,
+    borderRadius: radius.control,
     padding: spacing.md,
     gap: spacing.xxs,
     maxWidth: '90%',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    borderColor: colors.hairline,
   },
   messageMine: {
     alignSelf: 'flex-end',
@@ -617,11 +610,12 @@ const styles = StyleSheet.create({
   },
   bubbleMine: {
     alignSelf: 'flex-end',
-    backgroundColor: colors.accentSoft,
+    backgroundColor: colors.accentSubtle,
+    borderColor: colors.accentSubtlePressed,
   },
   bubbleTheirs: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.surfaceSubtle,
+    backgroundColor: colors.surface,
   },
   bubbleAuthor: {
     ...type.caption,
@@ -636,9 +630,9 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   composer: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderTopColor: colors.hairline,
     paddingHorizontal: spacing.gutter,
     paddingVertical: spacing.md,
     gap: spacing.sm,
@@ -659,7 +653,7 @@ const styles = StyleSheet.create({
   },
   counterOver: {
     ...type.caption,
-    color: colors.danger,
+    color: colors.error,
     flex: 1,
   },
   sendButton: {

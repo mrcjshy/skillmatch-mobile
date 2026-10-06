@@ -8,10 +8,22 @@
  *
  * Expo Go is NOT valid runtime proof for Android remote push on the current
  * SDK. A later native/development build is required.
+ *
+ * W7 booking chat push: the payload is `{ kind: 'message', booking_id }`, a
+ * routing hint only. A tap re-authorizes the Booking from the signed-in
+ * account's own RLS-scoped Booking list before any chat opens.
  */
 
-export const ANDROID_CHANNEL_ID = 'default';
-export const ANDROID_CHANNEL_NAME = 'SkillMatch Notifications';
+/**
+ * Versioned channel. Android channels are immutable once created, so a new
+ * sound or importance needs a new id; never reuse an id with other behavior.
+ */
+export const ANDROID_CHANNEL_ID = 'skillmatch_alerts_v1';
+export const ANDROID_CHANNEL_NAME = 'SkillMatch alerts';
+/** Bundled through the expo-notifications plugin `sounds` list (res/raw). */
+export const ANDROID_NOTIFICATION_SOUND = 'skillmatch_tugma.wav';
+/** The R5B channel (system sound, DEFAULT importance) this one replaces. */
+export const LEGACY_ANDROID_CHANNEL_ID = 'default';
 export const WORKER_NOTIFICATIONS_HREF = '/worker/notifications';
 export const CLIENT_NOTIFICATIONS_HREF = '/client/notifications';
 export const ADMIN_NOTIFICATIONS_HREF = '/admin/notifications';
@@ -47,6 +59,17 @@ export type PushDeliveryHint = {
   notificationId: string;
 };
 
+/** Untrusted chat routing hint. Authorization is re-derived before use. */
+export type ChatPushHint = {
+  bookingId: string;
+};
+
+export type ChatHref = '/worker/chat' | '/client/chat';
+
+export type PushTapDestination =
+  | { kind: 'inbox'; href: InboxHref }
+  | { kind: 'chat'; pathname: ChatHref; bookingId: string };
+
 export type PushRegistrationResult =
   | { ok: true; tokenPresent: true }
   | { ok: false; code: PushFailureCode };
@@ -56,11 +79,12 @@ export type NotificationsLike = {
     channelId: string,
     channel: { name: string; importance: number; sound?: string | null }
   ) => Promise<unknown>;
+  deleteNotificationChannelAsync: (channelId: string) => Promise<unknown>;
   getPermissionsAsync: () => Promise<{ status: string }>;
   requestPermissionsAsync: () => Promise<{ status: string }>;
   getExpoPushTokenAsync: (options: { projectId: string }) => Promise<{ data: string }>;
   setNotificationHandler: (handler: {
-    handleNotification: () => Promise<{
+    handleNotification: (notification: unknown) => Promise<{
       shouldShowBanner: boolean;
       shouldShowList: boolean;
       shouldPlaySound: boolean;
@@ -101,6 +125,8 @@ let foregroundHandlerConfigured = false;
 let pendingOpenNotificationsInbox = false;
 /** Delivery metadata used only to re-read the recipient-owned row after auth. */
 let pendingNotificationId: string | null = null;
+/** Chat routing hint; opens a chat only after the Booking is re-authorized. */
+let pendingChatBookingId: string | null = null;
 
 export function getRememberedExpoPushToken(): string | null {
   return rememberedExpoPushToken;
@@ -121,6 +147,7 @@ export function resetPushClientState(): void {
   foregroundHandlerConfigured = false;
   pendingOpenNotificationsInbox = false;
   pendingNotificationId = null;
+  pendingChatBookingId = null;
 }
 
 export function hasPendingNotificationsInboxIntent(): boolean {
@@ -131,9 +158,14 @@ export function getPendingNotificationId(): string | null {
   return pendingNotificationId;
 }
 
+export function getPendingChatBookingId(): string | null {
+  return pendingChatBookingId;
+}
+
 export function clearPendingNotificationsInboxIntent(): void {
   pendingOpenNotificationsInbox = false;
   pendingNotificationId = null;
+  pendingChatBookingId = null;
 }
 
 export type PendingInboxAccountStatus = 'idle' | 'pending' | 'resolved' | 'error';
@@ -168,7 +200,9 @@ export function isSkillMatchNotificationResponse(response: unknown): boolean {
 /** Records OPEN_NOTIFICATIONS_INBOX. Returns true when a new pending intent was set. */
 export function captureNotificationResponse(response: unknown): boolean {
   if (!isSkillMatchNotificationResponse(response)) return false;
-  pendingNotificationId = parsePushTapData(extractTapData(response))?.notificationId ?? null;
+  const data = extractTapData(response);
+  pendingNotificationId = parsePushTapData(data)?.notificationId ?? null;
+  pendingChatBookingId = parseChatPushData(data)?.bookingId ?? null;
   pendingOpenNotificationsInbox = true;
   return true;
 }
@@ -201,6 +235,45 @@ export function consumeReadyInboxNavigation(input: PendingInboxNavInput): InboxH
   if (decision.kind !== 'replace') return null;
   clearPendingNotificationsInboxIntent();
   return decision.href;
+}
+
+/**
+ * Destination for a chat tap. `isBookingAuthorized` must come from the
+ * signed-in account's own Booking list (RLS) with status `confirmed`; the
+ * payload alone never opens a chat. Anything else falls back to the inbox.
+ */
+export function chatTapDestination(
+  role: unknown,
+  bookingId: string | null,
+  isBookingAuthorized: boolean
+): PushTapDestination | null {
+  if ((role === 'worker' || role === 'client') && bookingId && isBookingAuthorized) {
+    return { kind: 'chat', pathname: role === 'worker' ? '/worker/chat' : '/client/chat', bookingId };
+  }
+  const href = inboxHrefForRole(role);
+  return href ? { kind: 'inbox', href } : null;
+}
+
+/**
+ * Exactly-once consume of a pending tap of either kind, under the same
+ * readiness gates as the inbox path. General taps keep the R5B inbox route.
+ */
+export function consumeReadyPushNavigation(
+  input: PendingInboxNavInput,
+  isChatBookingAuthorized: boolean
+): PushTapDestination | null {
+  if (!pendingOpenNotificationsInbox) return null;
+  const bookingId = pendingChatBookingId;
+  if (!bookingId) {
+    const href = consumeReadyInboxNavigation(input);
+    return href ? { kind: 'inbox', href } : null;
+  }
+  const decision = decidePendingInboxNavigation({ ...input, hasPendingInboxIntent: true });
+  if (decision.kind !== 'replace') return null;
+  const destination = chatTapDestination(input.role, bookingId, isChatBookingAuthorized);
+  if (!destination) return null;
+  clearPendingNotificationsInboxIntent();
+  return destination;
 }
 
 export function classifyPermissionStatus(status: string): PushPermissionStatus {
@@ -260,6 +333,24 @@ export function parsePushTapData(data: unknown): PushDeliveryHint | null {
   return { notificationId: raw };
 }
 
+/** Reads a W7 chat routing hint: `kind: 'message'` plus a UUID booking id. */
+export function parseChatPushData(data: unknown): ChatPushHint | null {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return null;
+  const record = data as { kind?: unknown; booking_id?: unknown };
+  if (record.kind !== 'message') return null;
+  if (typeof record.booking_id !== 'string' || !UUID_RE.test(record.booking_id)) return null;
+  return { bookingId: record.booking_id };
+}
+
+function notificationData(notification: unknown): unknown {
+  if (typeof notification !== 'object' || notification === null) return null;
+  const request = (notification as { request?: unknown }).request;
+  if (typeof request !== 'object' || request === null) return null;
+  const content = (request as { content?: unknown }).content;
+  if (typeof content !== 'object' || content === null) return null;
+  return (content as { data?: unknown }).data ?? null;
+}
+
 export function extractTapData(response: unknown): unknown {
   if (typeof response !== 'object' || response === null) return null;
   const notification = (response as { notification?: unknown }).notification;
@@ -294,16 +385,26 @@ export async function requestPermissionIfUndetermined(
 }
 
 export async function ensureAndroidNotificationChannel(
-  notifications: Pick<NotificationsLike, 'setNotificationChannelAsync' | 'AndroidImportance'>,
+  notifications: Pick<
+    NotificationsLike,
+    'setNotificationChannelAsync' | 'deleteNotificationChannelAsync' | 'AndroidImportance'
+  >,
   platform: string
 ): Promise<void> {
   if (platform !== 'android') return;
   if (androidChannelReady) return;
+  // `sound` names a file bundled through the expo-notifications plugin `sounds` list.
   await notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
     name: ANDROID_CHANNEL_NAME,
-    importance: notifications.AndroidImportance.DEFAULT,
-    sound: 'default',
+    importance: notifications.AndroidImportance.HIGH,
+    sound: ANDROID_NOTIFICATION_SOUND,
   });
+  // Retire the R5B channel so the app's notification settings show one SkillMatch channel.
+  try {
+    await notifications.deleteNotificationChannelAsync(LEGACY_ANDROID_CHANNEL_ID);
+  } catch {
+    // Absent on fresh installs; never blocks registration.
+  }
   androidChannelReady = true;
 }
 
@@ -316,12 +417,17 @@ export function configureForegroundHandler(
 ): void {
   if (foregroundHandlerConfigured) return;
   notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
+    handleNotification: async (notification) => {
+      // A foreground chat push is already presented by IncomingMessageBannerHost
+      // (or by the open chat itself), so the OS copy would be a duplicate.
+      const isChat = parseChatPushData(notificationData(notification)) !== null;
+      return {
+        shouldShowBanner: !isChat,
+        shouldShowList: !isChat,
+        shouldPlaySound: !isChat,
+        shouldSetBadge: false,
+      };
+    },
   });
   foregroundHandlerConfigured = true;
 }

@@ -4,16 +4,19 @@ import { useFocusEffect, useRouter, type Href } from 'expo-router';
 
 import { AppButton } from '@/components/app-button';
 import { AppChip } from '@/components/app-chip';
+import { groupPosition, groupedRowStyle } from '@/components/grouped-row';
 import { InlineStatus } from '@/components/inline-status';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatCardDateTime } from '@/lib/date-time';
 import { formatClientPostedPaymentLine } from '@/lib/job-payment';
+import { jobStatusLabel, jobStatusVariant } from '@/lib/status-presentation';
 import { useAccount } from '@/providers/account-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
 import { useClientPostJobDraft } from '@/providers/client-post-job-draft-provider';
 import { useSession } from '@/providers/session-provider';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
+const ui = SkillMatchTheme.ui;
+const { colors, type, spacing } = ui;
 
 export default function ClientJobs() {
   const router = useRouter();
@@ -105,22 +108,28 @@ export default function ClientJobs() {
       contentInsetAdjustmentBehavior="automatic"
       data={canShowJobs ? jobs : []}
       keyExtractor={job => job.id}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refreshJobs(); }} tintColor={colors.primary} colors={[colors.primary]} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refreshJobs(); }} tintColor={colors.accent} colors={[colors.accent]} />}
       ListHeaderComponent={authorized && refreshError && !loadError ? <View style={styles.notice}><InlineStatus variant="error" message={refreshError} />{retry}</View> : null}
       ListEmptyComponent={empty}
-      renderItem={({ item: job }) => (
-        <View style={styles.row}>
-          <Text selectable style={styles.title}>{job.title}</Text>
-          <AppChip label={`Status: ${job.status}`} variant="neutral" />
+      renderItem={({ item: job, index }) => (
+        <View style={[styles.row, groupedRowStyle(ui, groupPosition(index ?? 0, jobs.length))]}>
+          <View style={styles.rowHeader}>
+            <Text selectable style={styles.title}>{job.title}</Text>
+            <AppChip label={jobStatusLabel(job.status)} variant={jobStatusVariant(job.status)} />
+          </View>
           {job.description !== null && job.description.trim() ? <Text selectable style={styles.description}>{job.description}</Text> : null}
+          <Text selectable style={styles.budget} accessibilityLabel={`Budget: ${job.budget === null ? 'Not set' : '\u20b1' + job.budget.toLocaleString()}`}>{job.budget === null ? 'Budget not set' : '\u20b1' + job.budget.toLocaleString()}</Text>
           <View style={styles.meta}>
             <Text selectable style={styles.line}>Schedule: {formatCardDateTime(job.scheduled_at) ?? 'No schedule'}</Text>
-            <Text selectable style={styles.line}>Budget: {job.budget === null ? 'Not set' : '\u20b1' + job.budget.toLocaleString()}</Text>
             {job.payment_method_readable ? <Text selectable style={styles.line}>{formatClientPostedPaymentLine(job.payment_method)}</Text> : null}
             <Text selectable style={styles.line}>Skills: {job.skills.length ? job.skills.join(', ') : 'None'}</Text>
           </View>
-          <AppButton label="Details" accessibilityLabel={`Details for ${job.title}`} variant="secondary" disabled={!authorized}
-            onPress={() => { if (clientId && operation.current?.current() && latestJobs.current.some(current => current.id === job.id) && isOwnerCurrent() && typeof sessionRevision === 'number' && isSessionRevisionCurrent?.(sessionRevision)) router.push({ pathname: '/client/job-details', params: { jobId: job.id } } as unknown as Href); }} />
+          <View style={styles.rowFooter}>
+            <View style={styles.detailsAction}>
+              <AppButton label="Details" accessibilityLabel={`Details for ${job.title}`} variant="ghost" disabled={!authorized}
+                onPress={() => { if (clientId && operation.current?.current() && latestJobs.current.some(current => current.id === job.id) && isOwnerCurrent() && typeof sessionRevision === 'number' && isSessionRevisionCurrent?.(sessionRevision)) router.push({ pathname: '/client/job-details', params: { jobId: job.id } } as unknown as Href); }} />
+            </View>
+          </View>
         </View>
       )}
     />
@@ -128,12 +137,16 @@ export default function ClientJobs() {
 }
 
 const styles = StyleSheet.create({
-  list: { flex: 1, backgroundColor: colors.background },
-  container: { flexGrow: 1, paddingHorizontal: spacing.gutter, paddingTop: spacing.lg, paddingBottom: spacing.xxxl + spacing.sm },
+  list: { flex: 1, backgroundColor: colors.canvas },
+  container: { flexGrow: 1, paddingHorizontal: spacing.gutter, paddingTop: spacing.lg, paddingBottom: spacing.xxxxl },
   notice: { gap: spacing.md, paddingBottom: spacing.lg },
-  row: { gap: spacing.md, paddingVertical: spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  title: { ...type.cardTitle, color: colors.textPrimary },
-  description: { ...type.body, color: colors.textPrimary },
+  row: { gap: spacing.sm, paddingVertical: spacing.lg, paddingHorizontal: spacing.lg },
+  rowHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  title: { ...type.sectionTitle, color: colors.textPrimary, flexShrink: 1 },
+  budget: { ...type.money, color: colors.textPrimary, marginTop: spacing.xs },
+  description: { ...type.helper, color: colors.textSecondary },
   meta: { gap: spacing.xs },
   line: { ...type.helper, color: colors.textSecondary },
+  rowFooter: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: spacing.sm },
+  detailsAction: { alignSelf: 'flex-start', maxWidth: '100%' },
 });

@@ -36,7 +36,7 @@ export const CLIENT_PORTFOLIO_COPY = {
   loadFailed: 'This portfolio could not be loaded. Please try again.',
   unavailable: 'This portfolio is unavailable.',
   imageUnavailable: 'Photo could not be loaded.',
-  viewAction: 'View Portfolio',
+  viewAction: 'View portfolio',
 } as const;
 
 export function isClientPortfolioVisible(status: string): boolean {

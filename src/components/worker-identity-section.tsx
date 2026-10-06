@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 import { AppButton } from '@/components/app-button';
-import { AppNotice } from '@/components/app-notice';
+import { FormMessage } from '@/components/form-message';
 import { InlineStatus } from '@/components/inline-status';
+import { RadioRow } from '@/components/radio-row';
 import { SectionHeader } from '@/components/section-header';
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import { formatCardDateTime } from '@/lib/date-time';
 import {
   IDENTITY_COPY,
@@ -25,7 +26,7 @@ import {
   type WorkerIdentitySurface,
 } from '@/lib/worker-identity';
 
-const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
+
 
 export function WorkerIdentitySection({
   disabled,
@@ -39,6 +40,9 @@ export function WorkerIdentitySection({
   /** Onboarding uses the provider's already-loaded authoritative state. */
   authoritativeSubmission?: WorkerIdentitySubmission | null;
 }) {
+  const ui = useUiTheme();
+  const styles = createStyles(ui);
+
   const providerOwnsLoad = authoritativeSubmission !== undefined;
   const [loading, setLoading] = useState(!providerOwnsLoad);
   const [submission, setSubmission] = useState<WorkerIdentitySubmission | null>(
@@ -147,16 +151,22 @@ export function WorkerIdentitySection({
     }
   }
 
+  // The onboarding route already titles itself and states the status, so repeating "Valid ID" and
+  // "Not submitted" there would only say the same thing twice. The profile surface keeps both.
+  const onboarding = surface === 'onboarding';
+
   return (
     <View style={styles.wrap}>
-      <SectionHeader title="Valid ID" />
+      {onboarding ? null : <SectionHeader title="Valid ID" />}
       {loading ? (
         <InlineStatus variant="loading" message="Loading your ID submission…" />
       ) : (
         <>
-          <Text style={styles.status} accessibilityRole="text">
-            {statusText}
-          </Text>
+          {onboarding && submission === null ? null : (
+            <Text style={styles.status} accessibilityRole="text">
+              {statusText}
+            </Text>
+          )}
           {submission ? (
             <Text style={styles.meta}>
               {identityTypeLabel(submission.idType)}
@@ -166,7 +176,7 @@ export function WorkerIdentitySection({
             </Text>
           ) : null}
           {submission?.status === 'rejected' && submission.rejectionReason ? (
-            <AppNotice variant="warning" message={submission.rejectionReason} />
+            <FormMessage tone="warning" message={submission.rejectionReason} />
           ) : null}
           {submission?.status === 'approved' ? (
             <Text style={styles.help}>Your approved ID cannot be replaced.</Text>
@@ -178,37 +188,46 @@ export function WorkerIdentitySection({
                   ? 'Upload a new photo to replace this submission. Administrators review it before verification. A submitted photo is not an approval.'
                   : 'Upload a photo of your ID. Administrators review it before verification. A submitted photo is not an approval.'}
               </Text>
-              <View accessibilityRole="radiogroup" accessibilityLabel="ID type" style={styles.types}>
-                {IDENTITY_TYPE_OPTIONS.map((option) => {
-                  const selected = idType === option.value;
-                  return (
-                    <Pressable
+              <View style={styles.group}>
+                <Text style={styles.groupLabel}>ID type (required)</Text>
+                <View accessibilityRole="radiogroup" accessibilityLabel="ID type" style={styles.types}>
+                  {IDENTITY_TYPE_OPTIONS.map((option) => (
+                    <RadioRow
                       key={option.value}
-                      style={[styles.typeOption, selected && styles.typeOptionSelected]}
-                      onPress={() => setIdType(option.value)}
+                      label={option.label}
+                      selected={idType === option.value}
                       disabled={locked}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected, disabled: locked }}
+                      onPress={() => setIdType(option.value)}
                       accessibilityLabel={option.label}
-                    >
-                      <Text style={[styles.typeLabel, selected && styles.typeLabelSelected]}>
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+                    />
+                  ))}
+                </View>
+              </View>
+              <View style={styles.group}>
+                <Text style={styles.groupLabel}>ID photo (required)</Text>
+                {imageUri ? (
+                  <Image
+                    source={{ uri: imageUri }}
+                    style={styles.preview}
+                    resizeMode="contain"
+                    accessibilityLabel="Preview of the ID photo you selected"
+                  />
+                ) : null}
+                <Text style={styles.help}>
+                  {imageUri ? 'Photo selected.' : 'No photo chosen yet.'} JPEG, PNG or WebP, up to 5 MB.
+                </Text>
+                <AppButton
+                  variant="secondary"
+                  label={imageUri ? 'Change ID photo' : 'Choose ID photo'}
+                  onPress={() => {
+                    void handlePickImage();
+                  }}
+                  disabled={locked}
+                />
               </View>
               <AppButton
-                variant="secondary"
-                label={imageUri ? 'Photo selected' : 'Choose ID photo'}
-                onPress={() => {
-                  void handlePickImage();
-                }}
-                disabled={locked}
-              />
-              <AppButton
                 variant="primary"
-                label={isResubmit ? 'Submit Another ID' : 'Submit ID'}
+                label={isResubmit ? 'Submit another ID' : 'Submit ID'}
                 onPress={() => {
                   void handleSubmit();
                 }}
@@ -229,51 +248,51 @@ export function WorkerIdentitySection({
               disabled={locked}
             />
           ) : null}
-          {error ? <AppNotice variant="danger" message={error} /> : null}
-          {success ? <AppNotice variant="success" message={success} /> : null}
+          {error ? <FormMessage tone="error" message={error} /> : null}
+          {success ? <FormMessage tone="success" message={success} /> : null}
         </>
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    gap: spacing.md,
-  },
-  status: {
-    ...type.bodyEmphasis,
-    color: colors.textPrimary,
-  },
-  meta: {
-    ...type.helper,
-    color: colors.textSecondary,
-  },
-  help: {
-    ...type.helper,
-    color: colors.textSecondary,
-  },
-  types: {
-    gap: spacing.sm,
-  },
-  typeOption: {
-    minHeight: size.ghostButton,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSubtle,
-    paddingHorizontal: spacing.md,
-    justifyContent: 'center',
-  },
-  typeOptionSelected: {
-    backgroundColor: colors.surface,
-  },
-  typeLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    lineHeight: 20,
-    color: colors.textSecondary,
-  },
-  typeLabelSelected: {
-    fontWeight: '700',
-    color: colors.primary,
-  },
-});
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing, radius } = ui;
+  const styles = StyleSheet.create({
+    wrap: {
+      gap: spacing.lg,
+    },
+    status: {
+      ...type.bodyEmphasis,
+      color: colors.textPrimary,
+    },
+    meta: {
+      ...type.helper,
+      color: colors.textSecondary,
+    },
+    help: {
+      ...type.helper,
+      color: colors.textSecondary,
+    },
+    group: {
+      gap: spacing.sm,
+    },
+    groupLabel: {
+      ...type.label,
+      color: colors.textPrimary,
+    },
+    types: {
+      gap: spacing.sm,
+    },
+    preview: {
+      width: '100%',
+      height: 160,
+      borderRadius: radius.control,
+      backgroundColor: colors.surfaceSunken,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+    },
+  });
+
+  return styles;
+}

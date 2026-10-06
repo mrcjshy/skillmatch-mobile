@@ -2,10 +2,10 @@ import { Image } from 'expo-image';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import { initialsFromName } from '@/lib/initials';
 
-const { colors } = SkillMatchTheme.ui;
+
 
 export function InitialsAvatar({
   name,
@@ -20,6 +20,9 @@ export function InitialsAvatar({
   initials?: string;
   photoUri?: string | null;
 }) {
+  const ui = useUiTheme();
+  const { styles } = createStyles(ui);
+
   const letters = initials ?? initialsFromName(name);
   const [failedPhotoUri, setFailedPhotoUri] = useState<string | null>(null);
 
@@ -54,14 +57,19 @@ export function InitialsAvatar({
   );
 }
 
+function createStyles(ui: UiTheme) {
+  const { colors } = ui;
 const styles = StyleSheet.create({
   circle: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   letters: {
-    color: colors.primary,
+    color: colors.accent,
     fontSize: 16,
     fontWeight: '700',
   },
 });
+
+  return { styles };
+}

@@ -1,65 +1,29 @@
 import { Tabs } from 'expo-router';
-import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { Text, type ColorValue } from 'react-native';
+import { TabIcon, TabLabel, useAppTabScreenOptions } from '@/components/app-tab-bar';
+import { StatusBar } from 'expo-status-bar';
 
-import { NotificationBell } from '@/components/notification-bell';
 import { SkillMatchTheme } from '@/constants/theme';
 import { WorkerProfileProvider } from '@/providers/worker-profile-provider';
 
-const { colors, type, size } = SkillMatchTheme.ui;
-const ACTIVE_COLOR = colors.primary;
-const INACTIVE_COLOR = colors.textDisabled;
+const { size } = SkillMatchTheme.ui;
 
-function TabIcon({
-  name,
-  color,
-  size,
-}: {
-  name: SymbolViewProps['name'];
-  color: ColorValue;
-  size: number;
-}) {
-  return <SymbolView name={name} size={size} tintColor={color} />;
-}
-
-function TabLabel({
-  focused,
-  color,
-  children,
-}: {
-  focused: boolean;
-  color: ColorValue;
-  children: string;
-}) {
-  return (
-    <Text style={{ ...type.caption, color, fontWeight: focused ? '700' : '400' }}>{children}</Text>
-  );
-}
-
+// Three top-level destinations. Home owns its own sticky header (name, work status, bell) and lists
+// available jobs directly, so there is no navigator header on Home and no Find work tab.
 export default function WorkerTabsLayout() {
+  const screenOptions = useAppTabScreenOptions();
   return (
     <WorkerProfileProvider>
+      <StatusBar style="dark" />
       <Tabs
         backBehavior="initialRoute"
-        screenOptions={{
-          headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.textPrimary,
-          headerRight: () => <NotificationBell role="worker" />,
-          tabBarActiveTintColor: ACTIVE_COLOR,
-          tabBarInactiveTintColor: INACTIVE_COLOR,
-          tabBarStyle: {
-            backgroundColor: colors.background,
-            borderTopWidth: 0,
-          },
-          sceneStyle: { backgroundColor: colors.background },
-        }}
+        screenOptions={screenOptions}
       >
         <Tabs.Screen
           name="worker/index"
           options={{
             title: 'Home',
             tabBarAccessibilityLabel: 'Home',
-            headerShown: true,
+            headerShown: false,
             tabBarIcon: ({ color }) => (
               <TabIcon name={{ android: 'home', ios: 'house.fill' }} color={color} size={size.tabIcon} />
             ),
@@ -69,20 +33,13 @@ export default function WorkerTabsLayout() {
           }}
         />
         <Tabs.Screen
-          name="worker/opportunities"
-          options={{
-            href: null,
-            headerShown: false,
-          }}
-        />
-        <Tabs.Screen
           name="worker/bookings"
           options={{
             title: 'Bookings',
             tabBarAccessibilityLabel: 'Bookings',
             tabBarIcon: ({ color }) => (
               <TabIcon
-                name={{ android: 'event_list', ios: 'calendar' }}
+                name={{ android: 'calendar_month', ios: 'calendar' }}
                 color={color}
                 size={size.tabIcon}
               />

@@ -1,69 +1,40 @@
 import type { ReactNode } from 'react';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 
-const { colors, spacing, radius } = SkillMatchTheme.ui;
 
-export type AppCardVariant = 'default' | 'highlight' | 'status' | 'empty';
-export type AppCardTone = 'warning' | 'danger' | 'success';
 
 type AppCardProps = {
   children?: ReactNode;
-  variant?: AppCardVariant;
-  tone?: AppCardTone;
   style?: StyleProp<ViewStyle>;
 };
 
-export function AppCard({ children, variant = 'default', tone, style }: AppCardProps) {
-  const statusFill =
-    tone === 'danger'
-      ? colors.dangerTint
-      : tone === 'success'
-        ? colors.accentSoft
-        : tone === 'warning'
-          ? colors.warningTint
-          : colors.surfaceSubtle;
-
-  return (
-    <View
-      style={[
-        styles.base,
-        variant === 'default' && styles.default,
-        variant === 'highlight' && styles.highlight,
-        variant === 'status' && [styles.status, { backgroundColor: statusFill }],
-        variant === 'empty' && styles.empty,
-        style,
-      ]}
-    >
-      {children}
-    </View>
-  );
+/**
+ * A self-contained object the user opens or manages (a portfolio item): one white surface with a
+ * hairline edge. Related rows use SurfaceGroup instead, and notices use AppNotice; a card never
+ * holds another card.
+ */
+export function AppCard({ children, style }: AppCardProps) {
+  const { styles } = createStyles(useUiTheme());
+  return <View style={[styles.base, styles.default, style]}>{children}</View>;
 }
 
+function createStyles(ui: UiTheme) {
+  const { colors, spacing, radius } = ui;
 const styles = StyleSheet.create({
   base: {
     gap: spacing.md,
   },
   default: {
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: radius.card,
     padding: spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
     borderCurve: 'continuous',
-  },
-  highlight: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.lg,
-    padding: spacing.gutter,
-    borderCurve: 'continuous',
-  },
-  status: {
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderCurve: 'continuous',
-  },
-  empty: {
-    backgroundColor: 'transparent',
-    padding: spacing.lg,
   },
 });
+
+  return { styles };
+}

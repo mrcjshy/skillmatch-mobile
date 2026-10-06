@@ -125,7 +125,7 @@ export default function RateWorker({ bookingId, onRated }: { bookingId: string; 
         value={comment}
         onChangeText={setComment}
         placeholder={COPY.commentPlaceholder}
-        placeholderTextColor={colors.textDisabled}
+        placeholderTextColor={colors.textMuted}
         multiline
         editable={!isSubmitting}
         textAlignVertical="top"
@@ -166,8 +166,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
+    borderColor: colors.hairline,
+    borderRadius: radius.control,
     padding: spacing.lg,
     gap: spacing.sm,
     borderCurve: 'continuous',
@@ -177,16 +177,14 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   label: {
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-    color: colors.primary,
+    ...type.label,
+    color: colors.accent,
   },
   input: {
     ...type.body,
     color: colors.textPrimary,
-    backgroundColor: colors.surfaceSubtle,
-    borderRadius: radius.md,
+    backgroundColor: colors.surfaceSunken,
+    borderRadius: radius.control,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     minHeight: 96,
@@ -199,12 +197,12 @@ const styles = StyleSheet.create({
   },
   counterOver: {
     ...type.caption,
-    color: colors.danger,
+    color: colors.error,
     fontWeight: '600',
   },
   error: {
     ...type.helper,
-    color: colors.danger,
+    color: colors.error,
   },
   actionCol: {
     gap: spacing.sm,

@@ -1,13 +1,10 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { InlineStatus } from '@/components/inline-status';
-import { SkillMatchTheme } from '@/constants/theme';
+import { FormMessage } from '@/components/form-message';
+import { StateScreen } from '@/components/state-screen';
 import { signOutCurrentUser } from '@/lib/sign-out';
 import { useAccount } from '@/providers/account-provider';
-
-const { colors, type, spacing } = SkillMatchTheme.ui;
 
 /**
  * Fail-closed surface for authoritative account lookup/bootstrap failure
@@ -46,57 +43,30 @@ export default function BootstrapErrorScreen() {
     : isAccountLoading
       ? 'Checking your account…'
       : 'Your account could not be resolved into a valid SkillMatch account.';
+  const isChecking = !hasActiveError && isAccountLoading;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>Account Setup Error</Text>
-
-      <InlineStatus
-        variant={hasActiveError ? 'error' : isAccountLoading ? 'loading' : 'note'}
-        message={statusMessage}
-      />
-
+    <StateScreen
+      tone={hasActiveError ? 'error' : 'neutral'}
+      loading={isChecking}
+      icon={{ android: 'error', ios: 'exclamationmark.circle' }}
+      title={isChecking ? 'Checking your account' : "We couldn't set up your account"}
+      message={statusMessage}
+    >
       <AppButton
-        label="Retry"
+        label="Try again"
         onPress={retryAccountBootstrap}
         loading={isAccountLoading}
         disabled={isSigningOut}
-        style={styles.action}
       />
-
       <AppButton
-        label="Sign Out"
+        label="Sign out"
         variant="ghost"
         onPress={handleSignOut}
         loading={isSigningOut}
         disabled={isAccountLoading}
-        style={styles.action}
       />
-      {signOutError ? <Text style={styles.error}>{signOutError}</Text> : null}
-    </View>
+      {signOutError ? <FormMessage tone="error" message={signOutError} /> : null}
+    </StateScreen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
-    gap: spacing.sm,
-    backgroundColor: colors.background,
-  },
-  heading: {
-    ...type.screenTitle,
-    color: colors.textPrimary,
-    textAlign: 'center',
-  },
-  action: {
-    alignSelf: 'stretch',
-  },
-  error: {
-    ...type.helper,
-    color: colors.danger,
-    textAlign: 'center',
-  },
-});

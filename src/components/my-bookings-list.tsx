@@ -1,10 +1,12 @@
-import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text } from 'react-native';
+import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
 import { AppSegment } from '@/components/app-segment';
 import { BookingCompactCard } from '@/components/booking-compact-card';
+import { groupPosition } from '@/components/grouped-row';
+import { SectionHeader } from '@/components/section-header';
 import { InlineStatus } from '@/components/inline-status';
 import { SkillMatchTheme } from '@/constants/theme';
 import { BookingLoadError, loadErrorCopy } from '@/lib/bookings';
@@ -28,7 +30,7 @@ import {
   userNotificationsTopic,
 } from '@/lib/realtime';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
+const { colors, spacing } = SkillMatchTheme.ui;
 
 const EMPTY_COPY: Record<BookingSegment, string> = {
   active: 'You have no active bookings.',
@@ -46,6 +48,17 @@ export default function MyBookingsList({ role }: { role: BookingRole }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Home's View all asks for the Active list. The tab stays mounted, so honour the request each
+  // time it arrives, then clear it so a later visit keeps whatever segment the person chose.
+  const { segment: requestedSegment } = useLocalSearchParams<{ segment?: string }>();
+  const [handledRequest, setHandledRequest] = useState<string | undefined>(undefined);
+  if (requestedSegment !== handledRequest) {
+    setHandledRequest(requestedSegment);
+    if (requestedSegment === 'active') setSegment('active');
+  }
+  useEffect(() => {
+    if (requestedSegment === 'active') router.setParams({ segment: undefined });
+  }, [requestedSegment, router]);
 
   // Revoke the old authority at commit, before passive effects or late reads can
   // update a changed identity. The coordinator's request slot survives this swap.
@@ -118,13 +131,11 @@ export default function MyBookingsList({ role }: { role: BookingRole }) {
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={refresh}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
         />
       }
     >
-      <Text style={styles.note}>{role === 'worker' ? 'Jobs booked to you.' : 'Workers booked to your jobs.'}</Text>
-
       <AppSegment
         options={[
           { value: 'active', label: 'Active' },
@@ -132,6 +143,11 @@ export default function MyBookingsList({ role }: { role: BookingRole }) {
         ] as const}
         value={segment}
         onChange={setSegment}
+      />
+
+      <SectionHeader
+        title={segment === 'active' ? 'Active bookings' : 'Booking history'}
+        subtitle={role === 'worker' ? 'Jobs booked to you.' : 'Workers booked to your jobs.'}
       />
 
       {isLoading ? (
@@ -145,11 +161,14 @@ export default function MyBookingsList({ role }: { role: BookingRole }) {
       ) : visibleBookings.length === 0 ? (
         <InlineStatus variant="empty" message={EMPTY_COPY[segment]} />
       ) : (
-        visibleBookings.map((booking) => (
+        // One grouped surface: the rows carry their own dividers, so no gap between them.
+        <View>
+        {visibleBookings.map((booking, index) => (
           <BookingCompactCard
             key={booking.booking_id}
             role={role}
             booking={booking}
+            position={groupPosition(index, visibleBookings.length)}
             onPress={() => {
               const pathname = role === 'worker' ? '/worker/booking-details' : '/client/booking-details';
               // Expo's generated route union updates during the next export;
@@ -157,7 +176,8 @@ export default function MyBookingsList({ role }: { role: BookingRole }) {
               router.push({ pathname, params: { bookingId: booking.booking_id } } as unknown as Href);
             }}
           />
-        ))
+        ))}
+        </View>
       )}
     </ScrollView>
   );
@@ -166,17 +186,13 @@ export default function MyBookingsList({ role }: { role: BookingRole }) {
 const styles = StyleSheet.create({
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   content: {
     flexGrow: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     padding: spacing.gutter,
-    gap: spacing.md,
-    paddingBottom: spacing.xxxl + spacing.sm,
-  },
-  note: {
-    ...type.helper,
-    color: colors.textSecondary,
+    gap: spacing.lg,
+    paddingBottom: spacing.xxxxl,
   },
 });

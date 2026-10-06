@@ -11,16 +11,20 @@ import {
 } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { AppChip, type AppChipVariant } from '@/components/app-chip';
+import { AppChip } from '@/components/app-chip';
 import BookingLifecycle from '@/components/booking-lifecycle';
 import BookingPayment from '@/components/booking-payment';
 import { InlineStatus } from '@/components/inline-status';
 import { JobPhotoGallery } from '@/components/job-photo-gallery';
 import { WorkerAssignedJobLocation, nativeJobMapsLoaded, openWorkerMapsUrl } from '@/components/job-location-map';
 import RateWorker from '@/components/rate-worker';
+import { FactRow } from '@/components/fact-row';
 import { SectionHeader } from '@/components/section-header';
+import { SurfaceGroup } from '@/components/surface-group';
 import { StarRatingDisplay } from '@/components/star-rating-display';
-import { SkillMatchTheme } from '@/constants/theme';
+import { InitialsAvatar } from '@/components/initials-avatar';
+import { ServiceMark } from '@/components/service-mark';
+import { useUiTheme, type UiTheme, RefinementThemeProvider } from '@/components/refinement-theme';
 import {
   BookingLoadError,
   formatBookingStatus,
@@ -51,11 +55,15 @@ import {
   BookingPayment as BookingPaymentState,
   bookingActionPresentation,
   fetchBookingPayments,
+  isAwaitingCash,
+  isPaidCod,
+  isPaidQrph,
   isPayableStatus,
 } from '@/lib/payments';
 import { CLIENT_PORTFOLIO_COPY, CLIENT_PORTFOLIO_PATH, isClientPortfolioVisible } from '@/lib/client-portfolio';
 import { COPY as RATING_COPY, fetchMyRatedBookingIds, isRateableStatus } from '@/lib/ratings';
 import { COPY as REPORT_COPY, isBookingReportableStatus, loadMyReportedBookingIds } from '@/lib/reports';
+import { bookingStatusVariant } from '@/lib/status-presentation';
 import {
   COPY as JOB_LOCATION_COPY,
   JobLocationError,
@@ -78,7 +86,7 @@ import {
 } from '@/lib/realtime';
 import { bookingDialUrl } from '@/lib/booking-call';
 
-const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UNAVAILABLE = 'This booking is unavailable.';
@@ -103,15 +111,9 @@ type DetailState = {
     | { status: 'error' };
 };
 
-function statusChipVariant(status: string): AppChipVariant {
-  if (status === 'confirmed') return 'positive';
-  if (status === 'completed') return 'positive';
-  if (status === 'pending') return 'warning';
-  if (status === 'cancelled' || status === 'no_show') return 'danger';
-  return 'neutral';
-}
-
 export default function BookingDetails({ role, bookingId }: { role: BookingRole; bookingId: string | null }) {
+  const defaultUi = useUiTheme();
+
   const router = useRouter();
   const [detail, setDetail] = useState<DetailState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -123,8 +125,16 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const hasLoaded = useRef(false);
   const displayedStatusRef = useRef<string | null>(null);
   const focused = useRef(false);
+  // Retain geometry only; protected values are still stripped before every read.
+  const participantHeight = useRef(0);
+  const locationHeight = useRef(0);
+  const controlsHeight = useRef(0);
   const visibleDetail =
     detail !== null && bookingId !== null && detail.booking.booking_id === bookingId ? detail : null;
+
+  const ui = defaultUi;
+  const { colors } = ui;
+  const styles = createStyles(ui);
 
   useEffect(() => {
     const gate = createLoadGenerationTracker();
@@ -462,231 +472,313 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const showReport = isBookingReportableStatus(booking.booking_status) && reportReadSucceeded;
   const showPortfolio =
     protectedReleased && role === 'client' && isClientPortfolioVisible(booking.booking_status);
-  const showActions =
-    showLifecycle || showPayment || paymentUnavailable || showRate || chatAvailable || showReport || showPortfolio;
+  const participantName = released
+    ? role === 'worker' && isWorkerBooking(booking)
+      ? booking.client_full_name ?? 'Not provided'
+      : role === 'client' && isClientBooking(booking)
+        ? booking.worker_full_name ?? 'Not provided'
+        : null
+    : null;
+  const locationHasAddress =
+    workerLocationSurface &&
+    (workerLocationSurface.kind === 'exact' || workerLocationSurface.kind === 'text-fallback') &&
+    workerLocationSurface.address;
 
-  return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} />}
-    >
-      <AppChip
-        label={formatBookingStatus(booking.booking_status)}
-        variant={statusChipVariant(booking.booking_status)}
-        style={styles.statusChip}
-      />
+  // The one current primary action. Chat is primary only when nothing else on the screen is
+  // (a payment step to take, or the Client's completion), so there is never a competing filled button.
+  const paymentActionable =
+    showPayment && jobPaymentReady &&
+    (role === 'worker'
+      ? isAwaitingCash(payment)
+      : !isPaidCod(payment) && !isPaidQrph(payment));
+  const clientCompletion = role === 'client' && showLifecycle && actionPresentation.showCompletion;
+  const hasOtherPrimary = paymentActionable || clientCompletion;
+  const chatVariant = hasOtherPrimary ? 'secondary' : 'primary';
+  // A Worker can only cancel, so their lifecycle control closes the screen. A Client's completion is
+  // the primary action and stays with the payment step.
+  const lifecycleAtBottom = role === 'worker';
+  const reportMessage = isReported ? (
+    <Text style={styles.note}>Report submitted</Text>
+  ) : (
+    <AppButton
+      variant="ghost"
+      label={REPORT_COPY.reportAction}
+      icon={{ android: 'flag', ios: 'flag' }}
+      onPress={() => {
+        const pathname = role === 'worker' ? '/worker/report-booking' : '/client/report-booking';
+        router.push({ pathname, params: { bookingId: booking.booking_id } } as unknown as Href);
+      }}
+    />
+  );
 
-      <View style={styles.section}>
-        <Text style={styles.jobTitle}>{booking.job_title}</Text>
-        {booking.job_description ? <Text style={styles.body}>{booking.job_description}</Text> : null}
-        <View style={styles.summaryPanel}>
-          <DetailLine label="Booking ID" value={booking.booking_id} />
-          <DetailLine label="Schedule" value={schedule} />
-          <DetailLine label="Budget" value={budget} />
-          <DetailLine label="Location" value={location} />
-          {protectedReleased && exactLocation.status === 'error' ? (
-            <Text style={styles.note}>{JOB_LOCATION_COPY.workerLocationGeneric}</Text>
-          ) : workerLocationSurface ? (
-            <WorkerAssignedJobLocation
-              surface={workerLocationSurface}
-              mapsNote={mapsNote}
-              allowNavigation={role === 'worker'}
-              onOpenMaps={() => {
-                const url = workerLocationSurface.kind === 'exact' ? workerLocationSurface.openInMapsUrl : null;
-                void openWorkerMapsUrl(url).then((ok) => {
-                  setMapsNote(ok ? null : JOB_LOCATION_COPY.openInMapsFailed);
-                });
-              }}
-            />
-          ) : null}
-          <DetailLine label="Booked" value={bookedAt} />
-          <DetailLine label="Completed" value={completedAt} />
-        </View>
-        {role === 'worker' && protectedReleased && booking.booking_status === 'confirmed' ? (
-          <JobPhotoGallery
-            photos={jobPhotos.status === 'ready' ? jobPhotos.photos : []}
-            error={jobPhotos.status === 'error'}
-          />
-        ) : null}
-        {dialUrl ? (
-          <AppButton
-            variant="secondary"
-            label="Call"
-            accessibilityLabel="Call booking counterpart"
-            onPress={() => void Linking.openURL(dialUrl)}
-          />
-        ) : null}
-      </View>
-
-      <View style={styles.section}>
-        <SectionHeader title={role === 'worker' ? 'Client' : 'Assigned Worker'} />
-        {!released ? (
-          <Text style={styles.note}>
-            {role === 'worker'
-              ? 'Client contact is not available for this booking status.'
-              : 'Worker details are not available for this booking status.'}
-          </Text>
-        ) : role === 'worker' && isWorkerBooking(booking) ? (
-          <View style={styles.summaryPanel}>
-            <DetailLine label="Name" value={booking.client_full_name ?? 'Not provided'} />
-            <DetailLine label="Phone" value={booking.client_phone ?? 'Not provided'} />
-          </View>
-        ) : role === 'client' && isClientBooking(booking) ? (
-          <View style={styles.summaryPanel}>
-            <DetailLine label="Name" value={booking.worker_full_name ?? 'Not provided'} />
-            <DetailLine label="Phone" value={booking.worker_phone ?? 'Not provided'} />
-            <DetailLine label="Barangay" value={booking.worker_barangay ?? 'Not provided'} />
-            <DetailLine label="Skills" value={formatSkills(booking.worker_skills)} />
-            <DetailLine label="Verification" value={formatVerification(booking.worker_is_verified)} />
-            <View style={styles.ratingRow}>
-              <Text style={styles.detailLabel}>Rating</Text>
-              <StarRatingDisplay average={booking.worker_rating_avg} count={booking.worker_rating_count} />
-            </View>
-          </View>
-        ) : null}
-      </View>
-
-      {showActions ? (
+  const communicationAndFeedback = (
+    <>
+      {showPortfolio || showRate ? (
         <View style={styles.section}>
-          {showPayment ? (
-            jobPaymentReady ? (
-              <BookingPayment
-                role={role}
-                bookingId={booking.booking_id}
-                payment={payment}
-                jobPaymentMethod={jobPaymentMethod}
-                onChanged={load}
-              />
-            ) : (
-              <Text style={styles.note}>Could not load the agreed payment method.</Text>
-            )
-          ) : null}
-          {paymentUnavailable ? (
-            <Text style={styles.note}>Could not load the authoritative payment state. Payment and lifecycle actions are unavailable.</Text>
-          ) : null}
-          {showLifecycle ? (
-            <BookingLifecycle
-              role={role}
-              bookingId={booking.booking_id}
-              showCompletion={actionPresentation.showCompletion}
-              showCancellation={actionPresentation.showCancellation}
-              onChanged={load}
-            />
-          ) : null}
-          {showRate ? (
-            isRated ? <Text style={styles.note}>{RATING_COPY.rated}</Text> : <RateWorker bookingId={booking.booking_id} onRated={load} />
-          ) : null}
-          {chatAvailable ? (
-            <AppButton
-              variant="primary"
-              label="Open Chat"
-              onPress={() => {
-                const pathname = role === 'worker' ? '/worker/chat' : '/client/chat';
-                router.push({ pathname, params: { bookingId: booking.booking_id } } as Href);
-              }}
-            />
-          ) : null}
-          {showReport ? (
-            isReported ? (
-              <Text style={styles.note}>Report submitted</Text>
-            ) : (
-              <AppButton
-                variant="ghost"
-                label={REPORT_COPY.reportAction}
-                onPress={() => {
-                  const pathname = role === 'worker' ? '/worker/report-booking' : '/client/report-booking';
-                  router.push({ pathname, params: { bookingId: booking.booking_id } } as unknown as Href);
-                }}
-              />
-            )
-          ) : null}
           {showPortfolio ? (
             <AppButton
               variant="secondary"
               label={CLIENT_PORTFOLIO_COPY.viewAction}
+              icon={{ android: 'photo_library', ios: 'photo.on.rectangle' }}
               accessibilityLabel={CLIENT_PORTFOLIO_COPY.viewAction}
               onPress={() => {
                 router.push({ pathname: CLIENT_PORTFOLIO_PATH, params: { bookingId: booking.booking_id } } as unknown as Href);
               }}
             />
           ) : null}
+          {showRate ? (
+            isRated ? <Text style={styles.note}>{RATING_COPY.rated}</Text> : <RateWorker bookingId={booking.booking_id} onRated={load} />
+          ) : null}
+        </View>
+      ) : null}
+    </>
+  );
+
+  return (
+    <RefinementThemeProvider>
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      contentInsetAdjustmentBehavior="automatic"
+      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}
+    >
+      {/* 1-2. Status and the reference people quote when they call for help. */}
+      <View style={styles.referenceHeader}>
+        <AppChip label={formatBookingStatus(booking.booking_status)} variant={bookingStatusVariant(booking.booking_status)} />
+        <View style={styles.referenceCopy}>
+          <Text style={styles.note}>Booking reference</Text>
+          <Text selectable style={styles.reference}>{booking.booking_id}</Text>
+        </View>
+      </View>
+
+      {/* 3-4. The job: what, when, how much. */}
+      <View style={styles.summary}>
+        <View style={styles.titleRow}>
+          <ServiceMark subject={booking.job_title} synchronousGlyph />
+          <Text accessibilityRole="header" style={styles.jobTitle}>{booking.job_title}</Text>
+        </View>
+        <SurfaceGroup>
+          <FactRow icon={{ android: 'schedule', ios: 'clock' }} label="Schedule" value={schedule} strong />
+          <FactRow icon={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} label="Job budget" value={budget} strong inline />
+        </SurfaceGroup>
+      </View>
+
+      {/* 5. The other person, when this status releases them. */}
+      <View style={[styles.section, suppressProtected && { minHeight: participantHeight.current }]}
+        onLayout={event => { if (!suppressProtected) participantHeight.current = event.nativeEvent.layout.height; }}>
+        <SectionHeader title={role === 'worker' ? 'Client details' : 'Worker details'} />
+        {suppressProtected ? <InlineStatus variant="loading" message="Checking booking details" /> : !released ? (
+          <Text style={styles.note}>
+            {role === 'worker'
+              ? 'Client contact is not available for this booking status.'
+              : 'Worker details are not available for this booking status.'}
+          </Text>
+        ) : participantName ? (
+          <View style={styles.panel}>
+            <View style={styles.identityRow}>
+              <InitialsAvatar name={participantName} accent={colors.accentSubtle} size={48} />
+              <View style={styles.identityCopy}>
+                <Text style={styles.note}>{role === 'worker' ? 'Your client' : 'Your worker'}</Text>
+                <Text style={styles.participantName}>{participantName}</Text>
+                <Text selectable style={styles.value}>{counterpartyPhone ?? 'Phone not provided'}</Text>
+                {role === 'client' && isClientBooking(booking) ? <>
+                  <Text style={styles.note}>{formatVerification(booking.worker_is_verified)}</Text>
+                  <StarRatingDisplay average={booking.worker_rating_avg} count={booking.worker_rating_count} />
+                </> : null}
+              </View>
+            </View>
+            {role === 'client' && isClientBooking(booking) ? (
+              <View style={styles.detailsList}>
+                <DetailLine label="Barangay" value={booking.worker_barangay ?? 'Not provided'} />
+                <DetailLine label="Skills" value={formatSkills(booking.worker_skills)} />
+              </View>
+            ) : null}
+            {dialUrl || chatAvailable ? <View style={styles.contactActions}>
+              {dialUrl ? <AppButton
+                variant="secondary"
+                label="Call"
+                icon={{ android: 'call', ios: 'phone' }}
+                accessibilityLabel="Call booking counterpart"
+                style={styles.contactButton}
+                onPress={() => void Linking.openURL(dialUrl)}
+              /> : null}
+              {chatAvailable ? <AppButton
+                variant={chatVariant}
+                label="Open chat"
+                icon={{ android: 'chat_bubble_outline', ios: 'bubble.left' }}
+                style={styles.contactButton}
+                onPress={() => {
+                  const pathname = role === 'worker' ? '/worker/chat' : '/client/chat';
+                  router.push({ pathname, params: { bookingId: booking.booking_id } } as Href);
+                }}
+              /> : null}
+            </View> : null}
+          </View>
+        ) : null}
+      </View>
+
+      {/* 6. Where, only as far as this status authorizes. */}
+      <View style={[styles.section, suppressProtected && { minHeight: locationHeight.current }]}
+        onLayout={event => { if (!suppressProtected) locationHeight.current = event.nativeEvent.layout.height; }}>
+        {suppressProtected ? <InlineStatus variant="loading" message="Checking job location" /> : <>
+        {/* The map surface titles itself when it shows the exact address. */}
+        {!locationHasAddress ? <><SectionHeader title="Job location" /><Text selectable style={styles.body}>{location}</Text></> : null}
+        {protectedReleased && exactLocation.status === 'error' ? <Text style={styles.note}>{JOB_LOCATION_COPY.workerLocationGeneric}</Text>
+          : workerLocationSurface ? <WorkerAssignedJobLocation surface={workerLocationSurface} mapsNote={mapsNote}
+            allowNavigation={role === 'worker'}
+            onOpenMaps={() => {
+              const url = workerLocationSurface.kind === 'exact' ? workerLocationSurface.openInMapsUrl : null;
+              void openWorkerMapsUrl(url).then(ok => setMapsNote(ok ? null : JOB_LOCATION_COPY.openInMapsFailed));
+            }} /> : null}
+        {role === 'worker' && protectedReleased && booking.booking_status === 'confirmed' ? <JobPhotoGallery
+          photos={jobPhotos.status === 'ready' ? jobPhotos.photos : []} error={jobPhotos.status === 'error'} /> : null}
+        </>}
+      </View>
+
+      {/* 7. The immediate step: payment first, then (Client) completion. */}
+      {showPayment || paymentUnavailable ? <View style={styles.panel}>
+        {showPayment ? jobPaymentReady ? <BookingPayment role={role} bookingId={booking.booking_id} payment={payment}
+          jobPaymentMethod={jobPaymentMethod} onChanged={load} />
+          : <Text style={styles.note}>Could not load the agreed payment method.</Text> : null}
+        {paymentUnavailable ? <Text style={styles.note}>Could not load the authoritative payment state. Payment and lifecycle actions are unavailable.</Text> : null}
+      </View> : null}
+      {!lifecycleAtBottom && showLifecycle ? (
+        <BookingLifecycle
+          role={role}
+          bookingId={booking.booking_id}
+          showCompletion={actionPresentation.showCompletion}
+          showCancellation={actionPresentation.showCancellation}
+          onChanged={load}
+        >
+          {communicationAndFeedback}
+        </BookingLifecycle>
+      ) : communicationAndFeedback}
+
+      {/* 8. About the job, always in view. */}
+      {booking.job_description ? <View style={styles.section}>
+        <SectionHeader title="About the job" />
+        <Text selectable style={styles.jobDescription}>{booking.job_description}</Text>
+      </View> : null}
+
+      {/* 9. Supporting record. */}
+      <View style={styles.section}>
+        <SectionHeader title="Booking record" />
+        <SurfaceGroup>
+          <DetailLine label="Booked" value={bookedAt} />
+          <DetailLine label="Completed" value={completedAt} />
+        </SurfaceGroup>
+      </View>
+
+      {showReport ? (
+        <View style={styles.supportSection}>
+          <SectionHeader title="Help and reporting" />
+          {reportMessage}
         </View>
       ) : null}
 
+      {/* 10. Cancellation is last: consequential, quiet, and away from the forward action. */}
+      {lifecycleAtBottom && (showLifecycle || (suppressProtected && controlsHeight.current > 0)) ? <View
+        style={[styles.destructiveArea, suppressProtected && { minHeight: controlsHeight.current }]}
+        onLayout={event => { if (!suppressProtected) controlsHeight.current = event.nativeEvent.layout.height; }}>
+        {suppressProtected ? <InlineStatus variant="loading" message="Checking booking controls" /> : <>
+        <Text style={styles.note}>Booking controls</Text>
+        <BookingLifecycle role={role} bookingId={booking.booking_id} showCompletion={actionPresentation.showCompletion}
+          showCancellation={actionPresentation.showCancellation} onChanged={load} />
+        </>}
+      </View> : null}
     </ScrollView>
+    </RefinementThemeProvider>
   );
 }
 
 function DetailLine({ label, value }: { label: string; value: string | null }) {
+  const ui = useUiTheme();
+  const styles = createStyles(ui);
+
   if (value === null) return null;
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
+      <Text selectable style={styles.detailValue}>{value}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    flexGrow: 1,
-    backgroundColor: colors.background,
-    padding: spacing.gutter,
-    gap: spacing.lg,
-    paddingBottom: spacing.xxxl + spacing.sm,
-  },
-  center: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.gutter,
-  },
-  statusChip: {
-    alignSelf: 'flex-start',
-  },
-  section: {
-    gap: spacing.md,
-  },
-  jobTitle: {
-    ...type.cardTitle,
-    color: colors.textPrimary,
-  },
-  body: {
-    ...type.body,
-    color: colors.textSecondary,
-  },
-  summaryPanel: {
-    backgroundColor: colors.surfaceSubtle,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    gap: spacing.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  detailRow: {
-    gap: spacing.xxs,
-  },
-  detailLabel: {
-    ...type.caption,
-    color: colors.textSecondary,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  detailValue: {
-    ...type.body,
-    color: colors.textPrimary,
-  },
-  ratingRow: {
-    gap: spacing.xs,
-  },
-  note: {
-    ...type.helper,
-    color: colors.textSecondary,
-  },
-});
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing, radius } = ui;
+  const styles = StyleSheet.create({
+    scroll: {
+      flex: 1,
+      backgroundColor: colors.canvas,
+    },
+    content: {
+      flexGrow: 1,
+      backgroundColor: colors.canvas,
+      padding: spacing.gutter,
+      gap: spacing.xl,
+      paddingBottom: spacing.xxxxl,
+    },
+    center: {
+      flex: 1,
+      backgroundColor: colors.canvas,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: spacing.gutter,
+    },
+    section: {
+      gap: spacing.md,
+    },
+    referenceHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.md },
+    referenceCopy: { flexShrink: 1, gap: spacing.xxs },
+    reference: { ...type.helper, fontVariant: ['tabular-nums'], color: colors.textPrimary, maxWidth: '100%' },
+    summary: { gap: spacing.lg },
+    titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    jobTitle: { ...type.screenTitle, color: colors.textPrimary, flex: 1, flexShrink: 1 },
+    panel: {
+      gap: spacing.lg,
+      padding: spacing.lg,
+      backgroundColor: colors.surface,
+      borderRadius: radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      borderCurve: 'continuous',
+    },
+    identityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+    identityCopy: { flex: 1, minWidth: 0, gap: spacing.xs },
+    participantName: { ...type.sectionTitle, color: colors.textPrimary },
+    detailsList: { gap: spacing.xs },
+    contactActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+    contactButton: { flexGrow: 1, flexBasis: 130, paddingHorizontal: spacing.md },
+    jobDescription: { ...type.body, color: colors.textPrimary },
+    supportSection: { gap: spacing.md },
+    destructiveArea: { gap: spacing.md, paddingTop: spacing.xl, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.hairline },
+    body: {
+      ...type.body,
+      color: colors.textSecondary,
+    },
+    value: { ...type.body, color: colors.textPrimary },
+    detailRow: {
+      minHeight: ui.size.listRowMinHeight,
+      maxWidth: '100%',
+      justifyContent: 'center',
+      gap: spacing.xxs,
+      paddingVertical: spacing.sm,
+    },
+    detailLabel: {
+      ...type.helper,
+      color: colors.textSecondary,
+    },
+    detailValue: {
+      ...type.body,
+      maxWidth: '100%',
+      flexShrink: 1,
+      color: colors.textPrimary,
+    },
+    note: {
+      ...type.helper,
+      color: colors.textSecondary,
+    },
+  });
+
+  return styles;
+}

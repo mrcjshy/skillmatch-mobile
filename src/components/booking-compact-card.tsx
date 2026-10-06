@@ -1,7 +1,11 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppChip } from '@/components/app-chip';
-import { SkillMatchTheme } from '@/constants/theme';
+import { AppSymbol as SymbolView } from '@/components/app-symbol';
+import { DateLandmark } from '@/components/date-landmark';
+import { groupedRowStyle, type GroupPosition } from '@/components/grouped-row';
+import { ServiceMark } from '@/components/service-mark';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import {
   formatBookingStatus,
   formatBudget,
@@ -15,8 +19,7 @@ import {
   isClientBooking,
   isWorkerBooking,
 } from '@/lib/booking-records';
-
-const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+import { bookingStatusVariant } from '@/lib/status-presentation';
 
 function counterpartySummary(role: BookingRole, booking: RoleBooking): string | null {
   if (!isCounterpartyReleased(booking.booking_status)) return null;
@@ -29,107 +32,83 @@ function counterpartySummary(role: BookingRole, booking: RoleBooking): string | 
   return null;
 }
 
+/**
+ * A booking as one row of a grouped list: date landmark, title, when, who, where, status and
+ * budget. `position` places it in its group (one surface made of rows); `featured` is the Home
+ * summary, a single row that omits the secondary identity and area.
+ */
 export function BookingCompactCard({
   role,
   booking,
   onPress,
+  featured = false,
+  position = 'only',
 }: {
   role: BookingRole;
   booking: RoleBooking;
   onPress: () => void;
+  featured?: boolean;
+  position?: GroupPosition;
 }) {
-  const isHistory =
-    booking.booking_status === 'completed' ||
-    booking.booking_status === 'cancelled' ||
-    booking.booking_status === 'no_show';
+  const ui = useUiTheme();
+  const { colors } = ui;
+  const styles = createStyles(ui);
+
   const schedule = formatTimestamp(booking.job_scheduled_at);
   const completedAt = formatTimestamp(booking.completed_at);
   const timestamp = booking.booking_status === 'completed' ? completedAt ?? schedule : schedule;
   const budget = formatBudget(booking.job_budget);
-  // Compact cards intentionally omit the exact street address.
+  // Compact rows intentionally omit the exact street address.
   const generalLocation = formatLocation(booking.job_barangay, booking.job_city);
-  const counterparty = counterpartySummary(role, booking);
+  const counterparty = featured ? null : counterpartySummary(role, booking);
+  const dateValue = booking.booking_status === 'completed' ? booking.completed_at ?? booking.job_scheduled_at : booking.job_scheduled_at;
+  const hasDate = dateValue !== null && !Number.isNaN(new Date(dateValue).getTime());
 
   return (
     <Pressable
-      style={({ pressed }) => [
-        styles.card,
-        isHistory ? styles.historyCard : null,
-        pressed ? (isHistory ? styles.historyPressed : styles.pressed) : null,
-      ]}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${booking.job_title}, ${formatBookingStatus(booking.booking_status)}. View booking details`}
+      style={({ pressed }) => [
+        styles.row,
+        groupedRowStyle(ui, position),
+        pressed ? styles.pressed : null,
+      ]}
     >
-      <View style={styles.topRow}>
+      {hasDate ? <DateLandmark value={dateValue} compact /> : <ServiceMark subject={booking.job_title} />}
+      <View style={styles.copy}>
         <Text style={styles.title}>{booking.job_title}</Text>
-        <AppChip
-          label={formatBookingStatus(booking.booking_status)}
-          variant={
-            booking.booking_status === 'pending' ? 'warning' :
-            booking.booking_status === 'cancelled' || booking.booking_status === 'no_show' ? 'danger' :
-            'positive'
-          }
-        />
+        {timestamp ? <Text style={styles.primaryLine}>{timestamp}</Text> : null}
+        {counterparty ? <Text style={styles.secondary}>{counterparty}</Text> : null}
+        {!featured && generalLocation ? <Text style={styles.secondary}>{generalLocation}</Text> : null}
+        <View style={styles.metaRow}>
+          <AppChip label={formatBookingStatus(booking.booking_status)} variant={bookingStatusVariant(booking.booking_status)} />
+          {budget ? <Text style={styles.budget}>{budget}</Text> : null}
+        </View>
       </View>
-
-      {timestamp ? <Text style={styles.primaryLine}>{timestamp}</Text> : null}
-      <View style={styles.metaRow}>
-        {budget ? <Text style={styles.meta}>{budget}</Text> : null}
-        {generalLocation ? <Text style={styles.meta}>{generalLocation}</Text> : null}
-      </View>
-      {counterparty ? <Text style={styles.counterparty}>{counterparty}</Text> : null}
-
-      <Text style={styles.affordance}>View details →</Text>
+      <SymbolView name={{ android: 'chevron_right', ios: 'chevron.right' }} size={20} tintColor={colors.textSecondary} />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
-  historyCard: {
-    backgroundColor: colors.surfaceSubtle,
-  },
-  pressed: { backgroundColor: colors.surfaceSubtle },
-  historyPressed: { backgroundColor: colors.surface },
-  topRow: { flexDirection: 'column', alignItems: 'flex-start', maxWidth: '100%', gap: spacing.sm },
-  title: {
-    width: '100%',
-    maxWidth: '100%',
-    flexShrink: 1,
-    ...type.cardTitle,
-    color: colors.textPrimary,
-  },
-  primaryLine: {
-    maxWidth: '100%',
-    flexShrink: 1,
-    ...type.bodyEmphasis,
-    color: colors.textPrimary,
-  },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', maxWidth: '100%', gap: spacing.sm },
-  meta: {
-    maxWidth: '100%',
-    flexShrink: 1,
-    ...type.helper,
-    color: colors.textSecondary,
-  },
-  counterparty: {
-    maxWidth: '100%',
-    flexShrink: 1,
-    ...type.helper,
-    color: colors.textSecondary,
-  },
-  affordance: {
-    maxWidth: '100%',
-    flexShrink: 1,
-    ...type.bodyEmphasis,
-    color: colors.primary,
-  },
-});
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing, size } = ui;
+  return StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.md,
+      minHeight: size.listRowMinHeight,
+      paddingVertical: spacing.lg,
+      paddingHorizontal: spacing.lg,
+      maxWidth: '100%',
+    },
+    pressed: { backgroundColor: colors.surfaceSunken },
+    copy: { flex: 1, minWidth: 0, gap: spacing.xs },
+    title: { ...type.bodyEmphasis, color: colors.textPrimary, flexShrink: 1, maxWidth: '100%' },
+    primaryLine: { ...type.helper, color: colors.textPrimary, flexShrink: 1, maxWidth: '100%' },
+    secondary: { ...type.helper, color: colors.textSecondary, flexShrink: 1, maxWidth: '100%' },
+    metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.md, maxWidth: '100%' },
+    budget: { ...type.numeric, fontSize: 16, lineHeight: 24, color: colors.textPrimary, flexShrink: 1, maxWidth: '100%' },
+  });
+}

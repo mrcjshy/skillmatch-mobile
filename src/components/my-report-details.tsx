@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { AppCard } from '@/components/app-card';
-import { AppChip, type AppChipVariant } from '@/components/app-chip';
+import { AppChip } from '@/components/app-chip';
 import { InlineStatus } from '@/components/inline-status';
 import { SectionHeader } from '@/components/section-header';
+import { SurfaceGroup } from '@/components/surface-group';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatDetailDateTime } from '@/lib/date-time';
 import {
@@ -19,21 +19,9 @@ import {
   loadMyReportsErrorCopy,
   reportContextLabel,
 } from '@/lib/reports';
+import { reportStatusVariant } from '@/lib/status-presentation';
 
 const { colors, type, spacing } = SkillMatchTheme.ui;
-
-function reportChipVariant(status: string): AppChipVariant {
-  if (status === 'resolved') return 'selected';
-  if (status === 'under_review') return 'warning';
-  if (status === 'dismissed') return 'warning';
-  return 'neutral';
-}
-
-function statusCardTone(status: string): 'success' | 'warning' | undefined {
-  if (status === 'resolved') return 'success';
-  if (status === 'under_review' || status === 'dismissed') return 'warning';
-  return undefined;
-}
 
 export default function MyReportDetails({ reportId }: { reportId: string | null }) {
   const [report, setReport] = useState<MyReport | null>(null);
@@ -137,37 +125,35 @@ export default function MyReportDetails({ reportId }: { reportId: string | null 
         <RefreshControl
           refreshing={isRefreshing}
           onRefresh={refresh}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
         />
       }
     >
-      <AppCard variant="status" tone={statusCardTone(report.status)}>
-        <Text style={styles.eyebrow}>STATUS</Text>
+      <View style={styles.statusRow}>
         <AppChip
           label={formatReportStatus(report.status)}
-          variant={reportChipVariant(report.status)}
-          style={styles.statusChip}
+          variant={reportStatusVariant(report.status)}
         />
-      </AppCard>
+      </View>
 
-      <AppCard>
+      <SurfaceGroup>
         <DetailLine label="Category" value={formatReportCategory(report.category)} />
         <DetailLine label="Context" value={reportContextLabel(report.booking_id)} />
         <DetailLine label="Created" value={created} />
         {report.booking_id ? <DetailLine label="Booking ID" value={report.booking_id} /> : null}
         {reviewedAt ? <DetailLine label="Reviewed" value={reviewedAt} /> : null}
-      </AppCard>
+      </SurfaceGroup>
 
-      <AppCard>
+      <View style={styles.section}>
         <SectionHeader title="Description" />
         <Text style={styles.body}>{report.description}</Text>
-      </AppCard>
+      </View>
 
-      <AppCard>
+      <View style={styles.section}>
         <SectionHeader title="Admin response" />
         <Text style={styles.body}>{report.admin_response ?? COPY.noAdminResponse}</Text>
-      </AppCard>
+      </View>
     </ScrollView>
   );
 }
@@ -185,43 +171,36 @@ function DetailLine({ label, value }: { label: string; value: string | null }) {
 const styles = StyleSheet.create({
   scroll: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   container: {
     flexGrow: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     padding: spacing.gutter,
-    gap: spacing.md,
-    paddingBottom: spacing.xxxl + spacing.sm,
+    gap: spacing.xl,
+    paddingBottom: spacing.xxxxl,
   },
   center: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.gutter,
   },
-  eyebrow: {
-    ...type.caption,
-    color: colors.textSecondary,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-  },
-  statusChip: {
-    alignSelf: 'flex-start',
-  },
+  statusRow: { flexDirection: 'row', alignItems: 'center' },
+  section: { gap: spacing.md },
   body: {
     ...type.body,
-    color: colors.textSecondary,
+    color: colors.textPrimary,
   },
   detailRow: {
     gap: spacing.xxs,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   detailLabel: {
-    ...type.caption,
+    ...type.helper,
     color: colors.textSecondary,
-    fontWeight: '700',
-    textTransform: 'uppercase',
   },
   detailValue: {
     ...type.body,

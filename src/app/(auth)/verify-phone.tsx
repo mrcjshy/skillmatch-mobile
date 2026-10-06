@@ -1,12 +1,12 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StyleSheet, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
 import { AppField } from '@/components/app-field';
-import { AppNotice } from '@/components/app-notice';
-import { SkillMatchTheme } from '@/constants/theme';
+import { AuthScreen } from '@/components/auth-screen';
+import { FormMessage } from '@/components/form-message';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import {
   PHONE_VERIFICATION_COPY,
   getPhoneResendCooldownEndsAt,
@@ -22,10 +22,8 @@ import { persistCurrentLegalConsentAfterSignup } from '@/lib/user-consent';
 import { useAccount } from '@/providers/account-provider';
 import { useSession } from '@/providers/session-provider';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
-
 export default function VerifyPhoneScreen() {
-  const insets = useSafeAreaInsets();
+  const styles = createStyles(useUiTheme());
   const router = useRouter();
   const { session } = useSession();
   const { retryAccountBootstrap } = useAccount();
@@ -130,91 +128,83 @@ export default function VerifyPhoneScreen() {
     : 'Send SMS code';
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior="padding">
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.xxxl }]}
-      >
-        <Text style={styles.heading}>Verify Your Phone</Text>
-        <Text style={styles.status}>
-          SMS OTP proves control of this phone number. It does not prove legal identity.
-        </Text>
-        <View style={styles.form}>
-          {phone === null ? (
-            <AppNotice variant="danger" message={PHONE_VERIFICATION_COPY.missingPhone} />
-          ) : !phoneOtpEnabled ? (
-            <>
-              <AppNotice variant="warning" message={PHONE_VERIFICATION_COPY.unavailable} />
-              {error ? <AppNotice variant="danger" message={error} /> : null}
-              <AppButton
-                label="Continue"
-                onPress={continueWithoutPhoneOtp}
-                loading={isFinishing}
-                disabled={isFinishing}
-              />
-            </>
-          ) : (
-            <>
+    <AuthScreen
+      title="Verify your phone"
+      description="A text-message code confirms you control this phone number. It does not verify your identity."
+      brand={false}
+    >
+      <View style={styles.form}>
+        {phone === null ? (
+          <FormMessage tone="error" message={PHONE_VERIFICATION_COPY.missingPhone} />
+        ) : !phoneOtpEnabled ? (
+          <>
+            <FormMessage tone="info" message={PHONE_VERIFICATION_COPY.unavailable} />
+            {error ? <FormMessage tone="error" message={error} /> : null}
+            <AppButton
+              label="Continue"
+              onPress={continueWithoutPhoneOtp}
+              loading={isFinishing}
+              disabled={isFinishing}
+            />
+          </>
+        ) : (
+          <>
+            <AppField
+              label="Phone number"
+              value={phone}
+              editable={false}
+              accessibilityLabel="Phone number to verify"
+            />
+            {hasSent ? (
               <AppField
-                label="Phone Number"
-                value={phone}
-                editable={false}
-                accessibilityLabel="Phone number to verify"
+                label="SMS verification code"
+                value={code}
+                onChangeText={setCode}
+                placeholder="000000"
+                keyboardType="number-pad"
+                autoComplete="sms-otp"
+                textContentType="oneTimeCode"
+                maxLength={6}
+                disabled={busy || phoneVerified}
+                inputStyle={styles.code}
+                accessibilityLabel="Six-digit SMS verification code"
               />
-              <AppButton
-                label={sendLabel}
-                onPress={sendCode}
-                variant="secondary"
-                loading={isSending}
-                disabled={busy || cooldown > 0 || phoneVerified}
-              />
-              {hasSent ? (
-                <AppField
-                  label="SMS Verification Code"
-                  value={code}
-                  onChangeText={setCode}
-                  placeholder="000000"
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  disabled={busy || phoneVerified}
-                  accessibilityLabel="Six-digit SMS verification code"
-                />
-              ) : null}
-              {error ? <AppNotice variant="danger" message={error} /> : null}
-              {notice ? <AppNotice variant="success" message={notice} /> : null}
+            ) : null}
+            {error ? <FormMessage tone="error" message={error} /> : null}
+            {notice ? <FormMessage tone="success" message={notice} /> : null}
+            <View style={styles.actions}>
               {hasSent && !phoneVerified ? (
                 <AppButton
-                  label="Verify Phone"
+                  label="Verify phone"
                   onPress={verifyCode}
                   loading={isVerifying}
                   disabled={busy}
                 />
               ) : null}
               {phoneVerified && error ? (
-                <AppButton label="Finish Account Setup" onPress={finishSetup} loading={isFinishing} />
+                <AppButton label="Finish account setup" onPress={finishSetup} loading={isFinishing} />
               ) : null}
-            </>
-          )}
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+              {/* One primary action at a time: sending is primary until a code exists, then resend is quiet. */}
+              <AppButton
+                label={sendLabel}
+                onPress={sendCode}
+                variant={hasSent ? 'ghost' : 'primary'}
+                loading={isSending}
+                disabled={busy || cooldown > 0 || phoneVerified}
+              />
+            </View>
+          </>
+        )}
+      </View>
+    </AuthScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  content: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.gutter,
-    paddingBottom: spacing.xxl,
-    backgroundColor: colors.background,
-  },
-  heading: { ...type.display, color: colors.textPrimary, textAlign: 'center' },
-  status: {
-    ...type.helper,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-  },
-  form: { marginTop: spacing.xl, gap: spacing.lg },
-});
+function createStyles(ui: UiTheme) {
+  const { type, spacing } = ui;
+  return StyleSheet.create({
+    form: { gap: spacing.lg },
+    actions: { gap: spacing.sm },
+    code: { ...type.numeric, fontSize: 22, lineHeight: 28, letterSpacing: 8, textAlign: 'center' },
+  });
+}

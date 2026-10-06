@@ -2,8 +2,10 @@ import { Redirect, type Href } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { ACCESS_ROUTE, deriveAccessState } from '@/app/_layout';
+import { SkillMatchTheme } from '@/constants/theme';
 import {
   decidePendingInboxNavigation,
+  getPendingChatBookingId,
   hasPendingNotificationsInboxIntent,
 } from '@/lib/push-notifications';
 import { useAccount } from '@/providers/account-provider';
@@ -32,8 +34,11 @@ export default function RootIndex() {
   // A pending inbox intent must win over the ordinary role-home redirect so
   // the dispatcher cannot overwrite a captured cold-start tap. Consent and
   // Worker ID gates still fail closed: do not enter a role inbox until the
-  // matching access state is the role app.
-  if (inbox.kind === 'replace' && (access === 'worker' || access === 'client')) {
+  // matching access state is the role app. A W7 chat tap is not an inbox
+  // intent: the dispatcher forwards to the role Home and
+  // PushNotificationInboxIntent pushes the re-authorized chat on top.
+  if (inbox.kind === 'replace' && getPendingChatBookingId() === null &&
+      (access === 'worker' || access === 'client')) {
     return <Redirect href={inbox.href as Href} />;
   }
 
@@ -55,5 +60,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: SkillMatchTheme.ui.colors.canvas,
   },
 });

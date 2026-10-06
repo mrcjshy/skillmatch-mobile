@@ -5,9 +5,9 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { AppButton } from '@/components/app-button';
 import { AppNotice } from '@/components/app-notice';
-import { SkillMatchTheme } from '@/constants/theme';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 
-const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+
 
 export type WorkerProfilePhotoPickerProps = {
   photoUri: string | null;
@@ -35,6 +35,9 @@ export function WorkerProfilePhotoPicker({
   label = 'Profile photo',
   helpText = DEFAULT_HELP_TEXT,
 }: WorkerProfilePhotoPickerProps) {
+  const ui = useUiTheme();
+  const { styles } = createStyles(ui);
+
   const [isPicking, setIsPicking] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const blocked = disabled || busy || isPicking;
@@ -137,6 +140,8 @@ export function WorkerProfilePhotoPicker({
   );
 }
 
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing, radius } = ui;
 const styles = StyleSheet.create({
   container: {
     gap: spacing.md,
@@ -156,8 +161,8 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: 160,
     height: 160,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.card,
+    backgroundColor: colors.surfaceSunken,
     borderCurve: 'continuous',
   },
   emptyPreview: {
@@ -166,10 +171,10 @@ const styles = StyleSheet.create({
     height: 160,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.lg,
+    borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceSubtle,
+    borderColor: colors.hairline,
+    backgroundColor: colors.surfaceSunken,
     borderCurve: 'continuous',
   },
   emptyText: {
@@ -181,3 +186,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
 });
+
+  return { styles };
+}

@@ -1,17 +1,11 @@
-import { useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRef, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View, type TextInput } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
-import { AppField } from '@/components/app-field';
-import { InlineStatus } from '@/components/inline-status';
-import { SkillMatchTheme } from '@/constants/theme';
+import { AuthScreen, useAuthScroll } from '@/components/auth-screen';
+import { FormMessage } from '@/components/form-message';
+import { PasswordField } from '@/components/password-field';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import {
   RECOVERY_INVALID_LINK_COPY,
   RECOVERY_PASSWORD_MIN_LENGTH,
@@ -20,14 +14,17 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/providers/session-provider';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
+type FieldError = { field: 'newPassword' | 'confirmPassword'; message: string };
 
 /**
  * Recovery-only password update. The form submits only when SessionProvider
  * has bound recovery authorization to the current session user id.
  */
 export default function UpdatePasswordScreen() {
-  const insets = useSafeAreaInsets();
+  const ui = useUiTheme();
+  const { colors } = ui;
+  const styles = createStyles(ui);
+  const { scrollRef, focusField } = useAuthScroll();
   const {
     session,
     recoveryStatus,
@@ -41,32 +38,51 @@ export default function UpdatePasswordScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [fieldError, setFieldError] = useState<FieldError | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const newPasswordRef = useRef<TextInput>(null);
+  const confirmPasswordRef = useRef<TextInput>(null);
 
   const showForm = canUpdateRecoveryPassword;
   const showProcessing = recoveryStatus === 'processing';
   const showComplete = recoveryStatus === 'complete';
   const showInvalid = recoveryStatus === 'error' || (!showForm && !showProcessing && !showComplete);
 
+  const title = showComplete
+    ? 'Password updated'
+    : showForm
+      ? 'Choose a new password'
+      : showProcessing
+        ? 'Checking your link'
+        : 'Link not valid';
+
   async function handleUpdatePassword() {
     if (isSubmitting) return;
 
+    setFieldError(null);
     setErrorMessage(null);
 
     if (!newPassword) {
-      setErrorMessage('Please enter a new password.');
+      setFieldError({ field: 'newPassword', message: 'Please enter a new password.' });
+      focusField(newPasswordRef);
       return;
     }
     if (newPassword.length < RECOVERY_PASSWORD_MIN_LENGTH) {
-      setErrorMessage(`Password must be at least ${RECOVERY_PASSWORD_MIN_LENGTH} characters.`);
+      setFieldError({
+        field: 'newPassword',
+        message: `Password must be at least ${RECOVERY_PASSWORD_MIN_LENGTH} characters.`,
+      });
+      focusField(newPasswordRef);
       return;
     }
     if (!confirmPassword) {
-      setErrorMessage('Please confirm your new password.');
+      setFieldError({ field: 'confirmPassword', message: 'Please confirm your new password.' });
+      focusField(confirmPasswordRef);
       return;
     }
     if (newPassword !== confirmPassword) {
-      setErrorMessage('Passwords do not match.');
+      setFieldError({ field: 'confirmPassword', message: 'Passwords do not match.' });
+      focusField(confirmPasswordRef);
       return;
     }
 
@@ -102,104 +118,75 @@ export default function UpdatePasswordScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.flex, styles.canvas]}
-      behavior="padding"
-    >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.xxxl },
-        ]}
-      >
-        <Text style={styles.heading}>Update Password</Text>
+    <AuthScreen scrollRef={scrollRef} title={title}>
+      {showProcessing ? (
+        <View style={styles.checking} accessibilityLiveRegion="polite">
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.checkingText}>Checking recovery link…</Text>
+        </View>
+      ) : null}
 
-        {showProcessing ? (
-          <InlineStatus variant="loading" message="Checking recovery link…" />
-        ) : null}
+      {showComplete ? (
+        <View style={styles.block}>
+          <FormMessage tone="success" message="Your password has been updated." />
+          <AppButton label="Continue" onPress={clearRecoveryAuthorization} />
+        </View>
+      ) : null}
 
-        {showComplete ? (
-          <>
-            <InlineStatus variant="note" message="Your password has been updated." />
-            <AppButton label="Continue" onPress={clearRecoveryAuthorization} />
-          </>
-        ) : null}
+      {showInvalid ? (
+        <View style={styles.block}>
+          <FormMessage tone="error" message={recoveryError ?? RECOVERY_INVALID_LINK_COPY} />
+          <AppButton label="Continue" onPress={clearRecoveryAuthorization} />
+        </View>
+      ) : null}
 
-        {showInvalid ? (
-          <>
-            <InlineStatus
-              variant="error"
-              message={recoveryError ?? RECOVERY_INVALID_LINK_COPY}
-            />
-            <AppButton label="Continue" onPress={clearRecoveryAuthorization} />
-          </>
-        ) : null}
+      {showForm ? (
+        <View style={styles.block}>
+          <PasswordField
+            inputRef={newPasswordRef}
+            label="New password"
+            value={newPassword}
+            onChangeText={(value) => {
+              setNewPassword(value);
+              setFieldError((current) => (current?.field === 'newPassword' ? null : current));
+            }}
+            autoComplete="new-password"
+            textContentType="newPassword"
+            disabled={isSubmitting}
+            helperText={`At least ${RECOVERY_PASSWORD_MIN_LENGTH} characters.`}
+            errorText={fieldError?.field === 'newPassword' ? fieldError.message : undefined}
+            accessibilityLabel="New password"
+          />
 
-        {showForm ? (
-          <View style={styles.form}>
-            <AppField
-              label="New Password"
-              value={newPassword}
-              onChangeText={setNewPassword}
-              placeholder="New password"
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              disabled={isSubmitting}
-              accessibilityLabel="New Password"
-            />
+          <PasswordField
+            inputRef={confirmPasswordRef}
+            label="Confirm new password"
+            value={confirmPassword}
+            onChangeText={(value) => {
+              setConfirmPassword(value);
+              setFieldError((current) => (current?.field === 'confirmPassword' ? null : current));
+            }}
+            autoComplete="new-password"
+            textContentType="newPassword"
+            disabled={isSubmitting}
+            errorText={fieldError?.field === 'confirmPassword' ? fieldError.message : undefined}
+            accessibilityLabel="Confirm new password"
+          />
 
-            <AppField
-              label="Confirm New Password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="Confirm new password"
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              disabled={isSubmitting}
-              accessibilityLabel="Confirm New Password"
-            />
+          {errorMessage ? <FormMessage tone="error" message={errorMessage} /> : null}
 
-            {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-
-            <AppButton
-              label="Update Password"
-              onPress={handleUpdatePassword}
-              loading={isSubmitting}
-            />
-          </View>
-        ) : null}
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <AppButton label="Update password" onPress={handleUpdatePassword} loading={isSubmitting} />
+        </View>
+      ) : null}
+    </AuthScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  canvas: {
-    backgroundColor: colors.background,
-  },
-  content: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.gutter,
-    paddingBottom: spacing.xxl,
-  },
-  heading: {
-    ...type.display,
-    color: colors.textPrimary,
-    textAlign: 'center',
-  },
-  form: {
-    marginTop: spacing.lg,
-    gap: spacing.lg,
-  },
-  error: {
-    ...type.helper,
-    color: colors.danger,
-    textAlign: 'center',
-  },
-});
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing } = ui;
+  return StyleSheet.create({
+    block: { gap: spacing.lg },
+    checking: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    checkingText: { ...type.body, color: colors.textSecondary, flex: 1 },
+  });
+}

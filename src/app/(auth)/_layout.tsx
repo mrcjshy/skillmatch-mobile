@@ -11,7 +11,7 @@ export default function AuthLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: SkillMatchTheme.ui.colors.background },
+        contentStyle: { backgroundColor: SkillMatchTheme.ui.colors.canvas },
       }}
     />
   );

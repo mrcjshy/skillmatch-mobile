@@ -368,8 +368,8 @@ describe('approximate-versus-exact lifecycle projection', () => {
     const surface = projectPreAcceptWorkerLocation(santaAnaArea, 'ready');
     expect(surface).toEqual({
       kind: 'approximate',
-      heading: 'Approximate Job Area',
-      copy: 'Approximate Job area. Exact location becomes available after acceptance.',
+      heading: 'Approximate job area',
+      copy: 'Approximate job area. Exact location becomes available after acceptance.',
       barangay: 'Santa Ana',
       city: 'Pateros',
       mapRegion: SANTA_ANA_PATEROS_DISPLAY_REGION,

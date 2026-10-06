@@ -3,8 +3,8 @@ import { supabase } from '@/lib/supabase';
 const MAX_GUIDANCE_CHARS = 1_200;
 
 export const SKILL_GAP_GUIDANCE_COPY = {
-  title: 'AI Guidance',
-  get: 'Get AI Guidance',
+  title: 'AI guidance',
+  get: 'Get AI guidance',
   loading: 'Getting AI guidance…',
   unavailable: 'AI guidance is unavailable right now.',
   retry: 'Try again',

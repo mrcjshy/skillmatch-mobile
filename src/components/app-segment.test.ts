@@ -14,7 +14,8 @@ function harness(file: string, name: string) {
   const compile = (path: string, modules: Props): Props => {
     const exports: Props = {};
     const code = ts.transpileModule(readFileSync(path, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-    runInNewContext(code, { exports, require: (key: string) => { if (!(key in modules)) throw Error(`Unexpected import: ${key}`); return modules[key]; } });
+    runInNewContext(code, { exports, require: (key: string) => {
+      if (key === '@/components/refinement-theme') return { useUiTheme: () => modules['@/constants/theme'].SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children }; if (!(key in modules)) throw Error(`Unexpected import: ${key}`); return modules[key]; } });
     return exports;
   };
   const theme = compile('src/constants/theme.ts', { 'react-native': native, '@/global.css': {} });
@@ -58,7 +59,12 @@ describe('AppSegment actual controlled options', () => {
       expect(label.props.numberOfLines).toBeUndefined();
       expect(label.props.allowFontScaling).not.toBe(false);
       expect(flatten(label.props.style).flexShrink).toBe(1);
-      if (option.props.accessibilityState.selected) expect(flatten(label.props.style).textDecorationLine).toBe('underline');
+      // Selection is weight + accent + a raised white pill with an accent outline; never an underline.
+      if (option.props.accessibilityState.selected) {
+        expect(flatten(label.props.style).textDecorationLine).toBeUndefined();
+        expect(flatten(label.props.style).fontWeight).toBe('700');
+        expect(states(option, false)).toMatchObject({ backgroundColor: h.ui.colors.surface, borderColor: h.ui.colors.accent });
+      } else expect(states(option, false)).toMatchObject({ backgroundColor: 'transparent', borderColor: 'transparent' });
       contrast(option, track.backgroundColor, 'segment');
     }
   });

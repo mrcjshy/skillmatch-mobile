@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SkillMatchTheme } from '@/constants/theme';
 import { RatingScore, RATING_SCORES } from '@/lib/ratings';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
+const { colors, type, spacing, size } = SkillMatchTheme.ui;
 
 export const RATING_LABELS: Record<RatingScore, string> = {
   1: 'Poor',
@@ -54,9 +54,9 @@ export function StarRatingInput({ value, onChange, disabled = false }: {
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
-  target: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  target: { width: size.minTarget, height: size.minTarget, alignItems: 'center', justifyContent: 'center' },
   star: { fontSize: 32, color: colors.textSecondary, lineHeight: 38 },
-  filled: { color: colors.primary },
+  filled: { color: colors.accent },
   selection: {
     marginTop: spacing.xs,
     ...type.helper,

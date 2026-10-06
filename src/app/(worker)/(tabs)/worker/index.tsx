@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { ActiveBookingHomeCard } from '@/components/active-booking-home-card';
-import { AppCard } from '@/components/app-card';
+import { AppSegment } from '@/components/app-segment';
 import { AvailabilityControl } from '@/components/availability-control';
+import { groupPosition } from '@/components/grouped-row';
+import { HomeStickyHeader } from '@/components/home-header';
 import { InlineStatus } from '@/components/inline-status';
 import { JobOpportunityCompactCard } from '@/components/job-opportunity-compact-card';
+import { MotionFlatList, MotionView, useListReveal, useMotion } from '@/components/motion';
 import { SectionHeader } from '@/components/section-header';
-import { SkillMatchTheme } from '@/constants/theme';
+import { SkillMatchMascot } from '@/components/skillmatch-mascot';
+import { AppSymbol } from '@/components/app-symbol';
+import { useUiTheme, type UiTheme, RefinementThemeProvider } from '@/components/refinement-theme';
 import { loadWorkerBookings, type WorkerBooking } from '@/lib/booking-records';
-import { homeGreeting } from '@/lib/home-greeting';
 import { firstNameFromFullName } from '@/lib/initials';
 import {
   JOB_OPPORTUNITY_COPY,
@@ -29,13 +33,32 @@ import {
   workerHomeIdentityNotice,
   type IdentityDocumentStatus,
 } from '@/lib/worker-identity';
+import {
+  WORKER_JOB_SORT_COPY,
+  WORKER_JOB_SORT_OPTIONS,
+  loadJobPostedAt,
+  sortWorkerOpportunities,
+  type WorkerJobSort,
+} from '@/lib/worker-opportunity-sort';
 import { useAccount } from '@/providers/account-provider';
+import { useSession } from '@/providers/session-provider';
 import { useWorkerProfile } from '@/providers/worker-profile-provider';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
+
 
 export default function WorkerHome() {
   const { account } = useAccount();
+  const { session, sessionRevision } = useSession();
+  return <RefinementThemeProvider><WorkerHomeContent key={`${account?.id}:${account?.role}:${account?.is_active}:${session?.user.id}:${sessionRevision}`} /></RefinementThemeProvider>;
+}
+
+function WorkerHomeContent() {
+  const ui = useUiTheme();
+  const { colors } = ui;
+  const styles = createStyles(ui);
+
+  const { account } = useAccount();
+  const { session, sessionRevision, isSessionRevisionCurrent } = useSession();
   const {
     availability,
     isLoading,
@@ -56,39 +79,61 @@ export default function WorkerHome() {
   const [identityStatus, setIdentityStatus] = useState<IdentityDocumentStatus | null>(null);
   const [identityReady, setIdentityReady] = useState(false);
   const accountId = account?.id;
+  const ownerScope = `${accountId}:${sessionRevision ?? 'legacy'}`;
+  const [contentOwner] = useState(ownerScope);
+  const canRenderOwnedContent = contentOwner === ownerScope && account?.role === 'worker' &&
+    account.is_active && session?.user.id === accountId;
+  const authorizedWorker = Boolean(accountId && account?.role === 'worker' && account.is_active && session?.user.id === accountId);
   const canLoadOpportunities = Boolean(
-    accountId && account?.role === 'worker' && account.is_active &&
+    accountId && session?.user.id === accountId && account?.role === 'worker' && account.is_active &&
     !isLoading && !loadError && availability === 'available'
   );
   const refreshOpportunities = useRef<(() => void) | null>(null);
   const opportunityRequest = useRef<Promise<JobOpportunity[]> | null>(null);
+  const refreshStatus = useRef<(() => Promise<unknown>) | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  // Display order only (Wave 7). Best match is the server's ranking as received.
+  const [sort, setSort] = useState<WorkerJobSort>('match');
+  const [postedAt, setPostedAt] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const [postedError, setPostedError] = useState(false);
+  // The moment Job date order splits upcoming from passed work; taken when the order is chosen.
+  const [sortNow, setSortNow] = useState(() => Date.now());
 
   useFocusEffect(
     useCallback(() => {
-      void refreshPersistedAvailability();
-      void loadWorkerBookings()
-        .then(setBookings)
-        .catch(() => {
-          setBookings([]);
-        });
-      void getMyIdentitySubmission()
-        .then((row) => {
-          setIdentityStatus(row?.status ?? null);
-        })
-        .catch(() => {
-          setIdentityStatus(null);
-        })
-        .finally(() => {
-          setIdentityReady(true);
-        });
-    }, [refreshPersistedAvailability])
+      if (!authorizedWorker) return;
+      let cancelled = false;
+      let revision = 0;
+      const isCurrent = (readRevision: number) => !cancelled && revision === readRevision && AppState.currentState === 'active' &&
+        (sessionRevision === undefined || !isSessionRevisionCurrent || isSessionRevisionCurrent(sessionRevision));
+      const read = () => {
+        const readRevision = revision;
+        return Promise.allSettled([
+          refreshPersistedAvailability(),
+          loadWorkerBookings().then(rows => { if (isCurrent(readRevision)) setBookings(rows); })
+            .catch(() => { if (isCurrent(readRevision)) setBookings([]); }),
+          getMyIdentitySubmission().then(row => { if (isCurrent(readRevision)) setIdentityStatus(row?.status ?? null); })
+            .catch(() => { if (isCurrent(readRevision)) setIdentityStatus(null); })
+            .finally(() => { if (isCurrent(readRevision)) setIdentityReady(true); }),
+        ]);
+      };
+      refreshStatus.current = read;
+      void read();
+      const listener = AppState.addEventListener('change', state => {
+        revision++;
+        setBookings([]); setIdentityStatus(null); setIdentityReady(false);
+        if (state === 'active') void read();
+      });
+      return () => { cancelled = true; if (refreshStatus.current === read) refreshStatus.current = null; listener.remove(); };
+    }, [authorizedWorker, sessionRevision, isSessionRevisionCurrent, refreshPersistedAvailability])
   );
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     if (!canLoadOpportunities) return;
 
     let cancelled = false;
     let firstRead = true;
+    let revision = 0;
     // One queue serves mount, focus, SUBSCRIBED/reconnect, and Broadcast.
     // Keep the rendered rows in place during background revalidation.
     const rereader = createCoalescedInvalidation(async () => {
@@ -103,16 +148,17 @@ export default function WorkerHome() {
       if (opportunityRequest.current) {
         await opportunityRequest.current.catch(() => undefined);
       }
-      if (cancelled) return;
+      if (cancelled || AppState.currentState !== 'active') return;
+      const readRevision = revision;
       const request = loadMyJobOpportunities();
       opportunityRequest.current = request;
       try {
         const rows = await request;
-        if (cancelled) return;
+        if (cancelled || readRevision !== revision) return;
         setOpportunities(rows);
         setOppError(null);
       } catch (error: unknown) {
-        if (cancelled) return;
+        if (cancelled || readRevision !== revision) return;
         if (error instanceof Error && error.message) {
           console.warn('[V2-A] list_my_job_opportunities failed:', error.message);
         }
@@ -131,13 +177,21 @@ export default function WorkerHome() {
       onInvalidate: rereader.invalidate,
     });
 
+    const listener = AppState.addEventListener('change', state => {
+      revision++;
+      setOpportunities([]);
+      setOppLoading(true);
+      if (state === 'active') rereader.invalidate();
+    });
+
     return () => {
       cancelled = true;
+      listener.remove();
       refreshOpportunities.current = null;
       rereader.cancel();
       unsubscribe();
     };
-  }, [accountId, canLoadOpportunities]);
+  }, [canLoadOpportunities]));
 
   // Defined after queue setup: focus never starts a separate competing read.
   useFocusEffect(
@@ -146,198 +200,191 @@ export default function WorkerHome() {
     }, [accountId, canLoadOpportunities])
   );
 
+  // One pull refreshes the whole Home through the same reads focus, resume and live updates use.
+  const refreshHome = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const status = refreshStatus.current?.();
+      refreshOpportunities.current?.();
+      await Promise.allSettled([status, opportunityRequest.current]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const firstName = firstNameFromFullName(account?.full_name ?? '');
   const identityNotice = workerHomeIdentityNotice(isVerified, identityStatus);
+  const profileReady = !isLoading && !loadError;
+  // Authoritative rows from list_my_job_opportunities; nothing is shown while a read is unsettled.
+  const rankedJobs = canRenderOwnedContent && canLoadOpportunities && !oppLoading && !oppError ? opportunities : [];
+  const jobs = sortWorkerOpportunities(rankedJobs, sort, { now: sortNow, postedAt });
+  // Motion only explains changes: arriving rows fade in once, re-sorted rows glide to their places.
+  // Order, count and the fixed Sort by control are untouched; reduced motion makes both immediate.
+  const motion = useMotion();
+  const rowEnter = useListReveal(jobs.map(job => job.job_id));
+  const missingPostedKey = sort === 'posted' ? rankedJobs.filter(job => !postedAt.has(job.job_id)).map(job => job.job_id).join(',') : '';
+  const jobsStatusKind = !profileReady ? null
+    : availability !== 'available' ? 'busy' : oppLoading ? 'loading' : oppError ? 'error' : 'empty';
+  const jobsStatus = !profileReady ? null
+    : availability !== 'available' ? <InlineStatus variant="note" message="Set your status to Available to see matching jobs." />
+      : oppLoading ? <InlineStatus variant="loading" message="Loading available jobs…" />
+        : oppError ? <InlineStatus variant="error" message={oppError} />
+          : <InlineStatus variant="empty" message="No matching jobs right now." illustration={<SkillMatchMascot pose="empty" />} />;
+
+  // Posting times are read only when Date posted is chosen, for listed jobs not yet known.
+  useEffect(() => {
+    if (!missingPostedKey) return;
+    let cancelled = false;
+    loadJobPostedAt(missingPostedKey.split(','))
+      .then(rows => {
+        if (cancelled) return;
+        setPostedAt(previous => new Map([...previous, ...rows]));
+        setPostedError(false);
+      })
+      .catch(() => { if (!cancelled) setPostedError(true); });
+    return () => { cancelled = true; };
+  }, [missingPostedKey]);
 
   return (
-    <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-
-      <View style={styles.titleBlock}>
-        <Text style={styles.greeting}>{homeGreeting()}</Text>
-        <Text
-          style={styles.displayTitle}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-          accessibilityRole="header"
-        >
-          {firstName}
-        </Text>
-      </View>
-
-      {!isLoading && !loadError && identityReady && identityNotice !== 'none' ? (
-        <View style={styles.pendingPad}>
-          <AppCard variant="status" tone="warning">
-            {identityNotice === 'rejected' ? (
-              <>
-                <Text style={styles.pendingHeadline}>{IDENTITY_COPY.homeRejectedHeadline}</Text>
-                {IDENTITY_COPY.homeRejectedBody.map((line) => (
-                  <Text key={line} style={styles.pendingBody}>
-                    {line}
-                  </Text>
-                ))}
-              </>
-            ) : (
-              <>
-                <Text style={styles.pendingHeadline}>{IDENTITY_COPY.homePendingHeadline}</Text>
-                {IDENTITY_COPY.homePendingBody.map((line) => (
-                  <Text key={line} style={styles.pendingBody}>
-                    {line}
-                  </Text>
-                ))}
-              </>
-            )}
-          </AppCard>
-        </View>
-      ) : null}
-
-      <View style={styles.availabilityBlock}>
-        <Text style={styles.sectionTitle}>Availability</Text>
-        <Text style={styles.help}>This is the status used for matching.</Text>
+    <View style={styles.screen}>
+      <HomeStickyHeader name={firstName} role="worker">
         {isLoading ? (
-          <InlineStatus variant="loading" message="Loading your profile…" />
+          <Text style={styles.headerNote}>Loading your profile…</Text>
         ) : loadError ? (
-          <InlineStatus variant="error" message={loadError} />
+          <Text style={styles.headerNote}>Work status unavailable</Text>
         ) : (
-          <AvailabilityControl
-            value={availability}
-            onChange={(status) => {
-              void persistAvailability(status);
-            }}
-            disabled={isPersistingAvailability}
-          />
+          <View style={styles.statusRow}>
+            <AvailabilityControl
+              compact
+              value={availability}
+              onChange={(status) => {
+                void persistAvailability(status);
+              }}
+              disabled={isPersistingAvailability}
+            />
+            {isPersistingAvailability ? <ActivityIndicator color={colors.accent} /> : null}
+          </View>
         )}
-        {isPersistingAvailability ? <ActivityIndicator color={colors.primary} /> : null}
-        {persistAvailabilityError ? (
-          <InlineStatus variant="error" message={persistAvailabilityError} />
-        ) : null}
-        {refreshPersistedAvailabilityError ? (
-          <InlineStatus variant="error" message={refreshPersistedAvailabilityError} />
-        ) : null}
-      </View>
-
-      <View style={styles.bookingBlock}>
+        {/* Current work stays in reach with the header; it renders nothing without a confirmed booking. */}
         <ActiveBookingHomeCard
           role="worker"
-          bookings={bookings}
+          compact
+          bookings={canRenderOwnedContent ? bookings : []}
           onPressPrimary={(booking) =>
             router.push({
               pathname: '/worker/booking-details',
               params: { bookingId: booking.booking_id },
             } as unknown as Href)
           }
-          onPressViewAll={() => router.push('/worker/bookings' as Href)}
+          onPressViewAll={() => router.push({ pathname: '/worker/bookings', params: { segment: 'active' } } as unknown as Href)}
         />
-      </View>
-
-      <View style={styles.jobsBlock}>
-        <SectionHeader title="Job opportunities" style={styles.sectionHeader} />
-        {availability !== 'available' ? (
-          <InlineStatus
-            variant="note"
-            message="Set your status to Available to receive matching job opportunities. Busy workers are not included in matching."
-            style={styles.statusPad}
+        {/* One fixed surface: opportunity controls share the existing Home header. */}
+        <View style={styles.opportunityHeader}>
+          <SectionHeader
+            title="Available jobs"
+            trailing={jobs.length > 0 ? <Text style={styles.count}>{jobs.length === 1 ? '1 job' : `${jobs.length} jobs`}</Text> : undefined}
           />
-        ) : canLoadOpportunities && oppLoading ? (
-          <InlineStatus
-            variant="loading"
-            message="Loading your opportunities…"
-            style={styles.statusPad}
-          />
-        ) : canLoadOpportunities && oppError ? (
-          <InlineStatus variant="error" message={oppError} style={styles.statusPad} />
-        ) : !canLoadOpportunities || opportunities.length === 0 ? (
-          <InlineStatus
-            variant="empty"
-            message="No matching job opportunities right now."
-            style={styles.statusPad}
-          />
-        ) : (
-          opportunities.map((job) => (
-            <View key={job.job_id} style={styles.cardPad}>
-              <JobOpportunityCompactCard
-                opportunity={job}
-                onPress={() =>
-                  router.push({
-                    pathname: '/worker/opportunity-details',
-                    params: { jobId: job.job_id },
-                  } as unknown as Href)
-                }
+          {jobs.length > 1 ? (
+            <View style={styles.sort}>
+              <Text style={styles.sortLabel} accessible={false} importantForAccessibility="no">{WORKER_JOB_SORT_COPY.label}</Text>
+              <AppSegment
+                accessibilityLabel={WORKER_JOB_SORT_COPY.label}
+                options={WORKER_JOB_SORT_OPTIONS}
+                value={sort}
+                onChange={(next) => { setSortNow(Date.now()); setSort(next); }}
               />
+              {sort === 'posted' && postedError ? <InlineStatus variant="note" message={WORKER_JOB_SORT_COPY.postedUnavailable} /> : null}
             </View>
-          ))
-        )}
-      </View>
+          ) : null}
+        </View>
+      </HomeStickyHeader>
 
-    </ScrollView>
+      <MotionFlatList
+        style={styles.list}
+        contentContainerStyle={styles.content}
+        data={jobs}
+        keyExtractor={job => job.job_id}
+        itemLayoutAnimation={motion.rowLayout}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refreshHome(); }} tintColor={colors.accent} colors={[colors.accent]} />}
+        ListHeaderComponent={
+          <View style={styles.lead}>
+            {loadError ? <View style={styles.inset}><InlineStatus variant="error" message={loadError} /></View> : null}
+            {persistAvailabilityError ? <View style={styles.inset}><InlineStatus variant="error" message={persistAvailabilityError} /></View> : null}
+            {refreshPersistedAvailabilityError ? <View style={styles.inset}><InlineStatus variant="error" message={refreshPersistedAvailabilityError} /></View> : null}
+
+            {canRenderOwnedContent && profileReady && identityReady && identityNotice !== 'none' ? (
+              <View style={styles.notice} accessibilityRole="summary">
+                <AppSymbol name={{ android: 'warning', ios: 'exclamationmark.triangle' }} size={20} tintColor={colors.warning} />
+                <View style={styles.noticeCopy}>
+                  <Text style={styles.noticeHeadline}>
+                    {identityNotice === 'rejected' ? IDENTITY_COPY.homeRejectedHeadline : IDENTITY_COPY.homePendingHeadline}
+                  </Text>
+                  {(identityNotice === 'rejected' ? IDENTITY_COPY.homeRejectedBody : IDENTITY_COPY.homePendingBody).map((line) => (
+                    <Text key={line} style={styles.noticeBody}>
+                      {line}
+                    </Text>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+          </View>
+        }
+        renderItem={({ item, index }) => (
+          <MotionView entering={rowEnter(item.job_id)} style={styles.inset}>
+            <JobOpportunityCompactCard
+              compact
+              opportunity={item}
+              position={groupPosition(index, jobs.length)}
+              onPress={() => router.push({ pathname: '/worker/opportunity-details', params: { jobId: item.job_id } } as unknown as Href)}
+            />
+          </MotionView>
+        )}
+        // Keyed by kind so an empty result settles in after the spinner; loading, busy and error
+        // states change at once (no motion on errors).
+        ListEmptyComponent={jobsStatus ? (
+          <MotionView key={jobsStatusKind} entering={jobsStatusKind === 'empty' ? motion.fadeIn : undefined} style={styles.inset}>
+            {jobsStatus}
+          </MotionView>
+        ) : null}
+      />
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    flexGrow: 1,
-    backgroundColor: colors.background,
-    paddingBottom: spacing.xxxl + spacing.sm,
-  },
-  titleBlock: {
-    paddingHorizontal: spacing.gutter,
-    paddingTop: spacing.lg,
-    gap: spacing.sm,
-    marginBottom: spacing.xl,
-  },
-  greeting: {
-    ...type.helper,
-    color: colors.textSecondary,
-  },
-  displayTitle: {
-    ...type.display,
-    color: colors.textPrimary,
-  },
-  pendingPad: {
-    paddingHorizontal: spacing.gutter,
-    marginBottom: spacing.xxl,
-  },
-  pendingHeadline: {
-    ...type.sectionTitle,
-    color: colors.warning,
-  },
-  pendingBody: {
-    ...type.body,
-    color: colors.textPrimary,
-  },
-  availabilityBlock: {
-    paddingHorizontal: spacing.gutter,
-    gap: spacing.sm,
-    marginBottom: spacing.xxl,
-  },
-  sectionTitle: {
-    ...type.sectionTitle,
-    color: colors.textPrimary,
-  },
-  help: {
-    ...type.helper,
-    color: colors.textSecondary,
-  },
-  jobsBlock: {
-    gap: spacing.md,
-    marginBottom: spacing.xxl,
-  },
-  bookingBlock: {
-    marginBottom: spacing.xxl,
-  },
-  sectionHeader: {
-    paddingHorizontal: spacing.gutter,
-  },
-  statusPad: {
-    paddingHorizontal: spacing.gutter,
-  },
-  cardPad: {
-    paddingHorizontal: spacing.gutter,
-  },
-  listRow: {
-    paddingHorizontal: spacing.gutter,
-  },
-});
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing, radius, size } = ui;
+  const styles = StyleSheet.create({
+    screen: { flex: 1, backgroundColor: colors.canvas },
+    list: { flex: 1, backgroundColor: colors.canvas },
+    content: {
+      flexGrow: 1,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.xxxxl,
+    },
+    // Notices scroll with the rows; opportunity controls stay in the existing fixed header.
+    lead: { gap: spacing.lg },
+    opportunityHeader: { gap: spacing.sm, paddingTop: spacing.md },
+    inset: { paddingHorizontal: spacing.gutter },
+    statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    headerNote: { ...type.helper, color: colors.textSecondary, minHeight: size.minTarget, textAlignVertical: 'center' },
+    count: { ...type.label, color: colors.textSecondary },
+    sort: { gap: spacing.sm },
+    sortLabel: { ...type.label, color: colors.textSecondary },
+    notice: {
+      marginHorizontal: spacing.gutter,
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.md,
+      padding: spacing.md,
+      borderRadius: radius.control,
+      backgroundColor: colors.warningTint,
+      borderCurve: 'continuous',
+    },
+    noticeCopy: { flex: 1, gap: spacing.xs },
+    noticeHeadline: { ...type.bodyEmphasis, color: colors.warning },
+    noticeBody: { ...type.body, color: colors.textPrimary },
+  });
+
+  return styles;
+}

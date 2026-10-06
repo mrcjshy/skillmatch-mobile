@@ -1,22 +1,18 @@
-import { Link } from 'expo-router';
-import { useState } from 'react';
-import {
-  Image,
-  KeyboardAvoidingView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { useRef, useState } from 'react';
+import { StyleSheet, Text, View, type TextInput } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
+import { AppDivider } from '@/components/app-divider';
 import { AppField } from '@/components/app-field';
-import { SkillMatchTheme } from '@/constants/theme';
+import { AuthLink, AuthScreen, useAuthScroll } from '@/components/auth-screen';
+import { FormMessage } from '@/components/form-message';
+import { PasswordField } from '@/components/password-field';
+import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import { supabase } from '@/lib/supabase';
 import { useSession } from '@/providers/session-provider';
 
-const { colors, type, spacing } = SkillMatchTheme.ui;
+type FieldError = { field: 'email' | 'password'; message: string };
 
 /**
  * Supabase Auth sign-in UI only.
@@ -27,36 +23,47 @@ const { colors, type, spacing } = SkillMatchTheme.ui;
  * bootstrap-error as appropriate.
  */
 export default function LoginScreen() {
-  const insets = useSafeAreaInsets();
+  const ui = useUiTheme();
+  const styles = createStyles(ui);
+  const router = useRouter();
+  const { scrollRef, focusField } = useAuthScroll();
   const { session, isSessionLoading, sessionError } = useSession();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [fieldError, setFieldError] = useState<FieldError | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
 
-  const sessionStatus = isSessionLoading
-    ? 'Checking session…'
+  // Only a state the person needs to know about is shown; the idle "no session" state is the
+  // normal condition of this screen and says nothing useful.
+  const sessionNotice = isSessionLoading
+    ? { tone: 'info' as const, text: 'Checking session…' }
     : sessionError
-      ? 'Session restoration error.'
+      ? { tone: 'error' as const, text: 'Session restoration error.' }
       : session
-        ? 'Authenticated session present.'
-        : 'No authenticated session.';
+        ? { tone: 'info' as const, text: 'Authenticated session present.' }
+        : null;
 
   async function handleSignIn() {
     if (isSubmitting) return;
 
+    setFieldError(null);
     setErrorMessage(null);
     setSuccessMessage(null);
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-      setErrorMessage('Please enter your email.');
+      setFieldError({ field: 'email', message: 'Please enter your email.' });
+      focusField(emailRef);
       return;
     }
     if (!password) {
-      setErrorMessage('Please enter your password.');
+      setFieldError({ field: 'password', message: 'Please enter your password.' });
+      focusField(passwordRef);
       return;
     }
 
@@ -88,125 +95,77 @@ export default function LoginScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior="padding"
-    >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + spacing.xxxl },
-        ]}
-      >
-        <View style={styles.brand}>
-          <Image
-            source={require('@/assets/images/skillmatch-logo.png')}
-            style={styles.brandLogo}
-            accessibilityIgnoresInvertColors
-          />
-          <Text style={styles.brandName}>SkillMatch</Text>
-        </View>
-        <Text style={styles.heading}>Sign In</Text>
-        <Text style={styles.status}>{sessionStatus}</Text>
-
-        <View style={styles.form}>
-          <AppField
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            disabled={isSubmitting}
-            accessibilityLabel="Email"
-          />
-
-          <AppField
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-            disabled={isSubmitting}
-            accessibilityLabel="Password"
-          />
-
-          {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-          {successMessage ? <Text style={styles.success}>{successMessage}</Text> : null}
-
-          <AppButton label="Sign In" onPress={handleSignIn} loading={isSubmitting} />
-
-          <Link href="/forgot-password" style={styles.link}>
-            Forgot Password
-          </Link>
-
+    <AuthScreen
+      scrollRef={scrollRef}
+      title="Sign in"
+      description="Enter your email and password to continue."
+      footer={
+        <>
+          <AppDivider />
+          <Text style={styles.footerLead}>New to SkillMatch?</Text>
           {/* Ordinary push: Back from Register returns here. */}
-          <Link href="/register" style={styles.link}>
-            {"Don't have an account? Create one"}
-          </Link>
+          <AppButton
+            label="Create an account"
+            variant="secondary"
+            onPress={() => router.push('/register')}
+          />
+        </>
+      }
+    >
+      {sessionNotice ? <FormMessage tone={sessionNotice.tone} message={sessionNotice.text} /> : null}
+
+      <View style={styles.form}>
+        <AppField
+          inputRef={emailRef}
+          label="Email"
+          value={email}
+          onChangeText={(value) => {
+            setEmail(value);
+            setFieldError((current) => (current?.field === 'email' ? null : current));
+          }}
+          placeholder="you@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          textContentType="emailAddress"
+          disabled={isSubmitting}
+          errorText={fieldError?.field === 'email' ? fieldError.message : undefined}
+          accessibilityLabel="Email"
+        />
+
+        <PasswordField
+          inputRef={passwordRef}
+          label="Password"
+          value={password}
+          onChangeText={(value) => {
+            setPassword(value);
+            setFieldError((current) => (current?.field === 'password' ? null : current));
+          }}
+          autoComplete="current-password"
+          textContentType="password"
+          disabled={isSubmitting}
+          errorText={fieldError?.field === 'password' ? fieldError.message : undefined}
+          accessibilityLabel="Password"
+        />
+
+        {errorMessage ? <FormMessage tone="error" message={errorMessage} /> : null}
+        {successMessage ? <FormMessage tone="success" message={successMessage} /> : null}
+
+        <View style={styles.actions}>
+          <AppButton label="Sign in" onPress={handleSignIn} loading={isSubmitting} />
+          <AuthLink href="/forgot-password">Forgot password?</AuthLink>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </View>
+    </AuthScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  content: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.gutter,
-    paddingBottom: spacing.xxl,
-  },
-  brand: {
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  brandLogo: {
-    width: 56,
-    height: 56,
-  },
-  brandName: {
-    color: colors.primary,
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  heading: {
-    ...type.display,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginTop: spacing.lg,
-  },
-  status: {
-    ...type.helper,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-  },
-  form: {
-    marginTop: spacing.lg,
-    gap: spacing.lg,
-  },
-  error: {
-    ...type.helper,
-    color: colors.danger,
-  },
-  success: {
-    ...type.helper,
-    color: colors.success,
-  },
-  link: {
-    fontSize: 16,
-    fontWeight: '600',
-    lineHeight: 20,
-    color: colors.primary,
-    textAlign: 'center',
-    paddingVertical: 12,
-  },
-});
+function createStyles(ui: UiTheme) {
+  const { colors, type, spacing } = ui;
+  return StyleSheet.create({
+    form: { gap: spacing.lg },
+    actions: { gap: spacing.xs },
+    footerLead: { ...type.body, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm },
+  });
+}
