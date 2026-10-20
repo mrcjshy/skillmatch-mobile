@@ -363,7 +363,7 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
       ) : null}
 
       <View style={[styles.pad, styles.section]}>
-        <SectionHeader title="Location" subtitle="Only the general area is shown before you accept." />
+        <SectionHeader title="Location" subtitle="Review the saved service location before accepting." />
         <WorkerOpportunityJobLocation location={location} />
       </View>
 
@@ -414,7 +414,7 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
   scroll: { flex: 1, backgroundColor: colors.canvas },
-  content: { flexGrow: 1, paddingTop: spacing.sm, gap: spacing.xl, paddingBottom: spacing.xl },
+  content: { flexGrow: 1, paddingTop: spacing.sm, gap: spacing.lg, paddingBottom: spacing.lg },
   pad: { marginHorizontal: spacing.gutter },
   center: { flex: 1, backgroundColor: colors.canvas, alignItems: 'center', justifyContent: 'center', padding: spacing.gutter },
   successMark: { width: size.actionCircle, height: size.actionCircle, borderRadius: size.actionCircle / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.successTint },
@@ -424,14 +424,14 @@ const styles = StyleSheet.create({
   headingCopy: { flex: 1, minWidth: 0, gap: spacing.xs },
   jobTitle: { ...type.screenTitle, color: colors.textPrimary, flexShrink: 1 },
   match: { ...type.label, color: colors.textSecondary, flexShrink: 1 },
-  section: { gap: spacing.md },
+  section: { gap: spacing.sm },
   body: { ...type.body, color: colors.textPrimary },
   scoreBreakdown: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg },
   scoreValue: { ...type.helper, color: colors.textSecondary, fontVariant: ['tabular-nums'] },
   detailLabel: { ...type.label, color: colors.textSecondary },
   skillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   note: { ...type.helper, color: colors.textSecondary },
-  actionDock: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.lg, paddingHorizontal: spacing.gutter, paddingTop: spacing.md, backgroundColor: colors.canvas, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.hairline },
+  actionDock: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.gutter, paddingTop: spacing.md, backgroundColor: colors.canvas, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.hairline },
   dockSummary: { gap: spacing.xxs },
   dockCaption: { ...type.helper, color: colors.textSecondary },
   dockAmount: { ...type.money, color: colors.textPrimary },

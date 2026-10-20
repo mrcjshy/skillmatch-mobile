@@ -26,6 +26,11 @@ export type BaseBooking = {
   job_barangay: string | null;
   job_city: string | null;
   job_budget: number | null;
+  /** V4 #19 metadata; all null for legacy and non-cancelled rows. Validated at presentation. */
+  cancellation_reason_code: string | null;
+  cancellation_reason_detail: string | null;
+  cancelled_by: string | null;
+  cancelled_at: string | null;
 };
 
 export type WorkerBooking = BaseBooking & {
@@ -83,6 +88,10 @@ function readBaseBooking(row: Record<string, unknown>): BaseBooking | null {
     job_barangay: toNullableText(row.job_barangay),
     job_city: toNullableText(row.job_city),
     job_budget: toNumber(row.job_budget),
+    cancellation_reason_code: toNullableText(row.cancellation_reason_code),
+    cancellation_reason_detail: toNullableText(row.cancellation_reason_detail),
+    cancelled_by: toNullableText(row.cancelled_by),
+    cancelled_at: toNullableText(row.cancelled_at),
   };
 }
 

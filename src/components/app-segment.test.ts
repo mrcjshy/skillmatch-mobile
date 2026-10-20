@@ -43,6 +43,27 @@ function contrast(element: any, parent: string, tag: string) {
 }
 
 describe('AppSegment actual controlled options', () => {
+  it('opts long proficiency labels into natural widths and wrapping controls without changing other segments', () => {
+    const h = harness('app-segment', 'AppSegment');
+    const proficiency = ['Beginner', 'Intermediate', 'Expert'].map(label => ({ value: label.toLowerCase(), label }));
+    const onChange = vi.fn();
+    const tree = h.render({ options: proficiency, value: 'intermediate', onChange, contentSized: true });
+    expect(flatten(tree.props.style).flexWrap).toBe('wrap');
+    const buttons = children(tree).filter(n => n.type === 'Pressable');
+    expect(buttons.map(n => n.props.accessibilityLabel)).toEqual(proficiency.map(n => n.label));
+    expect(buttons.map(n => n.props.accessibilityState.selected)).toEqual([false, true, false]);
+    for (const button of buttons) {
+      expect(states(button, false)).toMatchObject({ flexBasis: 'auto', flexShrink: 0, maxWidth: '100%' });
+      expect(states(button, false).minHeight).toBeGreaterThanOrEqual(48);
+      expect(states(button, false).minWidth).toBeGreaterThanOrEqual(48);
+      expect(button.props.children.props.numberOfLines).toBeUndefined();
+      expect(button.props.children.props.allowFontScaling).not.toBe(false);
+    }
+    buttons[2].props.onPress(); expect(onChange).toHaveBeenCalledExactlyOnceWith('expert');
+    const unchanged = h.render({ options: proficiency, value: 'intermediate', onChange });
+    expect(flatten(unchanged.props.style).flexWrap).toBeUndefined();
+    expect(states(children(unchanged).find(n => n.type === 'Pressable'), false).flex).toBe(1);
+  });
   const options = [{ value: 'one', label: 'Beginner with a long scalable label' }, { value: 'two', label: 'Experienced' }];
   it('grows at 48 minima, wraps labels, shows selected meaning and composed press feedback', () => {
     const h = harness('app-segment', 'AppSegment');

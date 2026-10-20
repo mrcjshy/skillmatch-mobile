@@ -1,9 +1,16 @@
 /**
  * R4 Job posting-time payment intent.
  *
- * Stored values stay `cod` | `qrph`. UI labels are Cash / QR Ph.
+ * Stored values stay `cod` | `qrph`. UI labels are Cash / QR Ph — TEST MODE.
  * NULL is legacy compatibility only. `gcash` and `maya` are Booking-schema
  * leftovers and are not Job-level choices.
+ *
+ * METHOD is not TIMING. This module names HOW a Job is paid (Cash or the
+ * PayMongo QR Ph TEST simulation). WHEN payment settles (while the Booking is
+ * confirmed, before the Client's final completion) is owned by the server
+ * lifecycle and is not changed or restated as a separate "method" here. A
+ * legacy NULL Job is "not specified", never a third "pay after" option and
+ * never silently shown as Cash.
  */
 
 import { supabase } from './supabase';
@@ -26,10 +33,34 @@ export type JobPaymentParse =
 
 const JOB_METHODS: readonly JobPaymentMethod[] = ['cod', 'qrph'];
 
+/** The one place the QR Ph TEST MODE wording is spelled. */
+export const QRPH_TEST_LABEL = 'QR Ph — TEST MODE';
+
 const JOB_LABEL: Record<JobPaymentMethod, string> = {
   cod: 'Cash',
-  qrph: 'QR Ph',
+  qrph: QRPH_TEST_LABEL,
 };
+
+/** Neutral copy for a legacy NULL Job intent. Never "Cash", never a method. */
+const LEGACY_UNSPECIFIED = 'Not specified (older job)';
+
+/** The only selectable posting methods, in display order. */
+export const JOB_PAYMENT_OPTIONS: readonly {
+  value: JobPaymentMethod;
+  label: string;
+  meaning: string;
+}[] = [
+  {
+    value: 'cod',
+    label: JOB_LABEL.cod,
+    meaning: 'Pay the worker in cash. The worker confirms in the app that the cash was received.',
+  },
+  {
+    value: 'qrph',
+    label: JOB_LABEL.qrph,
+    meaning: 'PayMongo test simulation for the demo. No real money moves.',
+  },
+];
 
 export function parseJobPaymentMethod(value: unknown): JobPaymentParse {
   if (value === null || value === undefined) return { ok: true, method: null };
@@ -43,16 +74,22 @@ export function formatJobPaymentLabel(method: JobPaymentMethod): string {
   return JOB_LABEL[method];
 }
 
+/** Value only, for rows that already carry a "Payment method" label. Never defaults to Cash. */
+export function formatPostedPaymentValue(method: JobPaymentMethod | null): string {
+  return method === null ? LEGACY_UNSPECIFIED : JOB_LABEL[method];
+}
+
 export function formatClientPostedPaymentLine(method: JobPaymentMethod | null): string {
-  return method === null
-    ? 'Payment method: Not specified (legacy job)'
-    : `Payment method: ${JOB_LABEL[method]}`;
+  return `Payment method: ${formatPostedPaymentValue(method)}`;
 }
 
 export function formatOpportunityPaymentLine(method: JobPaymentMethod | null): string {
-  return method === null
-    ? 'Payment method: Client selects before final completion (legacy job)'
-    : `Payment method: ${JOB_LABEL[method]}`;
+  return `Payment method: ${method === null ? LEGACY_UNSPECIFIED : JOB_LABEL[method]}`;
+}
+
+/** Posting review value for an in-progress draft; unset stays "Not selected". */
+export function formatJobPaymentReviewValue(method: JobPaymentMethod | null): string {
+  return method === null ? 'Not selected' : JOB_LABEL[method];
 }
 
 export function isPayableQrphBudget(budget: number | null): boolean {
@@ -65,7 +102,7 @@ export function postingPaymentError(
 ): string | null {
   if (method === null) return 'Please select a payment method.';
   if (method === 'qrph' && !isPayableQrphBudget(budget)) {
-    return 'QR Ph requires a budget of at least ₱1.00.';
+    return 'QR Ph — TEST MODE requires a budget of at least ₱1.00.';
   }
   return null;
 }

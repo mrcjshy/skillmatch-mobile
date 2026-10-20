@@ -5,6 +5,9 @@ import { tamaguiConfig } from '../../tamagui.config';
 
 import { PushNotificationInboxIntent } from '@/components/push-notification-inbox-intent';
 import { IncomingMessageBannerHost } from '@/components/incoming-message-banner-host';
+import { IncomingCallHost } from '@/components/incoming-call-host';
+import { LocationStopHost } from '@/components/location-stop-host';
+import { SessionReconnectingScreen } from '@/components/session-reconnecting-screen';
 import { StateScreen } from '@/components/state-screen';
 import { isRecoverySurfaceActive } from '@/lib/auth-recovery';
 import { isPhoneOtpEnabled } from '@/lib/phone-verification';
@@ -29,12 +32,13 @@ import {
  * and the root `index` dispatcher forwards to that state's route with a single
  * <Redirect> (replace semantics). Group layouts contain no routing logic.
  *
- * Inline states (session restoring, session restoration error, account
- * pending) render no route tree at all. Password recovery is a routed
+ * Inline states (session restoring, reconnecting, session restoration error,
+ * account pending) render no route tree at all. Password recovery is a routed
  * state and is not reused as blocked or bootstrap-error.
  */
 export type AccessState =
   | 'session-restoring'
+  | 'session-reconnecting'
   | 'session-error'
   | 'signed-out'
   | 'password-recovery'
@@ -57,7 +61,7 @@ export type AccessState =
 export function deriveAccessState(
   sessionValue: Pick<
     SessionContextValue,
-    'session' | 'isSessionLoading' | 'sessionError' | 'recoveryStatus'
+    'session' | 'isSessionLoading' | 'sessionError' | 'recoveryStatus' | 'isSessionReconnecting'
   >,
   accountValue: Pick<
     AccountContextValue,
@@ -71,7 +75,11 @@ export function deriveAccessState(
 
   if (isSessionLoading) return 'session-restoring';
   if (isRecoverySurfaceActive(recoveryStatus)) return 'password-recovery';
-  if (!session) return sessionError ? 'session-error' : 'signed-out';
+  if (!session) {
+    // Auth unreachable with a stored session: unconfirmed, so neither signed out nor authorized.
+    if (sessionValue.isSessionReconnecting === true) return 'session-reconnecting';
+    return sessionError ? 'session-error' : 'signed-out';
+  }
 
   // Authenticated from here on.
   if (status === 'idle' || status === 'pending') return 'account-pending';
@@ -122,11 +130,15 @@ export const ACCESS_ROUTE: Partial<Record<AccessState, Href>> = {
 };
 
 function RootNavigator() {
-  const access = deriveAccessState(useSession(), useAccount());
+  const sessionValue = useSession();
+  const access = deriveAccessState(sessionValue, useAccount());
 
   // Inline-only states: no route tree.
   if (access === 'session-restoring') {
     return <StateScreen loading title="Loading SkillMatch" message="Restoring your session…" />;
+  }
+  if (access === 'session-reconnecting') {
+    return <SessionReconnectingScreen onRetry={sessionValue.retrySessionRestore} />;
   }
   if (access === 'account-pending') {
     return <StateScreen loading title="Loading SkillMatch" message="Checking your account…" />;
@@ -197,6 +209,8 @@ export default function RootLayout() {
           <PushNotificationInboxIntent />
           <RootNavigator />
           <IncomingMessageBannerHost />
+          <IncomingCallHost />
+          <LocationStopHost />
         </TamaguiProvider>
       </AccountProvider>
     </SessionProvider>

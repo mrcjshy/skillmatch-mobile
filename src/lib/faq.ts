@@ -37,6 +37,7 @@ export type FaqCategory =
   | 'booking'
   | 'messaging'
   | 'ratings'
+  | 'payments'
   | 'cash'
   | 'qrph'
   | 'notifications'
@@ -62,8 +63,9 @@ export const CATEGORY_LABEL: Record<FaqCategory, string> = {
   booking: 'Booking',
   messaging: 'Messaging',
   ratings: 'Ratings',
+  payments: 'Payment methods',
   cash: 'Cash payment',
-  qrph: 'QR Ph payment',
+  qrph: 'QR Ph payment (TEST MODE)',
   notifications: 'Notifications',
   general: 'Tungkol sa SkillMatch',
 };
@@ -79,7 +81,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'account',
     question: 'Paano mag-register sa SkillMatch?',
     answer:
-      'Buksan ang app at piliin ang Register. I-fill up ang Full Name, valid Philippine mobile number, Email, Password, at Confirm Password, tapos piliin kung Worker ka o Client. I-verify ang Email gamit ang verification code. Vina-validate at sine-save ang phone sa +639XXXXXXXXX format; SMS ownership verification ay kailangan lang kapag enabled ang phone verification. Hindi ibig sabihin na verified ang ownership dahil lang naka-save ang number. I-check ang dalawang checkbox — Terms and Conditions at Privacy Policy — dahil naka-record ang consent bago ka makapasok sa app. Worker pa: kailangan mag-submit ng valid ID bago ang Worker app. Client: after consent, pasok na sa Client app. Ang service area ay Santa Ana, Pateros lang, kaya hindi na hinihingi ang barangay at city sa registration.',
+      'Buksan ang app at piliin ang Register. I-fill up ang Full Name, valid Philippine mobile number, Email, Password, at Confirm Password, tapos piliin kung Worker ka o Client. Kapag naka-activate ang email code verification, kailangan mo ring ilagay ang code na ipinadala sa Email mo; hindi ito ipinapangakong live sa lahat ng setup. Vina-validate at sine-save ang phone sa +639XXXXXXXXX format; SMS ownership verification ay kailangan lang kapag enabled ang phone verification. Hindi ibig sabihin na verified ang ownership dahil lang naka-save ang number. I-check ang dalawang checkbox — Terms and Conditions at Privacy Policy — dahil naka-record ang consent bago ka makapasok sa app. Worker pa: kailangan mag-submit ng valid ID bago ang Worker app. Client: after consent, pasok na sa Client app. Ang service area ay Santa Ana, Pateros lang, kaya hindi na hinihingi ang barangay at city sa registration.',
     keywords: ['register', 'sign up', 'signup', 'gumawa', 'account', 'bago', 'paano magsimula', 'magparehistro', 'consent', 'checkbox', 'terms', 'privacy'],
   },
   {
@@ -151,13 +153,22 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     keywords: ['rating', 'average', 'stars', 'score', 'profile', 'badge'],
   },
 
+  {
+    id: 'prof-resume',
+    category: 'profile',
+    question: 'Sino ang nakakakita ng resume at portfolio ng Worker?',
+    answer:
+      'Awtomatikong binubuo ng SkillMatch ang resume ng Worker mula sa saved profile, skills, rating, at portfolio; walang AI na nag-iimbento ng experience. Makikita lang ito ng Client sa sarili niyang confirmed Booking kasama ang Worker na iyon. Hindi ito nakikita bago tumanggap ang Worker o kapag hindi na confirmed ang Booking. Walang resume o Skill Gap button sa Worker Profile; i-update lang ng Worker ang profile, skills, at portfolio.',
+    keywords: ['resume', 'cv', 'portfolio', 'resume builder', 'see resume', 'tingnan', 'projects', 'work samples'],
+  },
+
   /* ---------------- 4. Job Posting ---------------- */
   {
     id: 'job-post',
     category: 'job-posting',
     question: 'Paano mag-post ng trabaho?',
     answer:
-      'Sa Client Home, piliin ang primary skill para sa Post a Job — hindi na magta-type ng title ang Client; ang backend ang magge-generate nito — tapos ilagay ang description, location, date at time, budget, at iba pang kailangang skills. Ang location search text ay maaaring ipadala sa configured third-party place-search service para sa suggestions; puwede pa ring pumili nang manual sa map kapag unavailable ang search. Ang recent confirmed Job destinations ay local lang sa device at puwedeng i-clear. Santa Ana, Pateros lang ang service area. Pagka-post, magiging open ito para sa mga qualified Worker.',
+      'Sa Client Home, piliin ang Post a job. Una, piliin at kumpirmahin ang service location sa map. Pangalawa, ilagay ang description, optional photos, at hanggang dalawang skills: Primary at Secondary. Optional ang skill suggestions; ikaw pa rin ang pipili at magkukumpirma ng skills. Pangatlo, piliin ang date at time, budget, at payment method. Pang-apat, i-review ang job; puwedeng Edit location at bumalik sa Review nang hindi nawawala ang ibang detalye. Ang final Post job lang ang magsusumite. Hindi kailangang mag-type ng title; manggagaling ito sa primary skill. Ang location search text ay maaaring ipadala sa configured third-party place-search service para sa suggestions; puwede pa ring pumili nang manual sa map kapag unavailable ang search. Ang recent confirmed Job destinations ay local lang sa device at puwedeng i-clear. Santa Ana, Pateros lang ang service area. Pagka-post, magiging open ito para sa mga qualified Worker.',
     keywords: ['post', 'mag-post', 'trabaho', 'job', 'gumawa ng trabaho', 'client', 'budget', 'hire', 'primary skill', 'title', 'current location', 'santa ana', 'pateros', 'autofill'],
   },
   {
@@ -165,8 +176,8 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'job-posting',
     question: 'Pwede ko bang pumili ng Worker para sa trabaho ko?',
     answer:
-      'Hindi. Sa SkillMatch, ang qualified Worker ang tumatanggap ng opportunity (Worker-choice model). Hindi manu-manong pumipili ng Worker ang Client. Makakatanggap ka ng notification kapag may tumanggap sa trabaho mo.',
-    keywords: ['pumili', 'choose', 'select worker', 'pick', 'assign', 'sino ang kukuha'],
+      'Hindi. Sa SkillMatch, ang qualified Worker ang tumatanggap ng opportunity (Worker-choice model). Hindi pumipili ang Client mula sa ranked list o shortlist ng Workers, at hindi AI ang pumipili. Ang unang valid na pagtanggap ng eligible Worker ang nagiging confirmed Booking. Makakatanggap ka ng in-app notification kapag may tumanggap sa trabaho mo.',
+    keywords: ['pumili', 'choose', 'select worker', 'pick', 'assign', 'sino ang kukuha', 'shortlist', 'ranked', 'hire', 'choose worker', 'list of workers'],
   },
 
   /* ---------------- 5. Job Opportunities / Acceptance ---------------- */
@@ -184,7 +195,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     question: 'Paano tumanggap ng job opportunity?',
     answer:
       'Sa Home, buksan ang trabaho at i-tap ang Accept. Ang authenticated, active, verified, at kasalukuyang eligible na Worker ay maaaring makatanggap ng authorized exact Job destination bago tumanggap habang available pa ang opportunity. Isang Worker lang ang makakatanggap ng bawat trabaho; kapag natanggap na ito ng iba, mawawala ang access at hindi na ito lalabas sa listahan mo.',
-    keywords: ['accept', 'tanggap', 'tumanggap', 'kunin', 'opportunity', 'apply', 'mag-apply', 'home'],
+    keywords: ['accept', 'tanggap', 'tumanggap', 'kunin', 'opportunity', 'apply', 'mag-apply', 'home', 'exact address', 'eksaktong address', 'exact location', 'pin', 'before accepting'],
   },
   {
     id: 'opp-nearest',
@@ -193,6 +204,15 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     answer:
       'Hindi. Walang automatic assignment sa SkillMatch. Ang location ay bahagi lang ng match score (30%). Ang Worker pa rin ang tumatanggap ng trabaho, at walang live na GPS tracking.',
     keywords: ['automatic', 'nearest', 'pinakamalapit', 'malapit', 'gps', 'location', 'tracking', 'assign'],
+  },
+
+  {
+    id: 'opp-skill-gap',
+    category: 'opportunities',
+    question: 'Ano ang Skill Gap sa job opportunity?',
+    answer:
+      'Nasa Job Opportunity details ang Skill Gap. Kinukumpara ng SkillMatch ang required skills ng trabaho sa saved skills mo gamit ang fixed na rule, hindi AI. Optional ang Get AI guidance: kapag pinindot mo, ang pangalan lang ng missing skills ang ipinapadala sa external AI service para sa maikling tips. Hindi nito binabago ang matching o eligibility, at maaaring hindi ito available.',
+    keywords: ['skill gap', 'gap', 'missing skills', 'kulang', 'kulang na skills', 'ai guidance', 'guidance', 'improve', 'training'],
   },
 
   /* ---------------- 6. Booking Lifecycle ---------------- */
@@ -265,13 +285,23 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     keywords: ['epekto', 'effect', 'rating', 'score', 'average', 'bakit mahalaga'],
   },
 
-  /* ---------------- 9. Cash Payment ---------------- */
+  /* ---------------- 9. Payment methods ---------------- */
+  {
+    id: 'pay-methods',
+    category: 'payments',
+    question: 'Anong payment methods ang meron sa SkillMatch?',
+    answer:
+      'Dalawa lang: Cash at QR Ph — TEST MODE. Pinipili ng Client ang method kapag nagpo-post ng trabaho, at nakikita ito ng Worker bago tumanggap. Walang direktang GCash o Maya option at walang hiwalay na pay-later na method. Sa parehong method, binabayaran ang trabaho habang confirmed ang Booking, bago ang final completion ng Client. Ang QR Ph ay PayMongo TEST simulation lang para sa demo; walang totoong pera.',
+    keywords: ['payment method', 'payment methods', 'methods', 'pay', 'how to pay', 'paano magbayad', 'pambayad', 'gcash', 'maya', 'pay later', 'options'],
+  },
+
+  /* ---------------- 9b. Cash Payment ---------------- */
   {
     id: 'cash-how',
     category: 'cash',
     question: 'Paano gumagana ang Cash Payment?',
     answer:
-      'Habang confirmed ang Booking, pipiliin ng Client ang Cash Payment. Ibibigay ang cash nang personal sa Worker, tapos ang Worker ang magko-confirm sa app na natanggap na niya ang cash. Kapag paid na, maaari nang gawin ng Client ang final completion.',
+      'Kapag Cash ang piniling payment method ng Client sa pag-post ng trabaho, habang confirmed ang Booking ay pipindutin ng Client ang Continue with cash payment. Ibibigay ang cash nang personal sa Worker, tapos ang Worker ang magko-confirm sa app na natanggap na niya ang cash. Kapag paid na, maaari nang gawin ng Client ang final completion.',
     keywords: ['cash', 'cash payment', 'bayad', 'magbayad', 'pera', 'cod', 'personal', 'paano magbayad'],
   },
   {
@@ -289,7 +319,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'qrph',
     question: 'Paano gumagana ang QR Ph payment?',
     answer:
-      'Habang confirmed ang Booking, maaaring simulan ng Client ang QR Ph payment. Gagawa ang app ng QR code para sa eksaktong halaga ng trabaho. Magiging paid lang ang Booking kapag kinumpirma ng payment provider sa server ang bayad; saka maaaring gawin ng Client ang final completion. Sa kasalukuyang demo, TEST mode ito at hindi totoong pera ang ginagamit.',
+      'Kapag QR Ph — TEST MODE ang piniling payment method sa pag-post, habang confirmed ang Booking ay maaaring simulan ng Client ang QR Ph payment. Gagawa ang app ng QR code para sa eksaktong halaga ng trabaho. Magiging paid lang ang Booking kapag kinumpirma ng payment provider sa server ang bayad; saka maaaring gawin ng Client ang final completion. Sa kasalukuyang demo, TEST mode ito at hindi totoong pera ang ginagamit.',
     keywords: ['qr', 'qr ph', 'qrph', 'qr code', 'online', 'paymongo', 'scan', 'digital', 'bayad', 'magbayad'],
   },
   {
@@ -321,10 +351,10 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'notif-sms',
     category: 'notifications',
-    question: 'May SMS o text notification ba?',
+    question: 'May SMS, push, o email notification ba?',
     answer:
-      'Vina-validate ng SkillMatch ang Philippine mobile-number format. Maaaring kailanganin ang SMS ownership verification kapag enabled at configured ang phone verification; hindi ito garantiya na gumagana na ang hosted SMS delivery. Hindi nagpapadala ang SkillMatch ng ordinary booking o chat updates sa SMS; tingnan ang in-app Notifications inbox. Kapag enabled at configured ang report outcome email delivery, maaaring magpadala ng privacy-safe resolution, dismissal, reviewed no-show strike, o account-suspension notice. Hindi sinasabi sa reported user kung sino ang nag-report.',
-    keywords: ['sms', 'text', 'push', 'email notification', 'abiso', 'wala'],
+      'Ang in-app Notifications inbox ang pangunahing abiso. Ang push notification sa phone, completion email, at reminders ay gagana lang kapag na-activate at na-configure ang mga ito; hindi ito ipinapangakong live ngayon. Vina-validate ng SkillMatch ang Philippine mobile-number format. Maaaring kailanganin ang SMS ownership verification kapag enabled at configured ang phone verification; hindi ito garantiya na gumagana na ang hosted SMS delivery. Hindi nagpapadala ang SkillMatch ng ordinary booking o chat updates sa SMS; tingnan ang in-app Notifications inbox. Kapag enabled at configured ang report outcome email delivery, maaaring magpadala ng privacy-safe resolution, dismissal, reviewed no-show strike, o account-suspension notice. Hindi sinasabi sa reported user kung sino ang nag-report.',
+    keywords: ['sms', 'text', 'push', 'push notification', 'email', 'email notification', 'reminder', 'reminders', 'abiso', 'wala'],
   },
 
   /* ---------------- 12. General ---------------- */
@@ -341,8 +371,8 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'general',
     question: 'Paano gamitin ang Help?',
     answer:
-      'I-type ang tanong mo sa simpleng Tagalog o English, o pumili ng topic sa ibaba. Ang mga sagot ay galing sa fixed na gabay ng SkillMatch. Hindi nito nakikita ang personal na account, Booking, o payment data mo.',
-    keywords: ['help', 'tulong', 'faq', 'paano gamitin', 'gabay', 'guide', 'chatbot'],
+      'I-type ang tanong mo sa simpleng Tagalog o English, o pumili ng topic sa ibaba. Ang mga sagot ay galing sa fixed na gabay na isinulat ng SkillMatch team at hinahanap lang sa loob ng app. Hindi ito AI, ChatGPT, o external chatbot, at walang ipinapadala sa labas. Hindi nito nakikita ang personal na account, Booking, o payment data mo.',
+    keywords: ['help', 'tulong', 'faq', 'paano gamitin', 'gabay', 'guide', 'chatbot', 'ai', 'chatgpt', 'bot', 'llm', 'robot'],
   },
 ];
 
@@ -354,7 +384,7 @@ export const FAQ_COPY = {
   title: 'Help and FAQ',
   greeting: 'Hi! Ano ang gusto mong malaman tungkol sa SkillMatch?',
   inputLabel: 'Itanong tungkol sa SkillMatch',
-  placeholder: 'Halimbawa: Paano gumagana ang QR Ph?',
+  placeholder: 'Magtanong dito…',
   ask: 'Ask',
   botName: 'SkillMatch Help',
   youName: 'You',
@@ -372,7 +402,7 @@ export const QUICK_TOPICS: readonly { label: string; categories: readonly FaqCat
   { label: 'Account', categories: ['account', 'verification', 'profile'] },
   { label: 'Finding jobs', categories: ['opportunities', 'job-posting'] },
   { label: 'Bookings', categories: ['booking', 'ratings'] },
-  { label: 'Payments', categories: ['cash', 'qrph'] },
+  { label: 'Payments', categories: ['payments', 'cash', 'qrph'] },
   { label: 'Messaging', categories: ['messaging', 'notifications'] },
 ];
 
@@ -392,6 +422,19 @@ const CATEGORY_WORD_HIT = 3;
 const ANSWER_WORD_HIT = 1;
 /** Fewer words than this cannot earn phrase credit. */
 const PHRASE_MIN_WORDS = 3;
+
+/**
+ * Function words that carry no topic. They still count toward a whole-phrase
+ * match, but never earn per-word credit on their own: without this, "What is
+ * the weather?" answered "Ano ang SkillMatch?" (keyword "what is") and "magkano
+ * ang bigas" offered Worker/Client entries because "ang" sits in a keyword.
+ */
+const STOP_WORDS: ReadonlySet<string> = new Set([
+  'a', 'an', 'the', 'is', 'are', 'am', 'be', 'to', 'of', 'in', 'on', 'for', 'and', 'or', 'it',
+  'this', 'that', 'my', 'me', 'do', 'does', 'what', 'how', 'who', 'can', 'will', 'with', 'there',
+  'ang', 'ng', 'sa', 'na', 'ba', 'ko', 'mo', 'ka', 'ako', 'at', 'pa', 'po', 'mga', 'ito', 'iyon',
+  'si', 'kung', 'may', 'ay', 'lang', 'nang', 'yung', 'din', 'rin', 'ano', 'sino', 'saan', 'kay',
+]);
 
 /** Below this the best hit is only incidental answer-text overlap: no answer. */
 const MIN_CONFIDENT_SCORE = KEYWORD_HIT;
@@ -463,6 +506,7 @@ export function searchFaq(query: string): FaqHit[] {
     const containsWholeQuestion = q.includes(ix.question);
     if (isPhrase || containsWholeQuestion) score += PHRASE_IN_QUESTION;
     for (const w of words) {
+      if (STOP_WORDS.has(w)) continue;
       if (ix.keywordWords.has(w)) score += KEYWORD_HIT;
       if (ix.questionWords.has(w)) score += QUESTION_WORD_HIT;
       if (ix.categoryWords.has(w)) score += CATEGORY_WORD_HIT;

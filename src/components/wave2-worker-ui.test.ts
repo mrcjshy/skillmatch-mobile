@@ -131,8 +131,8 @@ describe('Job Opportunity action dock', () => {
 describe('Worker Home hierarchy', () => {
   const source = code('src/app/(worker)/(tabs)/worker/index.tsx');
 
-  it('reads sticky name, status, active work and the available-jobs heading, then the notice and job rows, with no card and no stat tiles', () => {
-    const order = ['<HomeStickyHeader', '<AvailabilityControl', '<ActiveBookingHomeCard', 'title="Available jobs"', '</HomeStickyHeader>', 'identityNotice !== ', '<JobOpportunityCompactCard'].map((marker) => source.indexOf(marker));
+  it('reads sticky name, status and available jobs, then scrolling rows and the separate booking dock', () => {
+    const order = ['<HomeStickyHeader', '<AvailabilityControl', 'title="Available jobs"', '</HomeStickyHeader>', 'identityNotice !== ', '<JobOpportunityCompactCard', '<ActiveBookingHomeDock'].map((marker) => source.indexOf(marker));
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(source).not.toContain('AppCard');
@@ -140,9 +140,14 @@ describe('Worker Home hierarchy', () => {
   });
 
   it('needs no button to reach work: the jobs are the content, with no browse entry point', () => {
-    expect(source).not.toContain('<AppButton');
     expect(source).not.toMatch(/Browse opportunities|Find work/);
-    expect(source).not.toMatch(/variant="(secondary|ghost)"/);
+    const header = source.slice(source.indexOf('<HomeStickyHeader'), source.indexOf('</HomeStickyHeader>'));
+    expect((header.match(/<AppButton/g) ?? []).length).toBe(1);
+    expect(header).toContain('label={sortControlLabel}');
+    expect(header).toContain('onPress={() => setIsSortOpen(true)}');
+    const sheet = source.slice(source.indexOf('<AppSheet'), source.indexOf('</AppSheet>'));
+    expect(sheet).toContain('title={WORKER_JOB_SORT_COPY.label}');
+    expect(sheet).not.toMatch(/JobOpportunityCompactCard|FlatList/);
   });
 });
 
@@ -163,7 +168,7 @@ describe('Worker surfaces keep out of the banned patterns and the old palette', 
     'src/app/(worker)/(tabs)/worker/index.tsx', 'src/app/(worker)/(tabs)/worker/profile.tsx',
     'src/components/availability-control.tsx', 'src/components/active-booking-home-card.tsx', 'src/components/booking-compact-card.tsx',
     'src/components/booking-details.tsx', 'src/components/my-bookings-list.tsx', 'src/components/job-opportunity-compact-card.tsx',
-    'src/components/job-opportunity-details.tsx', 'src/components/resume-builder.tsx',
+    'src/components/job-opportunity-details.tsx', 'src/app/(worker)/worker/resume.tsx',
     'src/components/skill-gap.tsx', 'src/components/my-reports-list.tsx', 'src/components/my-report-details.tsx',
     'src/components/report-form.tsx', 'src/components/worker-portfolio.tsx', 'src/components/date-landmark.tsx', 'src/components/service-mark.tsx',
   ];

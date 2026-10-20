@@ -4,7 +4,7 @@ import ClientPortfolio from '@/components/client-portfolio';
 import { CLIENT_PORTFOLIO_COPY } from '@/lib/client-portfolio';
 
 /**
- * Client confirmed-booking portfolio (R5D-CLIENT-M1).
+ * Combined automatic resume and portfolio using existing confirmed-booking reads.
  *
  * bookingId is the only route parameter and is not trusted: the screen
  * re-reads this Client's own Booking list and loads portfolio only while

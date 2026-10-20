@@ -32,7 +32,10 @@ function load(file: string, overrides: Props = {}): Props {
     '@/components/push-notification-registration': { PushNotificationRegistration: 'PushNotificationRegistration' },
     '@/components/push-notification-inbox-intent': { PushNotificationInboxIntent: 'PushNotificationInboxIntent' },
     '@/components/incoming-message-banner-host': { IncomingMessageBannerHost: 'IncomingMessageBannerHost' },
+    '@/components/location-stop-host': { LocationStopHost: 'LocationStopHost' },
+    '@/components/incoming-call-host': { IncomingCallHost: 'IncomingCallHost' },
     '@/components/state-screen': { StateScreen: 'StateScreen' },
+    '@/components/session-reconnecting-screen': { SessionReconnectingScreen: 'SessionReconnectingScreen' },
     '@/providers/session-provider': { SessionProvider: 'SessionProvider', useSession: () => session },
     '@/providers/account-provider': { AccountProvider: 'AccountProvider', useAccount: () => accountState },
     '@/providers/client-jobs-provider': { ClientJobsProvider: 'ClientJobsProvider', useClientJobs: () => ({ isLoading: false, loadError: null }) },
@@ -41,7 +44,7 @@ function load(file: string, overrides: Props = {}): Props {
     '@/lib/auth-recovery': { isRecoverySurfaceActive: (value: string) => ['processing', 'ready', 'error', 'complete'].includes(value) },
     '@/lib/phone-verification': { isPhoneOtpEnabled: () => false },
     '@/lib/worker-onboarding': { canEnterWorkerApp: (value: string) => value === 'verified' },
-    '@/lib/push-notifications': { hasPendingNotificationsInboxIntent: () => false, getPendingChatBookingId: () => null, decidePendingInboxNavigation: () => ({ kind: 'none' }) },
+    '@/lib/push-notifications': { hasPendingNotificationsInboxIntent: () => false, getPendingChatBookingId: () => null, getPendingCall: () => null, decidePendingInboxNavigation: () => ({ kind: 'none' }) },
     ...overrides,
   };
   const requireLocal = (id: string): Props => {
@@ -96,8 +99,8 @@ describe('approved role destinations and native history ownership', () => {
 describe('approved Client Post Job is a guarded pushed action, never a tab', () => {
   const cases = [
     { label: 'ready owner', loading: false, error: null, posting: false, owner: true, allowed: true },
-    { label: 'loading jobs', loading: true, error: null, posting: false, owner: true, allowed: false },
-    { label: 'failed jobs', loading: false, error: 'unavailable', posting: false, owner: true, allowed: false },
+    { label: 'loading jobs still allows location selection', loading: true, error: null, posting: false, owner: true, allowed: true },
+    { label: 'failed jobs still allows location selection', loading: false, error: 'unavailable', posting: false, owner: true, allowed: true },
     { label: 'posting', loading: false, error: null, posting: true, owner: true, allowed: false },
     { label: 'lost owner', loading: false, error: null, posting: false, owner: false, allowed: false },
   ];
@@ -146,6 +149,7 @@ describe('single authoritative root dispatcher', () => {
     { label: 'session restoration', session: { ...session, isSessionLoading: true }, state: accountState, expected: 'session-restoring' },
     { label: 'signed out', session: { ...session, session: null }, state: accountState, expected: 'signed-out', href: '/login' },
     { label: 'session failure', session: { ...session, session: null, sessionError: 'unavailable' }, state: accountState, expected: 'session-error' },
+    { label: 'Auth unreachable with a stored session', session: { ...session, session: null, isSessionReconnecting: true }, state: { ...accountState, account: { ...account, role: 'worker' } }, expected: 'session-reconnecting' },
     { label: 'pending account', session, state: { ...accountState, status: 'pending' }, expected: 'account-pending' },
     { label: 'owner mismatch', session, state: { ...accountState, account: { ...account, id: 'other' } }, expected: 'account-pending' },
     { label: 'missing account', session, state: { ...accountState, account: null }, expected: 'account-failure', href: '/bootstrap-error' },

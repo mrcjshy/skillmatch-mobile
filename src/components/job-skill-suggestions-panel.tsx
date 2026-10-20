@@ -37,7 +37,7 @@ export function JobSkillSuggestionsPanel(props: Props) {
         !!s.sessionLifetime && s.sessionLifetime.ownerId === token.ownerId && s.sessionLifetime.isCurrent() && !s.isSessionLoading && !s.sessionError && s.recoveryStatus === 'idle' &&
         (s.isSessionRevisionCurrent?.(token.sessionRevision) ?? false) && s.sessionLifetime === token.sessionLifetime &&
         live.owner.updateDraft === token.ownerIdentity && live.owner.ownerId === token.ownerId && live.owner.draftEpoch === token.draftEpoch &&
-        live.owner.draft.wizardStep === 1 && record.inputRevision === token.inputRevision && live.authority.revision === token.manualRevision &&
+        live.owner.draft.wizardStep === 2 && record.inputRevision === token.inputRevision && live.authority.revision === token.manualRevision &&
         captured !== null && captured.generation === record.generation && captured.description === live.owner.draft.description &&
         captured.photos === live.owner.draft.jobPhotos && captured.catalog === JSON.stringify(live.skills) && captured.external === live.authority.revision;
     };
@@ -96,7 +96,7 @@ export function JobSkillSuggestionsPanel(props: Props) {
     if (owner.updateDraft !== props.owner.updateDraft || owner.ownerId !== props.owner.ownerId || s.sessionLifetime !== session.sessionLifetime ||
       props.owner.draft.description !== owner.draft.description) return;
     if (record.busy || !record.mounted || !record.foreground || !focused || owner.isPosting || !owner.isOwnerCurrent() ||
-      !s.sessionLifetime?.isCurrent() || owner.draft.wizardStep !== 1 || buildJobSkillSuggestionsRequest(owner.draft.description) === null) return;
+      !s.sessionLifetime?.isCurrent() || owner.draft.wizardStep !== 2 || buildJobSkillSuggestionsRequest(owner.draft.description) === null) return;
     const token: SuggestionOwnerToken = { ownerIdentity: owner.updateDraft, ownerId: owner.ownerId, draftEpoch: owner.draftEpoch,
       sessionLifetime: s.sessionLifetime, sessionRevision: s.sessionRevision ?? 0, inputRevision: record.inputRevision, manualRevision: authority.revision, catalogRevision: 0 };
     control.begin({ token, description: owner.draft.description, photos: owner.draft.jobPhotos, catalog: JSON.stringify(skills), external: authority.revision, generation: record.generation });
@@ -128,7 +128,7 @@ export function JobSkillSuggestionsPanel(props: Props) {
     props.owner.ownerId === renderedCapture.token.ownerId && props.owner.draftEpoch === renderedCapture.token.draftEpoch &&
     session.sessionLifetime === renderedCapture.token.sessionLifetime && props.owner.draft.description === renderedCapture.description &&
     props.owner.draft.jobPhotos === renderedCapture.photos && JSON.stringify(props.skills) === renderedCapture.catalog &&
-    props.authority.revision === renderedCapture.external && props.owner.draft.wizardStep === 1 && !props.owner.isPosting &&
+    props.authority.revision === renderedCapture.external && props.owner.draft.wizardStep === 2 && !props.owner.isPosting &&
     props.focused && control.record.foreground && props.owner.isOwnerCurrent();
   const currentUi = renderedCapture && renderCurrent && control.current(renderedCapture.token) && props.focused ? ui : { status: 'idle' as const };
   const disabled = !props.focused || props.owner.isPosting || !props.owner.isOwnerCurrent() || currentUi.status === 'loading' || buildJobSkillSuggestionsRequest(props.owner.draft.description) === null;

@@ -367,6 +367,133 @@ describe('submitMyValidIdImage ordering', () => {
   });
 });
 
+describe('submitMyValidIdImage response reconciliation', () => {
+  const STORAGE_PATH = `${PROFILE_ID}/${OBJECT_ID}.jpg`;
+  const SUBMITTED = {
+    id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    id_type: 'national_id',
+    storage_path: STORAGE_PATH,
+    status: 'pending',
+    submitted_at: '2026-10-12T10:00:00Z',
+  };
+  const LOST_RESPONSE = { code: '', message: 'TypeError: Network request failed', details: '', hint: '' };
+  let upload: ReturnType<typeof vi.fn>;
+  let remove: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    from.mockReset();
+    getUser.mockReset();
+    storageFrom.mockReset();
+    rpc.mockReset();
+    getUser.mockResolvedValue({ data: { user: { id: USER_ID } }, error: null } as never);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { loadValidatedLocalImage } = await import('./portfolio-images');
+    vi.mocked(loadValidatedLocalImage).mockResolvedValue({
+      ok: true,
+      image: { bytes: new Uint8Array([1]), mime: 'image/jpeg', ext: 'jpg' },
+    } as never);
+    mockOwnProfileSelect({ data: { id: PROFILE_ID }, error: null });
+    upload = vi.fn().mockResolvedValue({ data: { path: STORAGE_PATH }, error: null });
+    remove = vi.fn().mockResolvedValue({ data: [], error: null });
+    storageFrom.mockReturnValue({ upload, remove } as never);
+  });
+
+  function mockRpc(submit: { data: unknown; error: unknown }, current?: { data: unknown; error: unknown }) {
+    rpc.mockImplementation(((name: string) =>
+      Promise.resolve(name === 'submit_my_valid_id' ? submit : current ?? { data: [], error: null })) as never);
+  }
+
+  const submit = () => submitMyValidIdImage({ idType: 'national_id', imageUri: 'file:///id.jpg' });
+
+  it('returns the submitted row on success without reconciling or removing the object', async () => {
+    mockRpc({ data: [SUBMITTED], error: null });
+
+    await expect(submit()).resolves.toMatchObject({ id: SUBMITTED.id, status: 'pending' });
+    expect(upload).toHaveBeenCalledWith(STORAGE_PATH, expect.any(Uint8Array), expect.objectContaining({ upsert: false }));
+    expect(rpc).not.toHaveBeenCalledWith('get_my_identity_submission');
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('does not submit or remove anything when the upload itself fails', async () => {
+    upload.mockResolvedValue({ data: null, error: { message: 'Payload too large', statusCode: '413' } });
+    mockRpc({ data: [SUBMITTED], error: null });
+
+    await expect(submit()).rejects.toBeInstanceOf(WorkerIdentityError);
+    expect(rpc).not.toHaveBeenCalledWith('submit_my_valid_id', expect.anything());
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('removes the uploaded object only after a definitive rejection the read confirms', async () => {
+    mockRpc(
+      { data: null, error: { code: IDENTITY_ERROR.INVALID, message: 'invalid identity document path' } },
+      { data: [], error: null }
+    );
+
+    await expect(submit()).rejects.toMatchObject({ code: IDENTITY_ERROR.INVALID });
+    expect(rpc).toHaveBeenCalledWith('get_my_identity_submission');
+    expect(remove).toHaveBeenCalledWith([STORAGE_PATH]);
+  });
+
+  it('keeps an older current submission and still removes only this rejected attempt', async () => {
+    mockRpc(
+      { data: null, error: { code: IDENTITY_ERROR.UNAVAILABLE, message: 'not available' } },
+      { data: [{ ...SUBMITTED, id: 'older', storage_path: `${PROFILE_ID}/older.jpg`, status: 'approved' }], error: null }
+    );
+
+    await expect(submit()).rejects.toMatchObject({ code: IDENTITY_ERROR.UNAVAILABLE });
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith([STORAGE_PATH]);
+  });
+
+  it('recovers a committed submission when the success response was lost', async () => {
+    mockRpc({ data: null, error: LOST_RESPONSE }, { data: [SUBMITTED], error: null });
+
+    await expect(submit()).resolves.toMatchObject({ id: SUBMITTED.id, status: 'pending' });
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('keeps the object when the response was lost and the read shows no commit yet', async () => {
+    mockRpc({ data: null, error: LOST_RESPONSE }, { data: [], error: null });
+
+    await expect(submit()).rejects.toMatchObject({ message: expect.any(String), code: '' });
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('keeps the object when the remote state cannot be read', async () => {
+    mockRpc(
+      { data: null, error: { code: IDENTITY_ERROR.INVALID, message: 'invalid identity document path' } },
+      { data: null, error: { code: '', message: 'TypeError: Network request failed' } }
+    );
+
+    await expect(submit()).rejects.toMatchObject({ code: IDENTITY_ERROR.INVALID });
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('keeps the object when the current submission is unreadable', async () => {
+    mockRpc(
+      { data: null, error: { code: IDENTITY_ERROR.INVALID, message: 'invalid' } },
+      { data: [{ id: 'x', status: 'pending' }], error: null }
+    );
+
+    await expect(submit()).rejects.toMatchObject({ code: IDENTITY_ERROR.INVALID });
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('recovers from an unparseable success body when the read shows this commit', async () => {
+    mockRpc({ data: [{ unexpected: true }], error: null }, { data: [SUBMITTED], error: null });
+
+    await expect(submit()).resolves.toMatchObject({ id: SUBMITTED.id });
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('fails without removing when an unparseable success body cannot be reconciled', async () => {
+    mockRpc({ data: [{ unexpected: true }], error: null }, { data: [], error: null });
+
+    await expect(submit()).rejects.toMatchObject({ message: IDENTITY_COPY.submitFailed });
+    expect(remove).not.toHaveBeenCalled();
+  });
+});
+
 describe('parseIdentitySubmission', () => {
   it('keeps status and type and drops the storage path from the Worker view model', () => {
     const parsed = parseIdentitySubmission({

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -12,6 +13,20 @@ import { AppButton } from '@/components/app-button';
 import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
 import { AppNotice } from '@/components/app-notice';
+import { AppSymbol } from '@/components/app-symbol';
+import {
+  distanceFromBottom,
+  initialChatScroll,
+  onContentMeasured,
+  onJumpToLatest,
+  onMessages,
+  onOwnSend,
+  onRevealed,
+  onScrolled,
+  onUserScroll,
+  onViewportResized,
+  type ChatScrollState,
+} from '@/lib/chat-scroll';
 import { InitialsAvatar } from '@/components/initials-avatar';
 import { InlineStatus } from '@/components/inline-status';
 import { BookingLoadError, formatBookingStatus, isBookingChatAvailable } from '@/lib/bookings';
@@ -50,7 +65,7 @@ import { useAccount } from '@/providers/account-provider';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { XStack, YStack } from 'tamagui';
 
-const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
 
 /**
  * Booking chat, shared by the Worker and Client routes (BL-01C-UI).
@@ -151,6 +166,28 @@ export default function BookingChat({
   const [sendError, setSendError] = useState<string | null>(null);
 
   /**
+   * Scroll position is decided by src/lib/chat-scroll.ts. The screen reveals the
+   * latest message only when that state asks for it, never for a reader who
+   * has moved away, so backreading, refreshes and replayed events keep the
+   * reader's place. The jump indicator is local UI; it never marks rows read.
+   */
+  const [jump, setJump] = useState({ away: false, unseen: 0 });
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollState = useRef<ChatScrollState>(initialChatScroll());
+  const viewportHeight = useRef(0);
+  const commitScroll = useCallback((next: ChatScrollState) => {
+    scrollState.current = next;
+    setJump((prev) => (prev.away === !next.nearBottom && prev.unseen === next.unseen
+      ? prev : { away: !next.nearBottom, unseen: next.unseen }));
+  }, []);
+  const reveal = useCallback(() => {
+    const pending = scrollState.current.reveal;
+    if (pending === 'none') return;
+    scrollRef.current?.scrollToEnd({ animated: pending === 'animated' });
+    commitScroll(onRevealed(scrollState.current));
+  }, [commitScroll]);
+
+  /**
    * One authoritative round trip: status first, then history.
    *
    * Status is fetched before messages so a Booking that has left `confirmed`
@@ -165,6 +202,7 @@ export default function BookingChat({
       setMessages([]);
       setLoadedFor(requestKey);
       setLoadError(null);
+      commitScroll(onMessages(scrollState.current, requestKey, [], senderId ?? ''));
       return;
     }
     const found = await loadChatBooking(role, bookingId);
@@ -177,6 +215,7 @@ export default function BookingChat({
       setMessages([]);
       setLoadedFor(requestKey);
       setLoadError(null);
+      commitScroll(onMessages(scrollState.current, requestKey, [], senderId ?? ''));
       return;
     }
     if (!isBookingChatAvailable(found.status)) {
@@ -184,6 +223,7 @@ export default function BookingChat({
       setMessages([]);
       setLoadedFor(requestKey);
       setLoadError(null);
+      commitScroll(onMessages(scrollState.current, requestKey, [], senderId ?? ''));
       return;
     }
     const rows = await fetchBookingMessages(bookingId);
@@ -192,7 +232,8 @@ export default function BookingChat({
     setMessages(rows);
     setLoadedFor(requestKey);
     setLoadError(null);
-  }, [role, bookingId, senderId]);
+    commitScroll(onMessages(scrollState.current, requestKey, rows, senderId ?? ''));
+  }, [role, bookingId, senderId, commitScroll]);
 
   /**
    * Failure path. The raw database/network message is logged for developers
@@ -323,6 +364,12 @@ export default function BookingChat({
     };
   }, [senderId, bookingId, chatAvailable, load]);
 
+  // An intentional send reveals the sent message once the re-read returns it.
+  // Only the ref changes, and no indicator state is affected.
+  useEffect(() => {
+    if (isSending) scrollState.current = onOwnSend(scrollState.current);
+  }, [isSending]);
+
   async function handleRetry() {
     if (isLoading || isRefreshing || isSending) return;
     setIsLoading(true);
@@ -408,103 +455,154 @@ export default function BookingChat({
   const canSend = chatAvailable && visibleBooking !== null && canSendInStatus(visibleBooking.status);
   const remaining = remainingCharacters(draft);
   const isDraftSendable = validateContent(draft).ok;
+  const threadShown = !isLoading && !loadError && chatAvailable && visibleMessages.length > 0;
+
+  function jumpToLatest() {
+    commitScroll(onJumpToLatest(scrollState.current));
+    reveal();
+  }
+
+  function scrolled(e: { nativeEvent: Parameters<typeof distanceFromBottom>[0] }) {
+    commitScroll(onScrolled(scrollState.current, distanceFromBottom(e.nativeEvent), e.nativeEvent.contentOffset.y));
+  }
 
   return (
     // Edge-to-edge Android does not resize the window for the keyboard, so pad on every platform and
     // subtract the native header; otherwise a docked keyboard covers the composer and Send.
     <KeyboardAvoidingView style={styles.flex} behavior="padding" keyboardVerticalOffset={headerHeight}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
-      >
-        {visibleBooking !== null && chatAvailable && counterpart !== null ? (
-          <>
-            <XStack style={styles.chatHeader}>
-              <InitialsAvatar
-                name={counterpart.name}
-                initials={counterpart.initials}
-                accent={role === 'worker' ? colors.accentSubtle : colors.accentSubtle}
-                size={48}
-              />
-              <YStack style={styles.headerText}>
-                <Text style={styles.heading}>{counterpart.name}</Text>
-                <Text style={styles.jobContext}>{visibleBooking.jobTitle}</Text>
-              </YStack>
-            </XStack>
-            <AppChip
-              label={formatBookingStatus(visibleBooking.status)}
-              variant={bookingStatusVariant(visibleBooking.status)}
-              style={styles.statusChip}
-            />
-          </>
-        ) : null}
-
-        {isLoading ? (
-          // Rendered instead of, never before, the empty state.
-          <View style={styles.center}>
-            <InlineStatus variant="loading" message={COPY.loading} />
-          </View>
-        ) : loadError ? (
-          <View style={styles.center}>
-            <InlineStatus
-              variant="error"
-              message={loadError}
-              action={
-                <AppButton
-                  label="Retry"
-                  variant="secondary"
-                  onPress={handleRetry}
-                  disabled={isLoading || isRefreshing || isSending}
+      <View style={styles.thread}>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
+          scrollEventThrottle={64}
+          onScroll={scrolled}
+          // Throttling can drop the last onScroll; these unthrottled events report where the reader settled.
+          onScrollBeginDrag={() => commitScroll(onUserScroll(scrollState.current))}
+          onScrollEndDrag={scrolled}
+          onMomentumScrollEnd={scrolled}
+          // Content growth keeps a following reader on the latest message; a backreader is never moved.
+          onContentSizeChange={(_width, height) => {
+            if (!threadShown) return;
+            commitScroll(onContentMeasured(scrollState.current, height, viewportHeight.current));
+            reveal();
+          }}
+          // The keyboard shrinks this viewport; stay on the latest message only if already there.
+          onLayout={(e) => {
+            viewportHeight.current = e.nativeEvent.layout.height;
+            if (!threadShown) return;
+            commitScroll(onViewportResized(scrollState.current));
+            reveal();
+          }}
+        >
+          {visibleBooking !== null && chatAvailable && counterpart !== null ? (
+            <>
+              <XStack style={styles.chatHeader}>
+                <InitialsAvatar
+                  name={counterpart.name}
+                  initials={counterpart.initials}
+                  accent={role === 'worker' ? colors.accentSubtle : colors.accentSubtle}
+                  size={48}
                 />
-              }
-            />
-          </View>
-        ) : visibleBooking === null ? (
-          // Not the caller's Booking, or no Booking id was supplied. Says
-          // nothing about whether such a Booking exists.
-          <View style={styles.center}>
-            <InlineStatus variant="empty" message={COPY.notFound} />
-          </View>
-        ) : !chatAvailable ? (
-          <View style={styles.center}>
-            <InlineStatus variant="note" message={CHAT_UNAVAILABLE} />
-          </View>
-        ) : visibleMessages.length === 0 ? (
-          // A successful read that returned nothing — not an error.
-          <View style={styles.center}>
-            <InlineStatus variant="empty" message={COPY.empty} />
-          </View>
-        ) : (
-          visibleMessages.map((message) => {
-            const mine = message.sender_id === senderId;
-            // Formatted at render from the raw ISO instant, never cached in
-            // state, so a device timezone change re-derives it on reload.
-            const sentAt = formatTimestamp(message.created_at);
-
-            return (
-              <XStack key={message.id} style={mine ? styles.messageMine : styles.messageTheirs}>
-                {!mine && counterpart !== null ? (
-                  <InitialsAvatar
-                    name={counterpart.name}
-                    initials={counterpart.initials}
-                    accent={role === 'worker' ? colors.accentSubtle : colors.accentSubtle}
-                    size={32}
-                  />
-                ) : null}
-                <YStack style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
-                  <Text style={styles.bubbleAuthor}>
-                    {messageAuthor(message.sender_id, senderId ?? '', counterpart!)}
-                  </Text>
-                  {/* Message content remains plain text from the authorized read. */}
-                  <Text style={styles.bubbleText}>{message.content}</Text>
-                  {sentAt ? <Text style={styles.bubbleTime}>{sentAt}</Text> : null}
+                <YStack style={styles.headerText}>
+                  <Text style={styles.heading}>{counterpart.name}</Text>
+                  <Text style={styles.jobContext}>{visibleBooking.jobTitle}</Text>
                 </YStack>
               </XStack>
-            );
-          })
-        )}
-      </ScrollView>
+              <AppChip
+                label={formatBookingStatus(visibleBooking.status)}
+                variant={bookingStatusVariant(visibleBooking.status)}
+                style={styles.statusChip}
+              />
+            </>
+          ) : null}
+
+          {isLoading ? (
+            // Rendered instead of, never before, the empty state.
+            <View style={styles.center}>
+              <InlineStatus variant="loading" message={COPY.loading} />
+            </View>
+          ) : loadError ? (
+            <View style={styles.center}>
+              <InlineStatus
+                variant="error"
+                message={loadError}
+                action={
+                  <AppButton
+                    label="Retry"
+                    variant="secondary"
+                    onPress={handleRetry}
+                    disabled={isLoading || isRefreshing || isSending}
+                  />
+                }
+              />
+            </View>
+          ) : visibleBooking === null ? (
+            // Not the caller's Booking, or no Booking id was supplied. Says
+            // nothing about whether such a Booking exists.
+            <View style={styles.center}>
+              <InlineStatus variant="empty" message={COPY.notFound} />
+            </View>
+          ) : !chatAvailable ? (
+            <View style={styles.center}>
+              <InlineStatus variant="note" message={CHAT_UNAVAILABLE} />
+            </View>
+          ) : visibleMessages.length === 0 ? (
+            // A successful read that returned nothing — not an error.
+            <View style={styles.center}>
+              <InlineStatus variant="empty" message={COPY.empty} />
+            </View>
+          ) : (
+            visibleMessages.map((message) => {
+              const mine = message.sender_id === senderId;
+              // Formatted at render from the raw ISO instant, never cached in
+              // state, so a device timezone change re-derives it on reload.
+              const sentAt = formatTimestamp(message.created_at);
+
+              return (
+                <XStack key={message.id} style={mine ? styles.messageMine : styles.messageTheirs}>
+                  {!mine && counterpart !== null ? (
+                    <InitialsAvatar
+                      name={counterpart.name}
+                      initials={counterpart.initials}
+                      accent={role === 'worker' ? colors.accentSubtle : colors.accentSubtle}
+                      size={32}
+                    />
+                  ) : null}
+                  <YStack style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                    <Text style={styles.bubbleAuthor}>
+                      {messageAuthor(message.sender_id, senderId ?? '', counterpart!)}
+                    </Text>
+                    {/* Message content remains plain text from the authorized read. */}
+                    <Text style={styles.bubbleText}>{message.content}</Text>
+                    {sentAt ? <Text style={styles.bubbleTime}>{sentAt}</Text> : null}
+                  </YStack>
+                </XStack>
+              );
+            })
+          )}
+        </ScrollView>
+        {threadShown && jump.away ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={jump.unseen > 0
+              ? `${jump.unseen} new message${jump.unseen === 1 ? '' : 's'}. Jump to latest`
+              : 'Jump to latest messages'}
+            onPress={jumpToLatest}
+            style={({ pressed }) => [styles.jump, pressed ? styles.jumpPressed : null]}
+          >
+            <AppSymbol
+              synchronousGlyph
+              accessible={false}
+              name={{ android: 'expand_more', ios: 'chevron.down' }}
+              size={24}
+              tintColor={colors.textPrimary}
+            />
+            {jump.unseen > 0 ? <Text style={styles.jumpCount}>{jump.unseen} new</Text> : null}
+          </Pressable>
+        ) : null}
+      </View>
 
       {/*
         The composer is offered only while ordinary chat is open. Non-confirmed
@@ -555,8 +653,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.canvas,
   },
+  thread: {
+    flex: 1,
+  },
   scroll: {
     backgroundColor: colors.canvas,
+  },
+  jump: {
+    position: 'absolute',
+    right: spacing.gutter,
+    bottom: spacing.md,
+    minWidth: size.minTarget,
+    minHeight: size.minTarget,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xxs,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
+    elevation: 3,
+  },
+  jumpPressed: {
+    backgroundColor: colors.accentSubtle,
+  },
+  jumpCount: {
+    ...type.caption,
+    color: colors.textPrimary,
   },
   content: {
     backgroundColor: colors.canvas,

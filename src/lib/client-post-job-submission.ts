@@ -19,11 +19,13 @@ export async function submitClientPostJob(input: {
   const draft = operation.draft;
   const fail = (message: string) => { if (current()) owner.failPost(operation, message); };
   try {
-    const descriptionError = postingDescriptionError(draft.description);
-    if (descriptionError !== null) { fail(descriptionError); return; }
     const address = draft.address.trim();
     const locationError = postingLocationError(address, draft.pin);
     if (locationError !== null || draft.pin === null) { fail(locationError ?? COPY.missingPin); return; }
+    const primary = skills.find(skill => skill.id === draft.primarySkillId);
+    if (!primary) { fail('Please select a primary skill.'); return; }
+    const descriptionError = postingDescriptionError(draft.description);
+    if (descriptionError !== null) { fail(descriptionError); return; }
     const scheduleError = postingScheduleError(draft.scheduleDate, draft.scheduleTime);
     if (scheduleError !== null) { fail(scheduleError); return; }
     const schedule = combineJobSchedule(draft.scheduleDate, draft.scheduleTime);
@@ -37,8 +39,6 @@ export async function submitClientPostJob(input: {
     }
     const paymentError = postingPaymentError(draft.paymentMethod, budget);
     if (paymentError !== null || draft.paymentMethod === null) { fail(paymentError ?? 'Please select a payment method.'); return; }
-    const primary = skills.find(skill => skill.id === draft.primarySkillId);
-    if (!primary) { fail('Please select a primary skill.'); return; }
     const knownIds = new Set(skills.map(skill => skill.id));
     const skillIds = [...new Set([primary.id, ...draft.additionalSkillIds.filter(id => knownIds.has(id))])];
     if (!current() || !owner.markCreateDispatched(operation)) return;

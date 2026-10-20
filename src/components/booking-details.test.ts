@@ -5,17 +5,28 @@ import path from 'node:path';
 // @ts-expect-error -- Node-only component harness.
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 type Props = Record<string, any>;
 const flat = (s: any): Props => Array.isArray(s) ? Object.assign({}, ...s.filter(Boolean).map(flat)) : s || {};
 let state: any[] = [], cursor = 0;
 const disclosureStates = new Map<string, any[]>();
-const native = { ...Object.fromEntries(['KeyboardAvoidingView','View','Text','ScrollView','RefreshControl','Pressable','Image','ActivityIndicator','Modal','TextInput'].map(n => [n,n])), Platform: { OS: 'android', select: (v: Props) => v.android ?? v.default }, StyleSheet: { create: (s: Props) => s, hairlineWidth: 1 }, AppState: { currentState: 'active' }, Alert: { alert() {} }, Linking: { openURL() { throw Error('No live mutations'); } } };
+const native = { ...Object.fromEntries(['KeyboardAvoidingView','View','Text','ScrollView','RefreshControl','Pressable','Image','ActivityIndicator','Modal','TextInput'].map(n => [n,n])), Platform: { OS: 'android', select: (v: Props) => v.android ?? v.default }, StyleSheet: { create: (s: Props) => s, hairlineWidth: 1 }, AppState: { currentState: 'active' }, Alert: { alert() {} }, Linking: { openURL() { throw Error('No live mutations'); } },
+  // The map-first panel animates with core Animated/PanResponder: recorded, never run.
+  Animated: { View: 'Animated.View', Value: class { constructor(public value: number) {} setValue(value: number) { this.value = value; } interpolate() { return 0; } }, timing: () => ({ start() {}, stop() {} }) },
+  Easing: { bezier: () => () => 0 }, PanResponder: { create: (handlers: Props) => ({ panHandlers: { handlers } }) } };
 const pushCalls: any[] = [];
+let accountId = 'client-a';
+// Extra account fields; an active account in the booking's role opens the map-first layout.
+let accountExtra: Props = {};
+// The panel's own state survives re-renders, as React keeps it.
+let sheetState: any[] = [];
+// Components named here stay unrendered elements, as React hands them to their parent.
+let unrendered = new Set<string>();
 function jsx(kind: any, props: Props): any {
   if (typeof kind !== 'function') return { type: kind, props: kind === 'Modal' && !props.visible ? { ...props, children: null } : props };
+  if (unrendered.has(kind.name)) return { type: kind, props };
   const previous = state, previousCursor = cursor;
-  state = kind.name === 'Collapsible' ? disclosureStates.get(props.title) ?? [] : [];
+  state = kind.name === 'Collapsible' ? disclosureStates.get(props.title) ?? [] : kind.name === 'BookingSheet' ? sheetState : [];
   if (kind.name === 'Collapsible') disclosureStates.set(props.title, state);
   cursor = 0;
   try { return kind(props); } finally { state = previous; cursor = previousCursor; }
@@ -27,16 +38,19 @@ function load(file: string): Props {
   const require = (name: string): any => {
       if (name === '@/components/refinement-theme') return { ...load('src/components/refinement-theme.tsx'), RefinementThemeProvider: 'RefinementThemeProvider' };
     if (name === 'react-native') return native;
+    if (name === '@/components/booking-location-map') return { BookingLocationMap: 'BookingLocationMap' };
     if (name === 'expo-crypto') return { randomUUID: () => 'test-operation' };
     if (name === 'expo-image') return { Image: 'Image' };
       if (name === '@/components/app-symbol') return { AppSymbol: 'SymbolView' };
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
-    if (name === 'react') return { createContext: (value: any) => ({ value }), useContext: (context: any) => context.value, useState: (initial: any) => { const i=cursor++; if (!(i in state)) state[i]=typeof initial === 'function' ? initial() : initial; const captured=state; return [state[i], (next: any) => { captured[i]=typeof next === 'function' ? next(captured[i]) : next; }]; }, useRef: (value: any) => ({ current: value }), useCallback: (fn: any) => fn, useEffect() {}, useLayoutEffect() {} };
+    if (name === 'react') return { createContext: (value: any) => ({ value }), useContext: (context: any) => context.value, useState: (initial: any) => { const i=cursor++; if (!(i in state)) state[i]=typeof initial === 'function' ? initial() : initial; const captured=state; return [state[i], (next: any) => { captured[i]=typeof next === 'function' ? next(captured[i]) : next; }]; }, useRef: (value: any) => ({ current: value }), useCallback: (fn: any) => fn, useMemo: (fn: any) => fn(), useEffect() {}, useLayoutEffect() {} };
     if (name === 'tamagui') return { XStack: 'View', YStack: 'View' };
-    if (name === 'expo-router') return { useRouter: () => ({ push: (route: any) => pushCalls.push(route) }), useFocusEffect() {}, useLocalSearchParams: () => ({}) };
+    if (name === 'expo-router') return { Stack: { Screen: 'StackScreen' }, useRouter: () => ({ push: (route: any) => pushCalls.push(route), canGoBack: () => true, back: () => pushCalls.push('back') }), useFocusEffect() {}, useLocalSearchParams: () => ({}) };
+    if (name === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 24, bottom: 16, left: 0, right: 0 }) };
+    if (name === '@/hooks/use-reduced-motion') return { useReducedMotion: () => false };
     if (name === '@/global.css') return {};
     if (name === 'expo-router/react-navigation') return { useHeaderHeight: () => 56 };
-    if (name === '@/providers/account-provider') return { useAccount: () => ({ account: { id: 'client-a' } }) };
+    if (name === '@/providers/account-provider') return { useAccount: () => ({ account: { id: accountId, ...accountExtra } }) };
     if (name.endsWith('/supabase')) return { supabase: new Proxy({}, { get() { throw Error('No provider/database access permitted'); } }) };
     if (name.endsWith('/realtime')) return { subscribeInvalidation() {}, bookingMessagesTopic: () => '', userNotificationsTopic: () => '' };
     if (name.endsWith('/job-location-map')) return { nativeJobMapsLoaded: () => false, WorkerAssignedJobLocation: 'WorkerAssignedJobLocation' };
@@ -104,7 +118,16 @@ it('keeps the Client layout complete and in the same reading order, with the wor
 });
 
 it('preserves every restricted-status disclosure and fail-closed action predicate',()=>{for(const role of ['client','worker'])for(const status of ['pending','completed','cancelled','no_show']) {const tree=detailTree(role,status);expect(text(tree)).not.toContain(name);expect(text(tree)).not.toContain('EXACT PRIVATE ADDRESS');expect(all(tree,'Pressable').some(x=>x.props.accessibilityLabel==='Call booking counterpart')).toBe(false);} const hidden=detailTree('client','confirmed',{},true); expect(text(hidden)).not.toContain(name);expect(text(hidden)).not.toContain('EXACT PRIVATE ADDRESS'); const failed=detailTree('client','confirmed',{paymentReadSucceeded:false});expect(text(failed)).toContain('Payment and lifecycle actions are unavailable');expect(text(failed)).not.toContain('Mark as completed');});
-it('keeps chat, portfolio and report destinations on their own supplied booking ID',()=>{for(const role of ['client','worker']) {pushCalls.length=0;const tree=detailTree(role);for(const control of all(tree,'Pressable').filter(x=>['Open chat','Report','View Portfolio'].includes(x.props.accessibilityLabel)))control.props.onPress();expect(pushCalls).toContainEqual({pathname:`/${role}/chat`,params:{bookingId:ID}});expect(pushCalls.every(x=>x.params.bookingId===ID)).toBe(true);}});
+it('keeps chat, portfolio and report destinations on their own supplied booking ID',()=>{for(const role of ['client','worker']) {pushCalls.length=0;const tree=detailTree(role);for(const control of all(tree,'Pressable').filter(x=>['Open chat','Report','View resume & portfolio'].includes(x.props.accessibilityLabel)))control.props.onPress();expect(pushCalls).toContainEqual({pathname:`/${role}/chat`,params:{bookingId:ID}});if(role==='client')expect(pushCalls).toContainEqual({pathname:'/client/portfolio',params:{bookingId:ID}});expect(pushCalls.every(x=>x.params.bookingId===ID)).toBe(true);}});
+
+it('reveals the combined entry when an authoritative confirmation replaces pending and hides it on invalidation', () => {
+  const entry = (tree: any) => all(tree, 'Pressable').filter(node => node.props.accessibilityLabel === 'View resume & portfolio');
+  expect(entry(detailTree('client', 'pending'))).toHaveLength(0);
+  expect(entry(detailTree('client', 'confirmed'))).toHaveLength(1);
+  expect(entry(detailTree('client', 'confirmed', {}, true))).toHaveLength(0);
+  for (const status of ['completed', 'cancelled', 'no_show']) expect(entry(detailTree('client', status))).toHaveLength(0);
+  expect(entry(detailTree('worker', 'confirmed'))).toHaveLength(0);
+});
 it('offers cancellation to either party directly while completion remains Client-only and busy actions stay disabled', () => {
   for (const role of ['client', 'worker']) {
     const tree = render(Lifecycle, { role, bookingId: ID, showCompletion: true, showCancellation: true, onChanged: async () => {} });
@@ -211,3 +234,265 @@ it('renders informational Confirmed and unchanged other status chips in actual d
   }
 });
 
+// V4 #19 cancellation details in Booking record. Worker bookings name client 'client-a'; Client bookings name worker 'worker-a'.
+const CANCELLED_AT = '2030-12-30T09:30:00Z';
+function cancelledTree(role: string, viewer: string, bundle: Props) {
+  accountId = viewer;
+  try { return detailTree(role, 'cancelled', { booking: { ...booking(role, 'cancelled'), ...bundle } }); } finally { accountId = 'client-a'; }
+}
+// The rendered SurfaceGroup: one wrapper View per row, so each fact must be its own row.
+function recordRows(tree: any): string[] {
+  const rowsOf = (view: any): string[] => (Array.isArray(view.props.children) ? view.props.children : [])
+    .filter((row: any) => row && typeof row === 'object').map(text);
+  const group = all(tree, 'View').find(view => {
+    const rows = rowsOf(view);
+    return rows.length >= 3 && !rows.includes('Booking record') && rows.some(row => row.startsWith('Booked') && row !== 'Booked');
+  });
+  return rowsOf(group).filter(Boolean);
+}
+const formattedCancelledAt = load('src/lib/date-time.ts').formatDetailDateTime(CANCELLED_AT);
+
+it('shows the Worker who cancelled, why and when, as separate Booking record rows', () => {
+  const own = cancelledTree('worker', 'worker-a', { cancellation_reason_code: 'location_issue', cancellation_reason_detail: 'Gate locked', cancelled_by: 'worker-a', cancelled_at: CANCELLED_AT });
+  expect(recordRows(own)).toEqual(expect.arrayContaining(['Cancelled byYou', 'ReasonLocation issue', 'DetailsGate locked', 'Cancelled' + formattedCancelledAt]));
+  const byClient = cancelledTree('worker', 'worker-a', { cancellation_reason_code: 'schedule_conflict', cancellation_reason_detail: null, cancelled_by: 'client-a', cancelled_at: CANCELLED_AT });
+  const rows = recordRows(byClient);
+  expect(rows).toContain('Cancelled byYour client'); expect(rows).toContain('ReasonSchedule conflict');
+  expect(rows.some(row => row.startsWith('Details'))).toBe(false);
+  // Attribution never releases the suppressed counterpart identity.
+  expect(text(byClient)).not.toContain(name); expect(text(byClient)).not.toContain('EXACT PRIVATE ADDRESS');
+});
+
+it('shows the Client who cancelled using the Client viewpoint', () => {
+  const own = cancelledTree('client', 'client-a', { cancellation_reason_code: 'payment_issue', cancellation_reason_detail: null, cancelled_by: 'client-a', cancelled_at: CANCELLED_AT });
+  expect(recordRows(own)).toEqual(expect.arrayContaining(['Cancelled byYou', 'ReasonPayment issue', 'Cancelled' + formattedCancelledAt]));
+  const byWorker = cancelledTree('client', 'client-a', { cancellation_reason_code: 'other', cancellation_reason_detail: 'Fell ill', cancelled_by: 'worker-a', cancelled_at: CANCELLED_AT });
+  expect(recordRows(byWorker)).toEqual(expect.arrayContaining(['Cancelled byYour worker', 'ReasonOther', 'DetailsFell ill']));
+  expect(text(byWorker)).not.toContain(name);
+});
+
+it('keeps legacy, inconsistent and non-cancelled bookings to the plain status without cancellation rows', () => {
+  const legacy = cancelledTree('client', 'client-a', { cancellation_reason_code: null, cancellation_reason_detail: null, cancelled_by: null, cancelled_at: null });
+  const stranger = cancelledTree('worker', 'worker-a', { cancellation_reason_code: 'other', cancellation_reason_detail: 'x', cancelled_by: 'someone-else', cancelled_at: CANCELLED_AT });
+  for (const tree of [legacy, stranger]) {
+    expect(visibleText(tree)).toContain('Cancelled');
+    expect(visibleText(tree)).not.toContain('Cancelled by'); expect(visibleText(tree)).not.toContain('Reason');
+  }
+  for (const role of ['client', 'worker']) for (const status of ['pending', 'confirmed', 'completed', 'no_show']) {
+    expect(visibleText(detailTree(role, status))).not.toContain('Cancelled by');
+  }
+});
+
+
+// V8-05 P3: SurfaceGroup receives unrendered DetailLine elements, so a fact without a value must
+// not be passed at all. Otherwise it takes a row and a divider and then draws nothing.
+const COMPLETED_AT = '2030-12-31T09:00:00Z';
+function recordStructure(render: () => any) {
+  unrendered = new Set(['DetailLine']);
+  try {
+    const isLine = (node: any) => node && typeof node === 'object' && typeof node.type === 'function' && node.type.name === 'DetailLine';
+    const group = all(render(), 'View').find(view => Array.isArray(view.props.children) && view.props.children.some((row: any) =>
+      row && typeof row === 'object' && Array.isArray(row.props?.children) && row.props.children.some((child: any) => isLine(child) && child.props.label === 'Booked')));
+    expect(group).toBeDefined();
+    return group.props.children.map((row: any) => {
+      const [divider, line] = row.props.children;
+      const drawn = line.type(line.props);
+      return { label: line.props.label, divider: divider !== null, drawn: drawn !== null, value: drawn ? text(drawn).slice(line.props.label.length) : null };
+    });
+  } finally { unrendered = new Set(); }
+}
+
+it('gives each Booking record fact one row and one divider, with no empty Completed row, for both roles', () => {
+  for (const role of ['worker', 'client']) {
+    const viewer = role === 'worker' ? 'worker-a' : 'client-a';
+    const cancelled = (bundle: Props) => () => cancelledTree(role, viewer, bundle);
+    const cases: [string, () => any, string[]][] = [
+      ['confirmed without completion', () => detailTree(role, 'confirmed'), ['Booked']],
+      ['completed with completion', () => detailTree(role, 'completed', { booking: { ...booking(role, 'completed'), completed_at: COMPLETED_AT } }), ['Booked', 'Completed']],
+      ['cancelled with details', cancelled({ cancellation_reason_code: 'other', cancellation_reason_detail: 'Fell ill', cancelled_by: viewer, cancelled_at: CANCELLED_AT }),
+        ['Booked', 'Cancelled by', 'Reason', 'Details', 'Cancelled']],
+      ['cancelled without optional details', cancelled({ cancellation_reason_code: 'schedule_conflict', cancellation_reason_detail: null, cancelled_by: viewer, cancelled_at: CANCELLED_AT }),
+        ['Booked', 'Cancelled by', 'Reason', 'Cancelled']],
+      ['legacy cancellation', cancelled({ cancellation_reason_code: null, cancellation_reason_detail: null, cancelled_by: null, cancelled_at: null }), ['Booked']],
+    ];
+    for (const [name, render, labels] of cases) {
+      const rows = recordStructure(render);
+      expect(rows.map((row: Props) => row.label), `${role} ${name}`).toEqual(labels);
+      expect(rows.every((row: Props) => row.drawn), `${role} ${name}: every row draws a fact`).toBe(true);
+      expect(rows.map((row: Props) => row.divider), `${role} ${name}: dividers only between rows`).toEqual(labels.map((_, index) => index > 0));
+    }
+    const completed = recordStructure(() => detailTree(role, 'completed', { booking: { ...booking(role, 'completed'), completed_at: COMPLETED_AT } }));
+    expect(completed[1].value).toBe(load('src/lib/date-time.ts').formatDetailDateTime(COMPLETED_AT));
+  }
+});
+
+// Demo-readiness chat scrolling: the local jump indicator appears only while backreading a shown thread.
+it('offers an accessible jump-to-latest control with a local unseen count only while backreading', () => {
+  const Chat = load('src/components/booking-chat.tsx').default;
+  const rows = [{ id: 'm1', sender_id: 'worker-a', content: 'Hello', created_at: '2030-12-30T09:30:00Z' }];
+  const seeds = (jump: any, messages: any[] = rows) => [false, false, null, { status: 'confirmed', jobTitle: 'Supplied job', counterpartName: name }, messages, 'client:client-a:' + ID, '', false, null, jump];
+  const jumpControl = (tree: any) => all(tree, 'Pressable').filter(x => String(x.props.accessibilityLabel).includes('Jump to latest'));
+  const away = jumpControl(render(Chat, { role: 'client', bookingId: ID }, seeds({ away: true, unseen: 2 })));
+  expect(away).toHaveLength(1);
+  expect(away[0].props.accessibilityRole).toBe('button');
+  expect(away[0].props.accessibilityLabel).toBe('2 new messages. Jump to latest');
+  expect(text(away[0])).toContain('2 new');
+  expect(jumpControl(render(Chat, { role: 'client', bookingId: ID }, seeds({ away: true, unseen: 0 })))[0].props.accessibilityLabel).toBe('Jump to latest messages');
+  expect(jumpControl(render(Chat, { role: 'client', bookingId: ID }, seeds({ away: false, unseen: 0 })))).toHaveLength(0);
+  expect(jumpControl(render(Chat, { role: 'client', bookingId: ID }, seeds({ away: true, unseen: 1 }, [])))).toHaveLength(0);
+  const scroll = all(render(Chat, { role: 'client', bookingId: ID }, seeds({ away: false, unseen: 0 })), 'ScrollView')[0];
+  expect(typeof scroll.props.onScroll).toBe('function');
+  expect(typeof scroll.props.onContentSizeChange).toBe('function');
+});
+
+// 2026-10-14 Android trace: the composer resized the viewport before the thread was measured, and the
+// throttled events of the screen's own scrollToEnd stopped part-way with no final event at the bottom.
+it('does not leave the jump control on after revealing the latest message, yet still follows the reader', () => {
+  const Chat = load('src/components/booking-chat.tsx').default;
+  const rows = ['m1', 'm2', 'm3'].map((id) => ({ id, sender_id: 'worker-a', content: 'Hello', created_at: '2030-12-30T09:30:00Z' }));
+  const seeds: any[] = [false, false, null, { status: 'confirmed', jobTitle: 'Supplied job', counterpartName: name }, rows, 'client:client-a:' + ID, '', false, null, { away: false, unseen: 0 }];
+  const scroll = all(render(Chat, { role: 'client', bookingId: ID }, seeds), 'ScrollView')[0];
+  const ends: any[] = [];
+  scroll.props.ref.current = { scrollToEnd: (options: any) => ends.push(options) };
+  const at = (y: number, content = 1309, viewport = 654) => ({ nativeEvent: { contentOffset: { y }, contentSize: { height: content }, layoutMeasurement: { height: viewport } } });
+
+  scroll.props.onLayout({ nativeEvent: { layout: { height: 654 } } });
+  scroll.props.onContentSizeChange(1080, 1309);
+  scroll.props.onScroll(at(13));
+  scroll.props.onScroll(at(325));
+  expect(ends.length).toBeGreaterThan(0);
+  expect(seeds[9]).toEqual({ away: false, unseen: 0 });
+
+  // The reader then drags back through history: the arrow appears, and a settled return clears it.
+  scroll.props.onScrollBeginDrag(at(325));
+  scroll.props.onScroll(at(100));
+  expect(seeds[9]).toEqual({ away: true, unseen: 0 });
+  scroll.props.onMomentumScrollEnd(at(655));
+  expect(seeds[9]).toEqual({ away: false, unseen: 0 });
+});
+
+it('shows no jump control for a thread that fits in the viewport', () => {
+  const Chat = load('src/components/booking-chat.tsx').default;
+  const rows = [{ id: 'm1', sender_id: 'worker-a', content: 'Hi', created_at: '2030-12-30T09:30:00Z' }];
+  const seeds: any[] = [false, false, null, { status: 'confirmed', jobTitle: 'Supplied job', counterpartName: name }, rows, 'client:client-a:' + ID, '', false, null, { away: false, unseen: 0 }];
+  const scroll = all(render(Chat, { role: 'client', bookingId: ID }, seeds), 'ScrollView')[0];
+  scroll.props.ref.current = { scrollToEnd() {} };
+  scroll.props.onLayout({ nativeEvent: { layout: { height: 654 } } });
+  scroll.props.onContentSizeChange(1080, 400);
+  scroll.props.onScroll({ nativeEvent: { contentOffset: { y: 0 }, contentSize: { height: 400 }, layoutMeasurement: { height: 654 } } });
+  expect(seeds[9]).toEqual({ away: false, unseen: 0 });
+});
+
+// ---------- Map-first confirmed booking (2026-10-16): full-screen map + draggable booking panel ----------
+const pinLocation = { status: 'ready', location: { jobId: 'job-a', address: 'EXACT PRIVATE ADDRESS', pin: { latitude: 14.547, longitude: 121.067 }, barangay: 'Saved barangay', city: 'Saved city' } };
+function mapFirstTree(role = 'worker', overrides: Props = {}, suppress = false) {
+  accountExtra = { is_active: true, role }; sheetState = [];
+  try { return detailTree(role, 'confirmed', overrides, suppress); } finally { accountExtra = {}; }
+}
+const el = (type: string, props: Props) => ({ type, props });
+const stop = vi.fn();
+const location = { primary: el('Pressable', { accessibilityRole: 'button', accessibilityLabel: 'Stop sharing on this device', onPress: stop, children: el('Text', { children: 'PRIMARY CONTROLS' }) }),
+  secondary: el('Text', { children: 'SECONDARY DETAILS' }) };
+const panelOf = (tree: any) => all(tree, 'BookingLocationMap')[0].props.renderPanel(location);
+const headerOf = (panel: any) => all(panel, 'View').find(x => x.props.handlers?.onMoveShouldSetPanResponder);
+const bodyOf = (panel: any) => all(panel, 'View').find(x => x.props.handlers?.onMoveShouldSetPanResponderCapture);
+const toggleOf = (panel: any) => all(panel, 'Pressable').find(x => ['Show booking details', 'Show map'].includes(x.props.accessibilityLabel));
+
+it('a confirmed booking opens map-first: one full-screen map, a floating Back and no stack header or page scroll', () => {
+  for (const role of ['worker', 'client']) {
+    pushCalls.length = 0;
+    const tree = mapFirstTree(role, { exactLocation: pinLocation });
+    expect(all(tree, 'ScrollView')).toHaveLength(0);
+    expect(all(tree, 'StackScreen')[0].props.options).toEqual({ headerShown: false });
+    const maps = all(tree, 'BookingLocationMap');
+    expect(maps).toHaveLength(1);
+    expect(maps[0].props).toMatchObject({ role, bookingId: ID, destination: pinLocation.location.pin });
+    // Markers are framed below the floating header (safe area 24 + 8 + 48 + 8) and above the panel.
+    expect(maps[0].props.insets).toEqual({ top: 24 + theme.spacing.sm + theme.size.iconButton + theme.spacing.sm, bottom: 0 });
+    const back = all(tree, 'Pressable').find(x => x.props.accessibilityLabel === 'Navigate up');
+    expect(back.props.accessibilityRole).toBe('button');
+    back.props.onPress();
+    expect(pushCalls).toEqual(['back']);
+    expect(visibleText(tree)).toContain('Booking details');
+  }
+  // Every other status keeps the scrolling page with its stack header.
+  for (const status of ['pending', 'completed', 'cancelled']) {
+    accountExtra = { is_active: true, role: 'worker' };
+    try { const tree = detailTree('worker', status); expect(all(tree, 'ScrollView')).toHaveLength(1); expect(all(tree, 'BookingLocationMap')).toHaveLength(0); } finally { accountExtra = {}; }
+  }
+});
+
+it('the collapsed panel shows status, title, schedule and the location controls; expanding shows the whole booking', () => {
+  const tree = mapFirstTree('worker', { exactLocation: pinLocation, payment: { id: 'p', payment_method: 'cod', payment_status: 'pending' } });
+  let panel = panelOf(tree);
+  const header = visibleText(headerOf(panel));
+  for (const value of ['Confirmed', booking('worker').job_title, '987,654,321.75', 'PRIMARY CONTROLS']) expect(header).toContain(value);
+  let body = bodyOf(panel);
+  expect(body.props.importantForAccessibility).toBe('no-hide-descendants');
+  expect(body.props.accessibilityElementsHidden).toBe(true);
+  expect(all(body, 'ScrollView')[0].props.scrollEnabled).toBe(false);
+  expect(toggleOf(panel).props.accessibilityLabel).toBe('Show booking details');
+  // Expanded content: description, location, schedule/budget, counterpart and contacts, chat, video, location details,
+  // payment and the lifecycle controls, in the existing reading order.
+  const copy = text(body);
+  const order = ['Booking reference', 'Schedule', 'Client details', 'Open chat', 'Video call', 'Your live location', 'SECONDARY DETAILS', 'Payment', 'About the job', 'Booking record', 'Cancel booking'].map(label => copy.indexOf(label));
+  expect(order.every(index => index >= 0)).toBe(true);
+  expect(order).toEqual([...order].sort((x, y) => x - y));
+  // The address and Open in Maps remain; no second map is drawn inside the panel.
+  expect(all(body, 'WorkerAssignedJobLocation')[0].props.showMap).toBe(false);
+
+  toggleOf(panel).props.onPress();
+  panel = panelOf(tree); body = bodyOf(panel);
+  expect(toggleOf(panel).props.accessibilityLabel).toBe('Show map');
+  expect(body.props.accessibilityElementsHidden).toBe(false);
+  expect(body.props.importantForAccessibility).toBe('auto');
+  expect(all(body, 'ScrollView')[0].props.scrollEnabled).toBe(true);
+  toggleOf(panel).props.onPress();
+  expect(toggleOf(panelOf(tree)).props.accessibilityLabel).toBe('Show booking details');
+});
+
+it('drags only from the panel header with a clearly vertical gesture: taps and map pans neither move it nor press Stop', () => {
+  stop.mockClear();
+  const tree = mapFirstTree('worker', { exactLocation: pinLocation });
+  let panel = panelOf(tree);
+  // The panel never covers the map's touches outside itself.
+  expect(panel.props.pointerEvents).toBe('box-none');
+  const handlers = headerOf(panel).props.handlers;
+  expect(handlers.onStartShouldSetPanResponder).toBeUndefined();
+  expect(handlers.onMoveShouldSetPanResponder(null, { dx: 0, dy: 4 })).toBe(false);
+  expect(handlers.onMoveShouldSetPanResponder(null, { dx: 40, dy: 12 })).toBe(false);
+  expect(handlers.onMoveShouldSetPanResponder(null, { dx: 2, dy: -60 })).toBe(true);
+  // Swipe up expands; the Stop control in the same header is not pressed by the drag.
+  handlers.onPanResponderGrant(); handlers.onPanResponderMove(null, { dy: -240 }); handlers.onPanResponderRelease(null, { dy: -240, vy: -1.2 });
+  panel = panelOf(tree);
+  expect(toggleOf(panel).props.accessibilityLabel).toBe('Show map');
+  expect(stop).not.toHaveBeenCalled();
+  // Expanded: pulling down from the top of the content returns to the map; scrolling up inside it does not.
+  const capture = bodyOf(panel).props.handlers.onMoveShouldSetPanResponderCapture;
+  expect(capture(null, { dx: 0, dy: -40 })).toBe(false);
+  expect(capture(null, { dx: 0, dy: 40 })).toBe(true);
+  const header = headerOf(panel).props.handlers;
+  header.onPanResponderGrant(); header.onPanResponderRelease(null, { dy: 260, vy: 1.4 });
+  panel = panelOf(tree);
+  expect(toggleOf(panel).props.accessibilityLabel).toBe('Show booking details');
+  expect(bodyOf(panel).props.handlers.onMoveShouldSetPanResponderCapture(null, { dx: 0, dy: 40 })).toBe(false);
+  expect(stop).not.toHaveBeenCalled();
+});
+
+it('while protected fields are re-checked, the map is unmounted (sharing ends) and the panel holds neutral placeholders', () => {
+  for (const role of ['worker', 'client']) {
+    const tree = mapFirstTree(role, { exactLocation: pinLocation }, true);
+    expect(all(tree, 'BookingLocationMap')).toHaveLength(0);
+    const copy = text(tree);
+    for (const value of ['Checking job location', 'Checking location sharing', 'Checking booking details']) expect(copy).toContain(value);
+    for (const value of [name, 'EXACT PRIVATE ADDRESS', '09171234567']) expect(copy).not.toContain(value);
+  }
+});
+
+it('the Client map-first panel names the Worker location and keeps contact, chat and video actions', () => {
+  const tree = mapFirstTree('client', { exactLocation: pinLocation });
+  expect(all(tree, 'BookingLocationMap')[0].props.role).toBe('client');
+  const body = text(bodyOf(panelOf(tree)));
+  for (const value of ['Worker details', 'Open chat', 'Video call', 'Worker location', 'SECONDARY DETAILS']) expect(body).toContain(value);
+  expect(body).not.toContain('Your live location');
+});

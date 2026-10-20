@@ -4,7 +4,6 @@ import {
   AppState,
   KeyboardAvoidingView,
   Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -393,9 +392,8 @@ function WorkerProfileContent() {
             </View>
           ) : null}
 
-          {/* Professional identity: the work examples, resume and skill guidance that back the skills. */}
           <View style={styles.section}>
-            <SectionHeader title="Professional identity" subtitle="Your work examples, resume and skill guidance." />
+            <SectionHeader title="Portfolio" subtitle="Keep your work examples up to date." />
             <SurfaceGroup inset={spacing.lg}>
               <NavRow
                 label="View portfolio"
@@ -403,20 +401,6 @@ function WorkerProfileContent() {
                 icon={{ android: 'photo_library', ios: 'photo.on.rectangle' }}
                 disabled={busy}
                 onPress={() => router.push(PORTFOLIO_PATH as Href)}
-              />
-              <NavRow
-                label="Resume builder"
-                hint="Build a PDF of your experience and skills"
-                icon={{ android: 'description', ios: 'doc.text' }}
-                disabled={busy}
-                onPress={() => router.push('/worker/resume' as Href)}
-              />
-              <NavRow
-                label="Skill guidance"
-                hint="Review skill gaps in current opportunities"
-                icon={{ android: 'work_outline', ios: 'briefcase' }}
-                disabled={busy}
-                onPress={() => router.push('/worker/skill-gap' as Href)}
               />
             </SurfaceGroup>
           </View>
@@ -428,7 +412,7 @@ function WorkerProfileContent() {
           >
             <KeyboardAvoidingView
               style={styles.modalFlex}
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              behavior="padding"
             >
               <View
                 style={[
@@ -437,11 +421,26 @@ function WorkerProfileContent() {
                 ]}
               >
                 <Text style={styles.modalTitle}>Manage skills</Text>
+                <AppField variant="search" value={modalQuery} onChangeText={setModalQuery} accessibilityLabel="Search skills"
+                  placeholder="Search skills" autoCapitalize="none" autoCorrect={false} disabled={busy} />
                 <ScrollView
                   style={styles.modalFlex}
                   contentContainerStyle={styles.modalContent}
                   keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
+                  maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
                 >
+                  <SkillCatalogPicker
+                    hideSearch
+                    skills={skills}
+                    query={modalQuery}
+                    onQueryChange={setModalQuery}
+                    isSkillSelected={(skillId) => modalWorkingSelection[skillId] !== undefined}
+                    onToggleSkill={(skillId) =>
+                      setModalWorkingSelection((current) => toggleSkillInSelection(current, skillId))
+                    }
+                    disabled={busy}
+                  />
                   <SelectedSkillChips
                     skills={selectedCatalogSkills(skills, Object.keys(modalWorkingSelection))}
                     onRemove={(skillId) =>
@@ -453,6 +452,7 @@ function WorkerProfileContent() {
                       if (level === undefined) return null;
                       return (
                         <AppSegment
+                          contentSized
                           options={PROFICIENCY_OPTIONS}
                           value={level}
                           onChange={(next) =>
@@ -463,16 +463,6 @@ function WorkerProfileContent() {
                         />
                       );
                     }}
-                  />
-                  <SkillCatalogPicker
-                    skills={skills}
-                    query={modalQuery}
-                    onQueryChange={setModalQuery}
-                    isSkillSelected={(skillId) => modalWorkingSelection[skillId] !== undefined}
-                    onToggleSkill={(skillId) =>
-                      setModalWorkingSelection((current) => toggleSkillInSelection(current, skillId))
-                    }
-                    disabled={busy}
                   />
                 </ScrollView>
                 <AppButton
@@ -556,15 +546,15 @@ function createStyles(ui: UiTheme) {
       flexGrow: 1,
       backgroundColor: colors.canvas,
       padding: spacing.gutter,
-      gap: spacing.xl,
+      gap: spacing.lg,
       paddingBottom: spacing.xxxxl,
     },
-    section: { gap: spacing.md },
+    section: { gap: spacing.sm },
     trade: { ...type.bodyEmphasis, color: colors.textPrimary },
     identity: { gap: spacing.md },
     identityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
     contact: { gap: spacing.xs },
-    editor: { gap: spacing.md, marginTop: spacing.lg },
+    editor: { gap: spacing.md, marginTop: spacing.md },
     // Keep Yoga children in the layout tree; only the height collapses.
     editorHidden: { maxHeight: 0, overflow: 'hidden', marginTop: 0 },
     contactLine: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },

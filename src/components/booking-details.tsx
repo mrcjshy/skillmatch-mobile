@@ -1,5 +1,5 @@
-import { type Href, useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type Href, Stack, useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AppState,
   Linking,
@@ -9,8 +9,12 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/app-button';
+import { AppIconButton } from '@/components/app-icon-button';
+import { BookingLocationMap, type LocationPanel } from '@/components/booking-location-map';
+import { BookingSheet } from '@/components/booking-sheet';
 import { AppChip } from '@/components/app-chip';
 import BookingLifecycle from '@/components/booking-lifecycle';
 import BookingPayment from '@/components/booking-payment';
@@ -27,6 +31,7 @@ import { ServiceMark } from '@/components/service-mark';
 import { useUiTheme, type UiTheme, RefinementThemeProvider } from '@/components/refinement-theme';
 import {
   BookingLoadError,
+  cancellationDetails,
   formatBookingStatus,
   formatBudget,
   formatLocation,
@@ -85,6 +90,10 @@ import {
   subscribeInvalidation,
 } from '@/lib/realtime';
 import { bookingDialUrl } from '@/lib/booking-call';
+import { createDetailsAppStateHandler } from '@/lib/booking-details-app-state';
+import { mapInsetsForPanel } from '@/lib/booking-sheet';
+import { systemPromptPending } from '@/lib/system-prompt';
+import { useAccount } from '@/providers/account-provider';
 
 
 
@@ -115,12 +124,17 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const defaultUi = useUiTheme();
 
   const router = useRouter();
+  const { account } = useAccount();
   const [detail, setDetail] = useState<DetailState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mapsNote, setMapsNote] = useState<string | null>(null);
   const [suppressProtected, setSuppressProtected] = useState(false);
+  const [pinsSession, setPinsSession] = useState(0);
+  // Map-first layout: the collapsed panel height frames markers in the visible map above it.
+  const [panelHeight, setPanelHeight] = useState(0);
+  const safeArea = useSafeAreaInsets();
   const loadGate = useRef(createLoadGenerationTracker());
   const hasLoaded = useRef(false);
   const displayedStatusRef = useRef<string | null>(null);
@@ -311,6 +325,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
       return () => {
         run.cancelled = true;
         focused.current = false;
+        setPinsSession(session => session + 1);
         hideProtectedProjection();
       };
     }, [load, applyError])
@@ -319,10 +334,13 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const listenStatus = visibleDetail?.booking.booking_status;
 
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state) => {
-      hideProtectedProjection();
-      if (state === 'active' && focused.current) void load().catch(applyError);
-    });
+    const subscription = AppState.addEventListener('change', createDetailsAppStateHandler({
+      endPinsSession: () => setPinsSession(session => session + 1),
+      hideProtected: hideProtectedProjection,
+      reload: () => void load().catch(applyError),
+      isFocused: () => focused.current,
+      promptPending: systemPromptPending,
+    }));
     return () => subscription.remove();
   }, [load, applyError]);
 
@@ -432,6 +450,21 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const schedule = formatDetailDateTime(booking.job_scheduled_at);
   const bookedAt = formatDetailDateTime(booking.booked_at);
   const completedAt = formatDetailDateTime(booking.completed_at);
+  const cancellation = cancellationDetails({
+    bookingStatus: booking.booking_status,
+    role,
+    viewerUserId: account?.id,
+    counterpartyUserId:
+      role === 'worker' && isWorkerBooking(booking)
+        ? booking.client_user_id
+        : role === 'client' && isClientBooking(booking)
+          ? booking.worker_user_id
+          : '',
+    reasonCode: booking.cancellation_reason_code,
+    reasonDetail: booking.cancellation_reason_detail,
+    cancelledBy: booking.cancelled_by,
+    cancelledAt: booking.cancelled_at,
+  });
   const budget = formatBudget(booking.job_budget);
   const protectedReleased = isProtectedProjectionReleased(booking.booking_status, suppressProtected);
   const location = formatLocation(
@@ -479,6 +512,8 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
         ? booking.worker_full_name ?? 'Not provided'
         : null
     : null;
+  // The inline booking map (destination + Worker live position) replaces the static destination map.
+  const inlineMapShown = protectedReleased && booking.booking_status === 'confirmed' && account?.is_active === true && account.role === role;
   const locationHasAddress =
     workerLocationSurface &&
     (workerLocationSurface.kind === 'exact' || workerLocationSurface.kind === 'text-fallback') &&
@@ -534,159 +569,239 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     </>
   );
 
-  return (
-    <RefinementThemeProvider>
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.content}
-      contentInsetAdjustmentBehavior="automatic"
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />}
-    >
-      {/* 1-2. Status and the reference people quote when they call for help. */}
-      <View style={styles.referenceHeader}>
-        <AppChip label={formatBookingStatus(booking.booking_status)} variant={bookingStatusVariant(booking.booking_status)} />
-        <View style={styles.referenceCopy}>
-          <Text style={styles.note}>Booking reference</Text>
-          <Text selectable style={styles.reference}>{booking.booking_id}</Text>
-        </View>
-      </View>
+  // A confirmed booking opens map-first: full-screen map, floating Back, and the booking in a draggable panel.
+  const mapFirst = booking.booking_status === 'confirmed' && account?.is_active === true && account.role === role;
+  const openVideo = () => router.push({ pathname: role === 'worker' ? '/worker/video' : '/client/video', params: { bookingId: booking.booking_id } } as Href);
 
-      {/* 3-4. The job: what, when, how much. */}
-      <View style={styles.summary}>
-        <View style={styles.titleRow}>
-          <ServiceMark subject={booking.job_title} synchronousGlyph />
-          <Text accessibilityRole="header" style={styles.jobTitle}>{booking.job_title}</Text>
-        </View>
-        <SurfaceGroup>
-          <FactRow icon={{ android: 'schedule', ios: 'clock' }} label="Schedule" value={schedule} strong />
-          <FactRow icon={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} label="Job budget" value={budget} strong inline />
-        </SurfaceGroup>
+  // 1-2. Status and the reference people quote when they call for help.
+  const statusBlock = (
+    <View style={styles.referenceHeader}>
+      <AppChip label={formatBookingStatus(booking.booking_status)} variant={bookingStatusVariant(booking.booking_status)} />
+      <View style={styles.referenceCopy}>
+        <Text style={styles.note}>Booking reference</Text>
+        <Text selectable style={styles.reference}>{booking.booking_id}</Text>
       </View>
+    </View>
+  );
 
-      {/* 5. The other person, when this status releases them. */}
-      <View style={[styles.section, suppressProtected && { minHeight: participantHeight.current }]}
-        onLayout={event => { if (!suppressProtected) participantHeight.current = event.nativeEvent.layout.height; }}>
-        <SectionHeader title={role === 'worker' ? 'Client details' : 'Worker details'} />
-        {suppressProtected ? <InlineStatus variant="loading" message="Checking booking details" /> : !released ? (
-          <Text style={styles.note}>
-            {role === 'worker'
-              ? 'Client contact is not available for this booking status.'
-              : 'Worker details are not available for this booking status.'}
-          </Text>
-        ) : participantName ? (
-          <View style={styles.panel}>
-            <View style={styles.identityRow}>
-              <InitialsAvatar name={participantName} accent={colors.accentSubtle} size={48} />
-              <View style={styles.identityCopy}>
-                <Text style={styles.note}>{role === 'worker' ? 'Your client' : 'Your worker'}</Text>
-                <Text style={styles.participantName}>{participantName}</Text>
-                <Text selectable style={styles.value}>{counterpartyPhone ?? 'Phone not provided'}</Text>
-                {role === 'client' && isClientBooking(booking) ? <>
-                  <Text style={styles.note}>{formatVerification(booking.worker_is_verified)}</Text>
-                  <StarRatingDisplay average={booking.worker_rating_avg} count={booking.worker_rating_count} />
-                </> : null}
-              </View>
+  // 3-4. The job: what, when, how much.
+  const summaryBlock = (
+    <View style={styles.summary}>
+      <View style={styles.titleRow}>
+        <ServiceMark subject={booking.job_title} synchronousGlyph />
+        <Text accessibilityRole="header" style={styles.jobTitle}>{booking.job_title}</Text>
+      </View>
+      <SurfaceGroup>
+        <FactRow icon={{ android: 'schedule', ios: 'clock' }} label="Schedule" value={schedule} strong />
+        <FactRow icon={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} label="Job budget" value={budget} strong inline />
+      </SurfaceGroup>
+    </View>
+  );
+
+  // 5. The other person, when this status releases them.
+  const participantBlock = (
+    <View style={[styles.section, suppressProtected && { minHeight: participantHeight.current }]}
+      onLayout={event => { if (!suppressProtected) participantHeight.current = event.nativeEvent.layout.height; }}>
+      <SectionHeader title={role === 'worker' ? 'Client details' : 'Worker details'} />
+      {suppressProtected ? <InlineStatus variant="loading" message="Checking booking details" /> : !released ? (
+        <Text style={styles.note}>
+          {role === 'worker'
+            ? 'Client contact is not available for this booking status.'
+            : 'Worker details are not available for this booking status.'}
+        </Text>
+      ) : participantName ? (
+        <View style={styles.panel}>
+          <View style={styles.identityRow}>
+            <InitialsAvatar name={participantName} accent={colors.accentSubtle} size={48} />
+            <View style={styles.identityCopy}>
+              <Text style={styles.note}>{role === 'worker' ? 'Your client' : 'Your worker'}</Text>
+              <Text style={styles.participantName}>{participantName}</Text>
+              <Text selectable style={styles.value}>{counterpartyPhone ?? 'Phone not provided'}</Text>
+              {role === 'client' && isClientBooking(booking) ? <>
+                <Text style={styles.note}>{formatVerification(booking.worker_is_verified)}</Text>
+                <StarRatingDisplay average={booking.worker_rating_avg} count={booking.worker_rating_count} />
+              </> : null}
             </View>
-            {role === 'client' && isClientBooking(booking) ? (
-              <View style={styles.detailsList}>
-                <DetailLine label="Barangay" value={booking.worker_barangay ?? 'Not provided'} />
-                <DetailLine label="Skills" value={formatSkills(booking.worker_skills)} />
-              </View>
-            ) : null}
-            {dialUrl || chatAvailable ? <View style={styles.contactActions}>
-              {dialUrl ? <AppButton
-                variant="secondary"
-                label="Call"
-                icon={{ android: 'call', ios: 'phone' }}
-                accessibilityLabel="Call booking counterpart"
-                style={styles.contactButton}
-                onPress={() => void Linking.openURL(dialUrl)}
-              /> : null}
-              {chatAvailable ? <AppButton
-                variant={chatVariant}
-                label="Open chat"
-                icon={{ android: 'chat_bubble_outline', ios: 'bubble.left' }}
-                style={styles.contactButton}
-                onPress={() => {
-                  const pathname = role === 'worker' ? '/worker/chat' : '/client/chat';
-                  router.push({ pathname, params: { bookingId: booking.booking_id } } as Href);
-                }}
-              /> : null}
-            </View> : null}
           </View>
-        ) : null}
-      </View>
-
-      {/* 6. Where, only as far as this status authorizes. */}
-      <View style={[styles.section, suppressProtected && { minHeight: locationHeight.current }]}
-        onLayout={event => { if (!suppressProtected) locationHeight.current = event.nativeEvent.layout.height; }}>
-        {suppressProtected ? <InlineStatus variant="loading" message="Checking job location" /> : <>
-        {/* The map surface titles itself when it shows the exact address. */}
-        {!locationHasAddress ? <><SectionHeader title="Job location" /><Text selectable style={styles.body}>{location}</Text></> : null}
-        {protectedReleased && exactLocation.status === 'error' ? <Text style={styles.note}>{JOB_LOCATION_COPY.workerLocationGeneric}</Text>
-          : workerLocationSurface ? <WorkerAssignedJobLocation surface={workerLocationSurface} mapsNote={mapsNote}
-            allowNavigation={role === 'worker'}
-            onOpenMaps={() => {
-              const url = workerLocationSurface.kind === 'exact' ? workerLocationSurface.openInMapsUrl : null;
-              void openWorkerMapsUrl(url).then(ok => setMapsNote(ok ? null : JOB_LOCATION_COPY.openInMapsFailed));
-            }} /> : null}
-        {role === 'worker' && protectedReleased && booking.booking_status === 'confirmed' ? <JobPhotoGallery
-          photos={jobPhotos.status === 'ready' ? jobPhotos.photos : []} error={jobPhotos.status === 'error'} /> : null}
-        </>}
-      </View>
-
-      {/* 7. The immediate step: payment first, then (Client) completion. */}
-      {showPayment || paymentUnavailable ? <View style={styles.panel}>
-        {showPayment ? jobPaymentReady ? <BookingPayment role={role} bookingId={booking.booking_id} payment={payment}
-          jobPaymentMethod={jobPaymentMethod} onChanged={load} />
-          : <Text style={styles.note}>Could not load the agreed payment method.</Text> : null}
-        {paymentUnavailable ? <Text style={styles.note}>Could not load the authoritative payment state. Payment and lifecycle actions are unavailable.</Text> : null}
-      </View> : null}
-      {!lifecycleAtBottom && showLifecycle ? (
-        <BookingLifecycle
-          role={role}
-          bookingId={booking.booking_id}
-          showCompletion={actionPresentation.showCompletion}
-          showCancellation={actionPresentation.showCancellation}
-          onChanged={load}
-        >
-          {communicationAndFeedback}
-        </BookingLifecycle>
-      ) : communicationAndFeedback}
-
-      {/* 8. About the job, always in view. */}
-      {booking.job_description ? <View style={styles.section}>
-        <SectionHeader title="About the job" />
-        <Text selectable style={styles.jobDescription}>{booking.job_description}</Text>
-      </View> : null}
-
-      {/* 9. Supporting record. */}
-      <View style={styles.section}>
-        <SectionHeader title="Booking record" />
-        <SurfaceGroup>
-          <DetailLine label="Booked" value={bookedAt} />
-          <DetailLine label="Completed" value={completedAt} />
-        </SurfaceGroup>
-      </View>
-
-      {showReport ? (
-        <View style={styles.supportSection}>
-          <SectionHeader title="Help and reporting" />
-          {reportMessage}
+          {role === 'client' && isClientBooking(booking) ? (
+            <View style={styles.detailsList}>
+              <DetailLine label="Barangay" value={booking.worker_barangay ?? 'Not provided'} />
+              <DetailLine label="Skills" value={formatSkills(booking.worker_skills)} />
+            </View>
+          ) : null}
+          {dialUrl || chatAvailable || inlineMapShown ? <View style={styles.contactActions}>
+            {dialUrl ? <AppButton
+              variant="secondary"
+              label="Call"
+              icon={{ android: 'call', ios: 'phone' }}
+              accessibilityLabel="Call booking counterpart"
+              style={styles.contactButton}
+              onPress={() => void Linking.openURL(dialUrl)}
+            /> : null}
+            {chatAvailable ? <AppButton
+              variant={chatVariant}
+              label="Open chat"
+              icon={{ android: 'chat_bubble_outline', ios: 'bubble.left' }}
+              style={styles.contactButton}
+              onPress={() => {
+                const pathname = role === 'worker' ? '/worker/chat' : '/client/chat';
+                router.push({ pathname, params: { bookingId: booking.booking_id } } as Href);
+              }}
+            /> : null}
+            {inlineMapShown ? <AppButton variant="secondary" label="Video call" icon={{ android: 'videocam', ios: 'video' }}
+              style={styles.contactButton} onPress={openVideo} /> : null}
+          </View> : null}
         </View>
       ) : null}
+    </View>
+  );
 
-      {/* 10. Cancellation is last: consequential, quiet, and away from the forward action. */}
-      {lifecycleAtBottom && (showLifecycle || (suppressProtected && controlsHeight.current > 0)) ? <View
-        style={[styles.destructiveArea, suppressProtected && { minHeight: controlsHeight.current }]}
-        onLayout={event => { if (!suppressProtected) controlsHeight.current = event.nativeEvent.layout.height; }}>
-        {suppressProtected ? <InlineStatus variant="loading" message="Checking booking controls" /> : <>
-        <Text style={styles.note}>Booking controls</Text>
-        <BookingLifecycle role={role} bookingId={booking.booking_id} showCompletion={actionPresentation.showCompletion}
-          showCancellation={actionPresentation.showCancellation} onChanged={load} />
-        </>}
-      </View> : null}
-    </ScrollView>
+  // 6. Where, only as far as this status authorizes. On the map-first layout the map itself is behind the
+  // panel; this section keeps the address, Open in Maps and the role's location sharing details.
+  const locationBlock = (sharing: ReactNode) => (
+    <View style={[styles.section, suppressProtected && { minHeight: locationHeight.current }]}
+      onLayout={event => { if (!suppressProtected) locationHeight.current = event.nativeEvent.layout.height; }}>
+      {suppressProtected ? <InlineStatus variant="loading" message="Checking job location" /> : <>
+      {sharing ? <View style={styles.section}><SectionHeader title={role === 'worker' ? 'Your live location' : 'Worker location'} />{sharing}</View> : null}
+      {/* The address surface titles itself when it shows the exact address. */}
+      {!locationHasAddress ? <><SectionHeader title="Job location" /><Text selectable style={styles.body}>{location}</Text></> : null}
+      {protectedReleased && exactLocation.status === 'error' ? <Text style={styles.note}>{JOB_LOCATION_COPY.workerLocationGeneric}</Text>
+        : workerLocationSurface ? <WorkerAssignedJobLocation surface={workerLocationSurface} mapsNote={mapsNote}
+          allowNavigation={role === 'worker'} showMap={!inlineMapShown && !mapFirst}
+          onOpenMaps={() => {
+            const url = workerLocationSurface.kind === 'exact' ? workerLocationSurface.openInMapsUrl : null;
+            void openWorkerMapsUrl(url).then(ok => setMapsNote(ok ? null : JOB_LOCATION_COPY.openInMapsFailed));
+          }} /> : null}
+      {role === 'worker' && protectedReleased && booking.booking_status === 'confirmed' ? <JobPhotoGallery
+        photos={jobPhotos.status === 'ready' ? jobPhotos.photos : []} error={jobPhotos.status === 'error'} /> : null}
+      </>}
+    </View>
+  );
+
+  // 7. The immediate step: payment first, then (Client) completion.
+  const paymentAndLifecycle = <>
+    {showPayment || paymentUnavailable ? <View style={styles.panel}>
+      {showPayment ? jobPaymentReady ? <BookingPayment role={role} bookingId={booking.booking_id} payment={payment}
+        jobPaymentMethod={jobPaymentMethod} onChanged={load} />
+        : <Text style={styles.note}>Could not load the agreed payment method.</Text> : null}
+      {paymentUnavailable ? <Text style={styles.note}>Could not load the authoritative payment state. Payment and lifecycle actions are unavailable.</Text> : null}
+    </View> : null}
+    {!lifecycleAtBottom && showLifecycle ? (
+      <BookingLifecycle
+        role={role}
+        bookingId={booking.booking_id}
+        showCompletion={actionPresentation.showCompletion}
+        showCancellation={actionPresentation.showCancellation}
+        onChanged={load}
+      >
+        {communicationAndFeedback}
+      </BookingLifecycle>
+    ) : communicationAndFeedback}
+  </>;
+
+  const supportingRecord = <>
+    {/* 8. About the job, always in view. */}
+    {booking.job_description ? <View style={styles.section}>
+      <SectionHeader title="About the job" />
+      <Text selectable style={styles.jobDescription}>{booking.job_description}</Text>
+    </View> : null}
+
+    {/* 9. Supporting record. */}
+    <View style={styles.section}>
+      <SectionHeader title="Booking record" />
+      <SurfaceGroup>
+        <DetailLine label="Booked" value={bookedAt} />
+        {/* Only a value takes a row: SurfaceGroup draws a divider for every element it is given. */}
+        {completedAt ? <DetailLine label="Completed" value={completedAt} /> : null}
+        {/* V4 #19: an array, not a fragment, so SurfaceGroup divides each fact into its own row. */}
+        {cancellation ? [
+          <DetailLine key="cancelled-by" label="Cancelled by" value={cancellation.cancelledBy} />,
+          <DetailLine key="cancel-reason" label="Reason" value={cancellation.reason} />,
+          ...(cancellation.detail ? [<DetailLine key="cancel-detail" label="Details" value={cancellation.detail} />] : []),
+          <DetailLine key="cancelled-at" label="Cancelled" value={formatDetailDateTime(cancellation.cancelledAt)} />,
+        ] : null}
+      </SurfaceGroup>
+    </View>
+
+    {showReport ? (
+      <View style={styles.supportSection}>
+        <SectionHeader title="Help and reporting" />
+        {reportMessage}
+      </View>
+    ) : null}
+
+    {/* 10. Cancellation is last: consequential, quiet, and away from the forward action. */}
+    {lifecycleAtBottom && (showLifecycle || (suppressProtected && controlsHeight.current > 0)) ? <View
+      style={[styles.destructiveArea, suppressProtected && { minHeight: controlsHeight.current }]}
+      onLayout={event => { if (!suppressProtected) controlsHeight.current = event.nativeEvent.layout.height; }}>
+      {suppressProtected ? <InlineStatus variant="loading" message="Checking booking controls" /> : <>
+      <Text style={styles.note}>Booking controls</Text>
+      <BookingLifecycle role={role} bookingId={booking.booking_id} showCompletion={actionPresentation.showCompletion}
+        showCancellation={actionPresentation.showCancellation} onChanged={load} />
+      </>}
+    </View> : null}
+  </>;
+
+  const refreshControl = <RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />;
+
+  if (!mapFirst) {
+    return (
+      <RefinementThemeProvider>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        contentInsetAdjustmentBehavior="automatic"
+        refreshControl={refreshControl}
+      >
+        {statusBlock}
+        {summaryBlock}
+        {participantBlock}
+        {locationBlock(null)}
+        {paymentAndLifecycle}
+        {supportingRecord}
+      </ScrollView>
+      </RefinementThemeProvider>
+    );
+  }
+
+  // Map-first layout. The floating header replaces the stack header; the panel reserves the space under it.
+  const headerBottom = safeArea.top + ui.spacing.sm + ui.size.iconButton + ui.spacing.sm;
+  const panel = (sharing: LocationPanel) => (
+    <BookingSheet topReserve={headerBottom} onCollapsedHeight={setPanelHeight} refreshControl={refreshControl}
+      header={<>
+        <View style={styles.sheetTitleRow}>
+          <AppChip label={formatBookingStatus(booking.booking_status)} variant={bookingStatusVariant(booking.booking_status)} />
+          <Text accessibilityRole="header" numberOfLines={2} style={styles.sheetTitle}>{booking.job_title}</Text>
+        </View>
+        <Text numberOfLines={2} style={styles.note}>{[schedule, budget].filter(Boolean).join(' · ')}</Text>
+        {sharing.primary}
+      </>}>
+      {statusBlock}
+      {summaryBlock}
+      {participantBlock}
+      {locationBlock(sharing.secondary)}
+      {paymentAndLifecycle}
+      {supportingRecord}
+    </BookingSheet>
+  );
+  return (
+    <RefinementThemeProvider>
+    <View style={styles.mapScreen}>
+      <Stack.Screen options={{ headerShown: false }} />
+      {inlineMapShown && account ? <BookingLocationMap key={`${account.id}:${booking.booking_id}:${pinsSession}`} bookingId={booking.booking_id}
+        accountId={account.id} role={role} destination={exactLocation.status === 'ready' ? exactLocation.location.pin : null}
+        insets={mapInsetsForPanel({ headerBottom, collapsedHeight: panelHeight })} renderPanel={panel} /> : <>
+        <View style={[StyleSheet.absoluteFill, styles.mapPlaceholder]}><InlineStatus variant="loading" message="Checking job location" /></View>
+        {panel({ primary: <InlineStatus variant="loading" message="Checking location sharing" />, secondary: null })}
+      </>}
+      <View pointerEvents="box-none" style={[styles.floatingHeader, { top: safeArea.top + ui.spacing.sm }]}>
+        <AppIconButton icon={{ android: 'arrow_back', ios: 'chevron.left' }} accessibilityLabel="Navigate up" style={styles.floatingButton}
+          onPress={() => { if (router.canGoBack()) router.back(); else router.replace((role === 'worker' ? '/worker/bookings' : '/client/bookings') as Href); }} />
+        <View style={styles.floatingTitle}>
+          <Text accessibilityRole="header" numberOfLines={1} style={styles.floatingTitleText}>Booking details</Text>
+        </View>
+      </View>
+    </View>
     </RefinementThemeProvider>
   );
 }
@@ -711,6 +826,17 @@ function createStyles(ui: UiTheme) {
       flex: 1,
       backgroundColor: colors.canvas,
     },
+    mapScreen: { flex: 1, backgroundColor: colors.surfaceSunken },
+    mapPlaceholder: { backgroundColor: colors.surfaceSunken, alignItems: 'center', justifyContent: 'center' },
+    floatingHeader: { position: 'absolute', left: spacing.gutter, right: spacing.gutter, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    floatingButton: { backgroundColor: colors.surfaceRaised, ...ui.elevation.floating },
+    floatingTitle: {
+      flexShrink: 1, minHeight: ui.size.iconButton, justifyContent: 'center', paddingHorizontal: spacing.lg,
+      borderRadius: radius.pill, backgroundColor: colors.surfaceRaised, ...ui.elevation.floating,
+    },
+    floatingTitleText: { ...type.label, color: colors.textPrimary },
+    sheetTitleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm },
+    sheetTitle: { ...type.sectionTitle, color: colors.textPrimary, flexShrink: 1 },
     content: {
       flexGrow: 1,
       backgroundColor: colors.canvas,

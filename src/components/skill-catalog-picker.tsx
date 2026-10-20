@@ -17,6 +17,8 @@ type SkillCatalogPickerProps = {
   isSkillSelected: (skillId: string) => boolean;
   onToggleSkill: (skillId: string) => void;
   disabled?: boolean;
+  /** Modal owners may anchor the search field outside their scrolling results. */
+  hideSearch?: boolean;
   renderAfterSkill?: (skill: CatalogSkill) => ReactNode;
   /** A short word shown at the end of a selected row, such as its place in an ordered choice. */
   badgeForSkill?: (skill: CatalogSkill) => string | null;
@@ -31,6 +33,7 @@ export function SkillCatalogPicker({
   isSkillSelected,
   onToggleSkill,
   disabled = false,
+  hideSearch = false,
   renderAfterSkill,
   badgeForSkill,
   isSkillUnavailable,
@@ -46,7 +49,7 @@ export function SkillCatalogPicker({
 
   return (
     <View style={styles.wrap}>
-      <AppField
+      {!hideSearch ? <AppField
         variant="search"
         value={query}
         onChangeText={onQueryChange}
@@ -55,7 +58,7 @@ export function SkillCatalogPicker({
         autoCapitalize="none"
         autoCorrect={false}
         accessibilityLabel="Search skills"
-      />
+      /> : null}
       {visible.length === 0 ? (
         <Text style={styles.note}>No skills match your search.</Text>
       ) : (

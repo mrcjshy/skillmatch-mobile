@@ -22,3 +22,9 @@ describe('Photon suggestions', () => {
     expect(parsePhotonSuggestions(null)).toEqual([]);
   });
 });
+
+
+it('removes duplicate provider destinations before rendering keyed search rows', () => {
+  const feature = { geometry: { coordinates: [121.0716806, 14.5469632] }, properties: { name: 'Santa Ana Covered Court', countrycode: 'PH' } };
+  expect(parsePhotonSuggestions({ features: [feature, feature] })).toEqual([{ label: 'Santa Ana Covered Court', pin: { longitude: 121.0716806, latitude: 14.5469632 } }]);
+});

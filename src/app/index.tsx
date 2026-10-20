@@ -6,6 +6,7 @@ import { SkillMatchTheme } from '@/constants/theme';
 import {
   decidePendingInboxNavigation,
   getPendingChatBookingId,
+  getPendingCall,
   hasPendingNotificationsInboxIntent,
 } from '@/lib/push-notifications';
 import { useAccount } from '@/providers/account-provider';
@@ -37,7 +38,7 @@ export default function RootIndex() {
   // matching access state is the role app. A W7 chat tap is not an inbox
   // intent: the dispatcher forwards to the role Home and
   // PushNotificationInboxIntent pushes the re-authorized chat on top.
-  if (inbox.kind === 'replace' && getPendingChatBookingId() === null &&
+  if (inbox.kind === 'replace' && getPendingChatBookingId() === null && getPendingCall() === null &&
       (access === 'worker' || access === 'client')) {
     return <Redirect href={inbox.href as Href} />;
   }

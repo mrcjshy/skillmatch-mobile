@@ -6,6 +6,8 @@ import { deriveAccessState } from '@/app/_layout';
 import { loadClientBookings, loadWorkerBookings } from '@/lib/booking-records';
 import {
   captureNotificationResponse,
+  getPendingCall,
+  clearPendingNotificationsInboxIntent,
   consumeReadyInboxNavigation,
   consumeReadyPushNavigation,
   decidePendingInboxNavigation,
@@ -16,6 +18,7 @@ import {
   type PushTapDestination,
 } from '@/lib/push-notifications';
 import { supabase } from '@/lib/supabase';
+import { createVideoCallApi, terminalCall } from '@/lib/video-call';
 import { useAccount } from '@/providers/account-provider';
 import { useSession } from '@/providers/session-provider';
 
@@ -65,6 +68,24 @@ export function PushNotificationInboxIntent() {
     if (!hasPendingNotificationsInboxIntent()) return;
 
     let cancelled = false;
+    const callHint = getPendingCall();
+    if (callHint && (access === 'worker' || access === 'client')) {
+      // Let the root dispatcher establish the role stack before pushing a call.
+      if (pathname === '/') return;
+      void (async () => {
+        let authorized = false;
+        try {
+          const { call } = await createVideoCallApi().request('status', callHint.bookingId);
+          authorized = Boolean(call && call.call_id === callHint.callId && call.booking_id === callHint.bookingId && !terminalCall(call));
+        } catch { /* Fall back to the protected inbox. Push is not authority. */ }
+        if (cancelled || getPendingCall() !== callHint) return;
+        clearPendingNotificationsInboxIntent();
+        if (authorized) router.push({ pathname: access === 'worker' ? '/worker/video' : '/client/video', params: { bookingId: callHint.bookingId } } as Href);
+        else router.replace((access === 'worker' ? '/worker/notifications' : '/client/notifications') as Href);
+        void Notifications.clearLastNotificationResponseAsync();
+      })();
+      return () => { cancelled = true; };
+    }
     const readiness = (): PendingInboxNavInput => ({
       hasPendingInboxIntent: hasPendingNotificationsInboxIntent(),
       isSessionLoading,

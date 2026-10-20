@@ -42,7 +42,7 @@ export function JobOpportunityCompactCard({ opportunity, primarySkillName, compa
 function createStyles(ui: UiTheme) {
   const { colors, type, spacing, size } = ui;
   const styles = StyleSheet.create({
-    row: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, minHeight: size.listRowMinHeight, paddingVertical: spacing.lg, paddingHorizontal: spacing.lg, maxWidth: '100%' },
+    row: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, minHeight: size.listRowMinHeight, paddingVertical: spacing.md, paddingHorizontal: spacing.md, maxWidth: '100%' },
     pressed: { backgroundColor: colors.surfaceSunken },
     copy: { flex: 1, minWidth: 0, gap: spacing.xs },
     title: { ...type.bodyEmphasis, color: colors.textPrimary, flexShrink: 1, maxWidth: '100%' },

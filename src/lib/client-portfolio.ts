@@ -19,6 +19,8 @@ import {
   logPortfolioImageFailure,
 } from './portfolio-images';
 import { supabase } from './supabase';
+import type { ClientBooking } from './booking-records';
+import { projectClientResume, type ClientResume } from './client-resume';
 import {
   getWorkerProfilePhoto,
   type WorkerProfilePhotoReadResult,
@@ -29,14 +31,14 @@ export const CLIENT_PORTFOLIO_PATH = '/client/portfolio';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const CLIENT_PORTFOLIO_COPY = {
-  title: 'Portfolio',
+  title: 'Resume & portfolio',
   empty: 'No projects yet.',
-  loading: 'Loading portfolio…',
+  loading: 'Loading resume and portfolio…',
   retry: 'Try again',
-  loadFailed: 'This portfolio could not be loaded. Please try again.',
-  unavailable: 'This portfolio is unavailable.',
+  loadFailed: 'This resume and portfolio could not be loaded. Please try again.',
+  unavailable: 'This resume and portfolio is available only for your confirmed booking.',
   imageUnavailable: 'Photo could not be loaded.',
-  viewAction: 'View portfolio',
+  viewAction: 'View resume & portfolio',
 } as const;
 
 export function isClientPortfolioVisible(status: string): boolean {
@@ -47,12 +49,10 @@ export function isClientPortfolioBookingId(value: string | null | undefined): va
   return typeof value === 'string' && UUID_PATTERN.test(value);
 }
 
-export type ClientPortfolioBooking = {
-  booking_id: string;
-  booking_status: string;
-  worker_user_id: string;
-  worker_full_name: string | null;
-};
+export type ClientPortfolioBooking = Pick<ClientBooking,
+  'booking_id' | 'booking_status' | 'worker_user_id' | 'worker_full_name' |
+  'worker_phone' | 'worker_barangay' | 'worker_skills' | 'worker_is_verified' |
+  'worker_rating_avg' | 'worker_rating_count'>;
 
 export type ClientPortfolioAccess =
   | { kind: 'invalid' }
@@ -67,6 +67,7 @@ export type ClientPortfolioLoad =
       kind: 'ready';
       workerName: string | null;
       workerPhotoUrl: string | null;
+      resume: ClientResume;
       items: PortfolioItem[];
     };
 
@@ -194,79 +195,69 @@ async function attachSignedUrls(images: PortfolioImage[]): Promise<PortfolioItem
 export type ClientPortfolioDeps = {
   loadBookings?: () => Promise<readonly ClientPortfolioBooking[]>;
   loadProfilePhoto?: (workerUserId: string) => Promise<WorkerProfilePhotoReadResult>;
+  isCurrent?: () => boolean;
 };
 
 export async function loadClientBookingPortfolio(
   bookingId: string | null,
   deps: ClientPortfolioDeps = {}
 ): Promise<ClientPortfolioLoad> {
-  if (!isClientPortfolioBookingId(bookingId)) return { kind: 'unavailable' };
-
+  const isCurrent = deps.isCurrent ?? (() => true);
+  if (!isClientPortfolioBookingId(bookingId) || !isCurrent()) return { kind: 'unavailable' };
   const loadBookings = deps.loadBookings;
-  if (loadBookings === undefined) {
-    throw new PortfolioError('portfolio read failed', null);
-  }
+  if (loadBookings === undefined) throw new PortfolioError('portfolio read failed', null);
   const bookings = await loadBookings();
+  if (!isCurrent()) return { kind: 'unavailable' };
   const access = resolveClientPortfolioAccess(bookingId, bookings);
   if (access.kind === 'invalid' || access.kind === 'missing') return { kind: 'unavailable' };
   if (access.kind === 'revoked') return { kind: 'revoked' };
 
-  const profilePhoto = await (deps.loadProfilePhoto ?? getWorkerProfilePhoto)(
-    access.workerUserId
-  );
-  const workerPhotoUrl =
-    profilePhoto.status === 'available' ? profilePhoto.signedUrl : null;
-
+  const profilePhoto = await (deps.loadProfilePhoto ?? getWorkerProfilePhoto)(access.workerUserId);
+  if (!isCurrent()) return { kind: 'unavailable' };
+  const workerPhotoUrl = profilePhoto.status === 'available' ? profilePhoto.signedUrl : null;
   const workerProfileId = await resolveCounterpartWorkerProfileId(access.workerUserId);
-  if (workerProfileId === null) {
-    return {
-      kind: 'ready',
-      workerName: access.workerName,
-      workerPhotoUrl,
-      items: [],
-    };
+  if (!isCurrent()) return { kind: 'unavailable' };
+  let items: PortfolioItem[] = [];
+
+  if (workerProfileId !== null) {
+    const itemsRes = await supabase
+      .from('portfolio_items')
+      .select('id, worker_id, title, description, project_scale, created_at')
+      .eq('worker_id', workerProfileId)
+      .order('created_at', { ascending: false, nullsFirst: false })
+      .order('id', { ascending: false });
+    if (!isCurrent()) return { kind: 'unavailable' };
+    if (itemsRes.error) throw new PortfolioError('portfolio read failed', itemsRes.error.code ?? null);
+    const baseItems = (itemsRes.data ?? []).map(toPortfolioItem)
+      .filter((item): item is Omit<PortfolioItem, 'images'> => item !== null && item.workerId === workerProfileId);
+
+    if (baseItems.length > 0) {
+      const imageRes = await supabase.from('portfolio_item_images')
+        .select('id, portfolio_item_id, storage_path, position, created_at')
+        .in('portfolio_item_id', baseItems.map((item) => item.id))
+        .order('position', { ascending: true });
+      if (!isCurrent()) return { kind: 'unavailable' };
+      if (imageRes.error) throw new PortfolioError('portfolio image read failed', imageRes.error.code ?? null);
+      const itemIds = new Set(baseItems.map((item) => item.id));
+      const metadata = (imageRes.data ?? []).map(toPortfolioImage)
+        .filter((image): image is PortfolioImage => image !== null && itemIds.has(image.portfolioItemId));
+      const displayed = await attachSignedUrls(metadata);
+      if (!isCurrent()) return { kind: 'unavailable' };
+      items = assembleClientPortfolioItems(baseItems, displayed);
+    }
   }
 
-  const itemsRes = await supabase
-    .from('portfolio_items')
-    .select('id, worker_id, title, description, project_scale, created_at')
-    .eq('worker_id', workerProfileId)
-    .order('created_at', { ascending: false, nullsFirst: false })
-    .order('id', { ascending: false });
-  if (itemsRes.error) throw new PortfolioError('portfolio read failed', itemsRes.error.code ?? null);
-
-  const baseItems = (itemsRes.data ?? [])
-    .map(toPortfolioItem)
-    .filter((item): item is Omit<PortfolioItem, 'images'> => item !== null && item.workerId === workerProfileId);
-
-  if (baseItems.length === 0) {
-    return {
-      kind: 'ready',
-      workerName: access.workerName,
-      workerPhotoUrl,
-      items: [],
-    };
+  // Storage may finish after a terminal transition. Reauthorize this exact booking
+  // before releasing professional facts, photo URLs, or portfolio content.
+  const latest = await loadBookings();
+  if (!isCurrent()) return { kind: 'unavailable' };
+  const finalAccess = resolveClientPortfolioAccess(bookingId, latest);
+  if (finalAccess.kind === 'revoked') return { kind: 'revoked' };
+  if (finalAccess.kind !== 'allowed' || finalAccess.workerUserId !== access.workerUserId) {
+    return { kind: 'unavailable' };
   }
-
-  const imageRes = await supabase
-    .from('portfolio_item_images')
-    .select('id, portfolio_item_id, storage_path, position, created_at')
-    .in(
-      'portfolio_item_id',
-      baseItems.map((item) => item.id)
-    )
-    .order('position', { ascending: true });
-  if (imageRes.error) throw new PortfolioError('portfolio image read failed', imageRes.error.code ?? null);
-
-  const metadata = (imageRes.data ?? [])
-    .map(toPortfolioImage)
-    .filter((image): image is PortfolioImage => image !== null);
-  const displayed = await attachSignedUrls(metadata);
-
-  return {
-    kind: 'ready',
-    workerName: access.workerName,
-    workerPhotoUrl,
-    items: assembleClientPortfolioItems(baseItems, displayed),
-  };
+  const booking = latest.find((row) => row.booking_id === bookingId);
+  const resume = booking ? projectClientResume(booking) : null;
+  if (!resume) return { kind: 'unavailable' };
+  return { kind: 'ready', workerName: resume.fullName, workerPhotoUrl, resume, items };
 }

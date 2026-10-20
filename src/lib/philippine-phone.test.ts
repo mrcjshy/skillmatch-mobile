@@ -8,11 +8,13 @@ describe('Philippine mobile numbers', () => {
     ['9171234567', '+639171234567'],
     ['+639171234567', '+639171234567'],
     ['(+63) 917-123-4567', '+639171234567'],
+    // Supabase Auth returns `user.phone` as E.164 digits without the plus sign.
+    ['639171234567', '+639171234567'],
   ])('normalizes %s', (input, expected) => {
     expect(normalizePhilippineMobile(input)).toBe(expected);
   });
 
-  it.each(['917123456', '91712345678', '+14155552671', '021234567', 'abc09171234567']) (
+  it.each(['917123456', '91712345678', '+14155552671', '021234567', 'abc09171234567', '63917123456', '6391712345678', '638171234567', '+6309171234567']) (
     'rejects %s',
     (input) => expect(normalizePhilippineMobile(input)).toBeNull()
   );

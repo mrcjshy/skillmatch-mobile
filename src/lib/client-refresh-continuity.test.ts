@@ -69,7 +69,10 @@ vi.mock('tamagui', () => ({ TamaguiProvider: ({ children }: any) => createElemen
 vi.mock('../../tamagui.config', () => ({ tamaguiConfig: {} }));
 vi.mock('@/components/push-notification-inbox-intent', () => ({ PushNotificationInboxIntent: () => null }));
 vi.mock('@/components/incoming-message-banner-host', () => ({ IncomingMessageBannerHost: () => null }));
+vi.mock('@/components/incoming-call-host', () => ({ IncomingCallHost: () => null }));
+vi.mock('@/components/location-stop-host', () => ({ LocationStopHost: () => null }));
 vi.mock('@/components/state-screen', () => ({ StateScreen: () => null }));
+vi.mock('@/components/session-reconnecting-screen', () => ({ SessionReconnectingScreen: () => null }));
 vi.mock('@/components/push-notification-registration', () => ({ PushNotificationRegistration: () => null }));
 vi.mock('expo-router', () => {
   const Stack = ({ children }: any) => children;

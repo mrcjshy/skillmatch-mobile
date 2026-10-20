@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
+import * as authErrors from '@/lib/auth-errors';
 
 type Props = Record<string, any>;
 type El = { type: any; props: Props };
@@ -23,6 +24,12 @@ function compile(file: string, modules: Props): Props {
 }
 
 const recovery = compile('src/lib/auth-recovery.ts', {});
+const philippinePhone = compile('src/lib/philippine-phone.ts', {});
+const phoneVerification = compile('src/lib/phone-verification.ts', { './philippine-phone': philippinePhone });
+const phoneOtp = compile('src/lib/phone-otp.ts', {
+  './philippine-phone': philippinePhone,
+  './phone-verification': phoneVerification,
+});
 const consentLib = compile('src/lib/user-consent.ts', {
   './legal-documents': compile('src/lib/legal-documents.ts', {}),
   './supabase': { supabase: {} },
@@ -52,6 +59,7 @@ function screen(file: string, extra: Props) {
     'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
     'react-native': { StyleSheet: { create: (v: any) => v }, Text: 'Text', View: 'View', ActivityIndicator: 'ActivityIndicator' },
     '@/components/refinement-theme': { useUiTheme: () => ({ colors: {}, type: {}, spacing: {} }), RefinementThemeProvider: ({ children }: Props) => children },
+    '@/lib/auth-errors': authErrors,
     '@/components/app-button': host('AppButton'),
     '@/components/app-divider': host('AppDivider'),
     '@/components/app-field': host('AppField'),
@@ -71,15 +79,19 @@ function screen(file: string, extra: Props) {
 }
 
 describe('Login', () => {
-  function login(session: Props = {}, supabaseResult: any = { error: null }) {
+  function login(session: Props = {}, supabaseResult: any = { error: null }, phoneSignIn = false) {
     const push = vi.fn();
     const signInWithPassword = vi.fn(async () => supabaseResult);
+    const signInWithOtp = vi.fn(async (): Promise<any> => ({ error: null }));
+    const verifyOtp = vi.fn(async (): Promise<any> => ({ data: { session: { user: { id: 'u' } } }, error: null }));
     const h = screen('src/app/(auth)/login.tsx', {
       'expo-router': { useRouter: () => ({ push }) },
-      '@/lib/supabase': { supabase: { auth: { signInWithPassword } } },
+      '@/lib/supabase': { supabase: { auth: { signInWithPassword, signInWithOtp, verifyOtp } } },
+      '@/lib/phone-otp': { ...phoneOtp, isPhoneSignInEnabled: () => phoneSignIn },
+      '@/lib/phone-verification': phoneVerification,
       '@/providers/session-provider': { useSession: () => ({ session: null, isSessionLoading: false, sessionError: null, ...session }) },
     });
-    return { ...h, push, signInWithPassword };
+    return { ...h, push, signInWithPassword, signInWithOtp, verifyOtp };
   }
   const focusable = (h: ReturnType<typeof login>, label: string) => {
     const focus = vi.fn();
@@ -135,11 +147,27 @@ describe('Login', () => {
     expect(h.messages('error')).toEqual(['Invalid email or password.']);
   });
 
+  it.each([
+    [{ name: 'AuthRetryableFetchError', status: 504, message: 'HTTP 504' }],
+    [{ name: 'AuthRetryableFetchError', status: 0, message: 'Network request failed' }],
+    [{ name: 'AuthApiError', status: 500, message: 'Service unavailable.' }],
+  ])('replaces a raw unreachable-Auth error with the plain connection message (%#)', async (error) => {
+    const { AuthRetryableFetchError } = await import('@supabase/supabase-js');
+    const shaped = error.name === 'AuthRetryableFetchError' ? new AuthRetryableFetchError(error.message, error.status) : error;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const h = login({}, { error: shaped });
+    h.type('Email', 'a@example.test'); h.type('Password', 'secret-value');
+    await h.button('Sign in').props.onPress();
+    expect(h.messages('error')).toEqual(['SkillMatch is temporarily unable to connect. Please try again shortly.']);
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/secret-value|a@example\.test/);
+    warn.mockRestore();
+  });
+
   it('shows the provider message for other failures and a connection message when the call throws', async () => {
-    const other = login({}, { error: { status: 500, message: 'Service unavailable.' } });
+    const other = login({}, { error: { status: 429, message: 'Request rate limit reached' } });
     other.type('Email', 'a@example.test'); other.type('Password', 'x');
     await other.button('Sign in').props.onPress();
-    expect(other.messages('error')).toEqual(['Service unavailable.']);
+    expect(other.messages('error')).toEqual(['Request rate limit reached']);
     const thrown = login();
     thrown.signInWithPassword.mockRejectedValueOnce(new Error('offline'));
     thrown.type('Email', 'a@example.test'); thrown.type('Password', 'x');
@@ -169,6 +197,116 @@ describe('Login', () => {
     const h = login();
     expect(h.field('Email').props).toMatchObject({ autoComplete: 'email', keyboardType: 'email-address', autoCapitalize: 'none' });
     expect(h.field('Password').props).toMatchObject({ autoComplete: 'current-password' });
+  });
+});
+
+describe('Login by SMS code (flagged)', () => {
+  function phoneLogin() {
+    const push = vi.fn();
+    const signInWithPassword = vi.fn(async () => ({ error: null }));
+    const signInWithOtp = vi.fn(async (): Promise<any> => ({ error: null }));
+    const verifyOtp = vi.fn(async (): Promise<any> => ({ data: { session: { user: { id: 'u' } } }, error: null }));
+    const h = screen('src/app/(auth)/login.tsx', {
+      'expo-router': { useRouter: () => ({ push }) },
+      '@/lib/supabase': { supabase: { auth: { signInWithPassword, signInWithOtp, verifyOtp } } },
+      '@/lib/phone-otp': { ...phoneOtp, isPhoneSignInEnabled: () => true },
+      '@/lib/phone-verification': phoneVerification,
+      '@/providers/session-provider': { useSession: () => ({ session: null, isSessionLoading: false, sessionError: null }) },
+    });
+    const labels = () => ofType(h.render(), 'AppButton').map((node) => node.props.label);
+    return { ...h, push, signInWithPassword, signInWithOtp, verifyOtp, labels };
+  }
+  const toPhone = (h: ReturnType<typeof phoneLogin>) => h.button('Sign in with a text message code').props.onPress();
+
+  it('keeps email and password as the default and only adds a quiet SMS option', () => {
+    const h = phoneLogin();
+    expect(h.labels()).toEqual(['Sign in', 'Sign in with a text message code']);
+    expect(h.button('Sign in with a text message code').props.variant).toBe('ghost');
+    expect(h.field('Email')).toBeDefined();
+  });
+
+  it('rejects an invalid number beside the field without calling Auth', async () => {
+    const h = phoneLogin();
+    toPhone(h);
+    h.type('Mobile number', '0917 123');
+    await h.button('Send code').props.onPress();
+    expect(h.field('Mobile number').props.errorText).toBe(phoneOtp.PHONE_SIGN_IN_COPY.invalidPhone);
+    expect(h.signInWithOtp).not.toHaveBeenCalled();
+  });
+
+  it('sends a sign-in-only code to the +63 number, then verifies it with type sms', async () => {
+    const h = phoneLogin();
+    toPhone(h);
+    h.type('Mobile number', '0917 123 4567');
+    await h.button('Send code').props.onPress();
+    expect(h.signInWithOtp).toHaveBeenCalledExactlyOnceWith({
+      phone: '+639171234567',
+      options: { shouldCreateUser: false, channel: 'sms' },
+    });
+    expect(h.messages('success')).toEqual([phoneOtp.PHONE_SIGN_IN_COPY.sent]);
+    expect(h.field('Mobile number').props.disabled).toBe(true);
+    expect(h.labels()).toEqual(['Verify and sign in', 'Resend code in 60s', 'Change number', 'Use email and password instead']);
+    expect(h.button('Resend code in 60s').props.disabled).toBe(true);
+
+    h.type('SMS code', '012345');
+    await h.button('Verify and sign in').props.onPress();
+    expect(h.verifyOtp).toHaveBeenCalledExactlyOnceWith({ phone: '+639171234567', token: '012345', type: 'sms' });
+    expect(h.messages('success')).toEqual(['Signed in successfully.']);
+    expect(h.push).not.toHaveBeenCalled();
+    expect(h.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('answers an unknown number like a sent code', async () => {
+    const h = phoneLogin();
+    h.signInWithOtp.mockResolvedValueOnce({ error: { status: 422, code: 'otp_disabled', message: 'Signups not allowed for otp' } });
+    toPhone(h);
+    h.type('Mobile number', '09171234567');
+    await h.button('Send code').props.onPress();
+    expect(h.messages('success')).toEqual([phoneOtp.PHONE_SIGN_IN_COPY.sent]);
+    expect(h.messages('error')).toEqual([]);
+  });
+
+  it.each([
+    [{ status: 429, code: 'over_sms_send_rate_limit' }, 'rateLimited'],
+    [{ status: 500, code: 'sms_send_failed' }, 'providerFailed'],
+    [{ status: 400, code: 'phone_provider_disabled' }, 'unavailable'],
+  ] as const)('reports send failure %j without showing a code field', async (error, copy) => {
+    const h = phoneLogin();
+    h.signInWithOtp.mockResolvedValueOnce({ error });
+    toPhone(h);
+    h.type('Mobile number', '09171234567');
+    await h.button('Send code').props.onPress();
+    expect(h.messages('error')).toEqual([phoneOtp.PHONE_SIGN_IN_COPY[copy]]);
+    expect(nodes(h.render()).some((node) => node.props?.label === 'SMS code')).toBe(false);
+    expect(h.button('Send code in 60s').props.disabled).toBe(true);
+  });
+
+  it('checks the code format locally, then maps wrong or expired codes', async () => {
+    const h = phoneLogin();
+    toPhone(h);
+    h.type('Mobile number', '09171234567');
+    await h.button('Send code').props.onPress();
+    h.type('SMS code', '123');
+    await h.button('Verify and sign in').props.onPress();
+    expect(h.field('SMS code').props.errorText).toBe(phoneOtp.PHONE_SIGN_IN_COPY.invalidCode);
+    expect(h.verifyOtp).not.toHaveBeenCalled();
+    h.verifyOtp.mockResolvedValueOnce({ data: { session: null }, error: { status: 403, code: 'otp_expired', message: 'Token has expired or is invalid' } });
+    h.type('SMS code', '654321');
+    await h.button('Verify and sign in').props.onPress();
+    expect(h.messages('error')).toEqual([phoneOtp.PHONE_SIGN_IN_COPY.wrongOrExpired]);
+    expect(h.messages('success')).toEqual([]);
+  });
+
+  it('can change the number or return to email without losing the email path', async () => {
+    const h = phoneLogin();
+    toPhone(h);
+    h.type('Mobile number', '09171234567');
+    await h.button('Send code').props.onPress();
+    h.button('Change number').props.onPress();
+    expect(h.field('Mobile number').props.disabled).toBe(false);
+    expect(nodes(h.render()).some((node) => node.props?.label === 'SMS code')).toBe(false);
+    h.button('Use email and password instead').props.onPress();
+    expect(h.labels()).toEqual(['Sign in', 'Sign in with a text message code']);
   });
 });
 
@@ -359,5 +497,73 @@ describe('Verify email resend action', () => {
     expect(resend.props.variant).toBe('ghost');
     expect(resend.props.disabled).toBe(true);
     expect(resend.props.label).toMatch(/^Resend code in \d+s$/);
+  });
+});
+
+describe('Verify phone (registration phone change, flagged)', () => {
+  function verifyPhone(registrationPhone: unknown = '+639171234567') {
+    const replace = vi.fn();
+    const retryAccountBootstrap = vi.fn();
+    const persistCurrentLegalConsentAfterSignup = vi.fn(async () => {});
+    const updateUser = vi.fn(async (): Promise<any> => ({ error: null }));
+    const verifyOtp = vi.fn(async (): Promise<any> => ({ error: null }));
+    const h = screen('src/app/(auth)/verify-phone.tsx', {
+      'expo-router': { useRouter: () => ({ replace }) },
+      '@/lib/phone-verification': { ...phoneVerification, isPhoneOtpEnabled: () => true },
+      '@/lib/supabase': { supabase: { auth: { updateUser, verifyOtp } } },
+      '@/lib/user-consent': { persistCurrentLegalConsentAfterSignup },
+      '@/providers/account-provider': { useAccount: () => ({ retryAccountBootstrap }) },
+      '@/providers/session-provider': {
+        useSession: () => ({ session: { user: { user_metadata: { registration_phone: registrationPhone } } } }),
+      },
+    });
+    return { ...h, replace, retryAccountBootstrap, persistCurrentLegalConsentAfterSignup, updateUser, verifyOtp };
+  }
+
+  it('sends the phone-change code to the registration number on the same Auth user, then starts the cooldown', async () => {
+    const h = verifyPhone('0917 123 4567');
+    expect(h.field('Phone number').props).toMatchObject({ value: '+639171234567', editable: false });
+    await h.button('Send SMS code').props.onPress();
+    expect(h.updateUser).toHaveBeenCalledExactlyOnceWith({ phone: '+639171234567' });
+    expect(h.button('Resend code in 60s').props.disabled).toBe(true);
+    h.type('SMS verification code', '012345');
+    await h.button('Verify phone').props.onPress(); await flush();
+    expect(h.verifyOtp).toHaveBeenCalledExactlyOnceWith({ phone: '+639171234567', token: '012345', type: 'phone_change' });
+    expect(h.persistCurrentLegalConsentAfterSignup).toHaveBeenCalledTimes(1);
+    expect(h.retryAccountBootstrap).toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ status: 429, code: 'over_sms_send_rate_limit' }, 'rateLimited'],
+    [{ status: 500, code: 'sms_send_failed' }, 'providerFailed'],
+    [{ status: 422, code: 'phone_exists' }, 'sendFailed'],
+  ] as const)('maps send failure %j to its own message and shows no code field', async (error, copy) => {
+    const h = verifyPhone();
+    h.updateUser.mockResolvedValueOnce({ error });
+    await h.button('Send SMS code').props.onPress();
+    expect(h.messages('error')).toEqual([phoneVerification.PHONE_VERIFICATION_COPY[copy]]);
+    expect(nodes(h.render()).some((node) => node.props?.label === 'SMS verification code')).toBe(false);
+  });
+
+  it('rejects a short code locally and maps a wrong or expired code without finishing setup', async () => {
+    const h = verifyPhone();
+    await h.button('Send SMS code').props.onPress();
+    h.type('SMS verification code', '123');
+    await h.button('Verify phone').props.onPress();
+    expect(h.messages('error')).toEqual([phoneVerification.PHONE_VERIFICATION_COPY.invalidCode]);
+    expect(h.verifyOtp).not.toHaveBeenCalled();
+    h.verifyOtp.mockResolvedValueOnce({ error: { status: 403, code: 'otp_expired', message: 'Token has expired or is invalid' } });
+    h.type('SMS verification code', '654321');
+    await h.button('Verify phone').props.onPress();
+    expect(h.messages('error')).toEqual([phoneVerification.PHONE_VERIFICATION_COPY.wrongOrExpired]);
+    expect(h.persistCurrentLegalConsentAfterSignup).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the registration phone is missing or not a Philippine mobile number', () => {
+    for (const bad of [null, 42, '+14155552671']) {
+      const h = verifyPhone(bad);
+      expect(h.messages('error')).toEqual([phoneVerification.PHONE_VERIFICATION_COPY.missingPhone]);
+      expect(ofType(h.render(), 'AppButton')).toHaveLength(0);
+    }
   });
 });

@@ -1,10 +1,11 @@
 import { Component, useCallback, useEffect, useLayoutEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
-import { ActivityIndicator, AppState, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, AppState, Keyboard, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { CameraRef, MapRef, ViewStateChangeEvent } from '@maplibre/maplibre-react-native';
 import type { NativeSyntheticEvent } from 'react-native';
 
 import { SkillMatchTheme } from '@/constants/theme';
+import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import {
   COPY,
   SANTA_ANA_PATEROS_DISPLAY_REGION,
@@ -13,10 +14,11 @@ import {
   type JobPin,
 } from '@/lib/job-location';
 
-import { createCanonicalLocationSelection, type CanonicalJobLocation, type LocationSelectionState } from '@/lib/canonical-job-location';
-import { JOB_MAP_STYLE, jobMapRuntime as mapsRuntime } from '@/lib/native-job-map';
+import { createCanonicalLocationSelection, emptyLocationSelection, type CanonicalJobLocation, type LocationSelectionState, type SelectionContext } from '@/lib/canonical-job-location';
+import { jobMapRuntime as mapsRuntime } from '@/lib/native-job-map';
+import { PICKER_MAP_STYLE } from '@/lib/picker-map-style';
 import { pinFromMapCenter, pinToLngLat } from '@/lib/map-coordinates';
-import { findNearbyMappedFeatures, findNearbySnap, SNAP_MIN_ZOOM, type NearbyMappedFeature, type SnapKind } from '@/lib/job-location-snap';
+import { findPickerMapContext, NEAR_LANDMARK_METERS, SNAP_MIN_ZOOM, type NearbyMappedFeature, type SnapKind } from '@/lib/job-location-snap';
 import { AppButton } from '@/components/app-button';
 import { AppSymbol } from '@/components/app-symbol';
 import { AppNotice } from '@/components/app-notice';
@@ -27,7 +29,25 @@ import { useSession, type SessionLifetime } from '@/providers/session-provider';
 import { useAccount } from '@/providers/account-provider';
 
 const { colors, type, spacing, radius } = SkillMatchTheme.ui;
+// Keeps the school area and surrounding streets in view on a phone-sized map.
+const PICKER_STREET_ZOOM = 16.6;
 type PickerOwner = { scope: RecentLocationScope; lifetime: SessionLifetime | null | undefined; revision: number | undefined };
+
+/** Native pin-tip projection shares the optional context deadline. */
+async function captureMapPin(map: MapRef, target: [number, number], fallback: JobPin): Promise<{ raw: JobPin; budgetMs: number }> {
+  if (!map.unproject) return { raw: fallback, budgetMs: 750 };
+  const started = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const coordinate = await Promise.race([
+      map.unproject(target),
+      new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), 750); }),
+    ]);
+    const raw = coordinate && pinFromMapCenter(coordinate);
+    return raw ? { raw, budgetMs: Math.max(0, 750 - (Date.now() - started)) } : { raw: fallback, budgetMs: 0 };
+  } catch { return { raw: fallback, budgetMs: 0 }; }
+  finally { clearTimeout(timer); }
+}
 
 type JobLocationPickerProps = {
   pin: JobPin | null;
@@ -37,6 +57,7 @@ type JobLocationPickerProps = {
   onNote: (note: string | null) => void;
   disabled?: boolean;
   onCancel?: () => void;
+  backHandlerRef?: { current: (() => void) | null };
   onConfirm: (location: CanonicalJobLocation) => void;
 };
 
@@ -68,26 +89,40 @@ export function JobLocationPicker({
   onNote,
   disabled = false,
   onCancel,
+  backHandlerRef,
   onConfirm,
 }: JobLocationPickerProps) {
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const reducedMotion = useReducedMotion();
+  const { width, height } = useWindowDimensions();
+  const [mapSize, setMapSize] = useState({ width, height });
+  const [sheetHeight, setSheetHeight] = useState(Math.min(height * 0.38, 380));
+  const topOverlayHeight = insets.top + 64;
+  const cameraPadding = { top: topOverlayHeight, right: 0, bottom: sheetHeight, left: 0 };
+  const pinTarget: [number, number] = [mapSize.width / 2, (mapSize.height + topOverlayHeight - sheetHeight) / 2];
   const cameraRef = useRef<CameraRef>(null);
   const mapRef = useRef<MapRef>(null);
+  const initialRenderResolved = useRef(false);
+  const initialRenderPending = useRef(false);
   const movingRef = useRef(false);
   const currentMoveRef = useRef(false);
   const programmaticMoveRef = useRef(false);
+  const handledIdleRef = useRef(Boolean(pin));
+  const candidateMoveRef = useRef<(SelectionContext & { pin: JobPin }) | null>(null);
   const rawCenterRef = useRef<JobPin | null>(null);
   const lookupEpoch = useRef(0);
+  const locationRequestEpoch = useRef(0);
   const [moving, setMoving] = useState(false);
   const [checkingSnap, setCheckingSnap] = useState(false);
   const [snapKind, setSnapKind] = useState<SnapKind | null>(null);
-  const [nearby, setNearby] = useState<NearbyMappedFeature[]>([]);
   const [showInitialAddress, setShowInitialAddress] = useState(Boolean(pin && initialAddress));
   const [mapReady, setMapReady] = useState(mapsRuntime !== null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapRendered, setMapRendered] = useState(false);
   const [locating, setLocating] = useState(false);
   const [permission, setPermission] = useState<LocationPermissionState | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [queryOwner, setQueryOwner] = useState<PickerOwner | null>(null);
   const queryScope = useRef<RecentLocationScope | null>(null);
@@ -107,10 +142,10 @@ export function JobLocationPicker({
   useLayoutEffect(() => { latestAuthority.current = { session, account }; }, [session, account]);
   const recentScope = useRef<RecentLocationScope | null>(null);
   const selectedScope = useRef<RecentLocationScope | null>(null);
-  const selectionGeneration = useRef(0);
   const recentEpoch = useRef(0);
   const sessionLifetime = session.sessionLifetime;
   const sessionRevision = session.sessionRevision;
+  const openingPin = useRef<{ pin: JobPin | null; lifetime: typeof sessionLifetime; revision: typeof sessionRevision } | null>({ pin, lifetime: sessionLifetime, revision: sessionRevision });
   const subscribeSessionLifecycle = session.subscribeSessionLifecycle;
   const termination = account.clientDraftTermination;
   const terminationEpoch = termination?.snapshot();
@@ -125,16 +160,15 @@ export function JobLocationPicker({
   const mapAvailable = classifyMapAvailability(mapReady && mapsRuntime !== null);
   const Map = mapsRuntime?.Map;
   const Camera = mapsRuntime?.Camera;
+  const Marker = mapsRuntime?.Marker;
 
   useEffect(() => {
-    if (!mapReady || mapLoaded) return;
+    if (!mapReady || mapLoaded || mapRendered) return;
     const timer = setTimeout(() => setMapReady(false), 20_000);
     return () => clearTimeout(timer);
-  }, [mapReady, mapLoaded]);
+  }, [mapReady, mapLoaded, mapRendered]);
 
-  const [selectionState, setSelectionState] = useState<LocationSelectionState>({
-    pin: null, address: null, status: 'empty', error: null,
-  });
+  const [selectionState, setSelectionState] = useState<LocationSelectionState>(emptyLocationSelection);
   const [selection] = useState(() => createCanonicalLocationSelection(setSelectionState));
   const lifetime = useRef(true);
   const captureScope = useCallback((): RecentLocationScope => {
@@ -174,6 +208,7 @@ export function JobLocationPicker({
       lookupEpoch.current += 1;
       searchEpoch.current += 1;
       queryScope.current = null;
+      setSearchOpen(false);
       setSearchQuery('');
       setQueryOwner(null);
       selection.select(null);
@@ -184,7 +219,7 @@ export function JobLocationPicker({
       setLocating(false);
       setCheckingSnap(false);
       setSnapKind(null);
-      setNearby([]);
+      candidateMoveRef.current = null;
       movingRef.current = false;
       currentMoveRef.current = false;
       programmaticMoveRef.current = false;
@@ -209,6 +244,7 @@ export function JobLocationPicker({
       lookupEpoch.current += 1;
       searchEpoch.current += 1;
       queryScope.current = null;
+      setSearchOpen(false);
       setSearchQuery('');
       setQueryOwner(null);
       setRecentLocations([]);
@@ -221,7 +257,7 @@ export function JobLocationPicker({
       setLocating(false);
       setCheckingSnap(false);
       setSnapKind(null);
-      setNearby([]);
+      candidateMoveRef.current = null;
       movingRef.current = false;
       currentMoveRef.current = false;
       programmaticMoveRef.current = false;
@@ -279,6 +315,23 @@ export function JobLocationPicker({
     setSearching(false);
     setSearchUnavailable(false);
   }
+  function closeSearch(): void {
+    Keyboard.dismiss();
+    handleSearchQueryChange('');
+    setSearchOpen(false);
+  }
+  const handleBack = () => { if (searchOpen) closeSearch(); else onCancel?.(); };
+  useLayoutEffect(() => {
+    if (!backHandlerRef) return;
+    backHandlerRef.current = handleBack;
+    return () => { backHandlerRef.current = null; };
+  });
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', event => setKeyboardHeight(event.endCoordinates.height));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
   function retrySearch(): void {
     if (!queryOwner?.scope.isCurrent() || queryScope.current !== queryOwner.scope) return;
     searchEpoch.current += 1;
@@ -290,14 +343,16 @@ export function JobLocationPicker({
   const resolveAddress = useCallback(async (): Promise<void> => {
     const epoch = lookupEpoch.current;
     const scope = captureScope();
-    if (!scope.isCurrent()) return;
+    if (!scope.isCurrent() || !selection.snapshot().pin || movingRef.current) return;
     const currentSession = latestAuthority.current.session;
     selectedScope.current = scope;
-    setSelectedOwner({ scope, lifetime: currentSession.sessionLifetime, revision: currentSession.sessionRevision, generation: ++selectionGeneration.current });
-    selection.select(selection.snapshot().pin);
+    setSelectedOwner({ scope, lifetime: currentSession.sessionLifetime, revision: currentSession.sessionRevision, generation: selection.snapshot().generation });
+    selection.invalidateResolution();
     setShowInitialAddress(false);
     try {
-      const location = await import('expo-location');
+      // Permission requests must not depend on fetching a development chunk.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const location = require('expo-location') as typeof import('expo-location');
       if (!scope.isCurrent() || epoch !== lookupEpoch.current || movingRef.current) return;
       if (!selection.snapshot().pin) return;
       await selection.resolve({ reverseGeocodeAsync: async coords => {
@@ -318,14 +373,25 @@ export function JobLocationPicker({
   }, [selection, captureScope]);
 
   useEffect(() => {
+    const opening = openingPin.current;
+    openingPin.current = null;
+    if (!opening?.pin || opening.lifetime !== sessionLifetime || opening.revision !== sessionRevision || !captureScope().isCurrent()) return;
+    selection.select(opening.pin, { origin: 'restored' });
+    rawCenterRef.current = opening.pin;
+    void resolveAddress();
+  }, [sessionLifetime, sessionRevision, captureScope, selection, resolveAddress]);
+
+  useEffect(() => {
     const listener = AppState.addEventListener('change', (state) => {
       if (state === 'active') void resolveAddress();
       else {
         lookupEpoch.current += 1;
+        // An invalidated native query must not retain a confirmation blocker.
+        setCheckingSnap(false);
         searchEpoch.current += 1;
         setSuggestions([]);
         setSearching(false);
-        selection.select(selection.snapshot().pin);
+        selection.invalidateResolution();
         setShowInitialAddress(false);
       }
     });
@@ -334,13 +400,14 @@ export function JobLocationPicker({
 
   function beginMove(): void {
     if (movingRef.current) return;
+    locationRequestEpoch.current += 1;
     movingRef.current = true;
     lookupEpoch.current += 1;
     selection.select(null);
+    candidateMoveRef.current = null;
     selectedScope.current = null;
     setCheckingSnap(false);
     setSnapKind(null);
-    setNearby([]);
     setShowInitialAddress(false);
     rawCenterRef.current = null;
     onInvalidate?.();
@@ -351,6 +418,8 @@ export function JobLocationPicker({
   function handleRegionWillChange(event: NativeSyntheticEvent<ViewStateChangeEvent>): void {
     if (event.nativeEvent.userInteraction) {
       programmaticMoveRef.current = false;
+      candidateMoveRef.current = null;
+      currentMoveRef.current = false;
       beginMove();
     } else if (!programmaticMoveRef.current && currentMoveRef.current) beginMove();
   }
@@ -360,67 +429,113 @@ export function JobLocationPicker({
       programmaticMoveRef.current = false;
       return;
     }
-    if (!movingRef.current && !event.nativeEvent.userInteraction && !currentMoveRef.current) return;
+    // Consume one settle per gesture. Native duplicate idle events may retain
+    // userInteraction=true, including after an assisted/exact camera movement.
+    if (!movingRef.current && !currentMoveRef.current && (!event.nativeEvent.userInteraction || handledIdleRef.current)) return;
+    handledIdleRef.current = true;
     if (!movingRef.current) beginMove();
     currentMoveRef.current = false;
     movingRef.current = false;
     setMoving(false);
     const nextPin = pinFromMapCenter(event.nativeEvent.center);
-    rawCenterRef.current = nextPin;
-    selection.select(nextPin);
+    const candidate = candidateMoveRef.current;
+    candidateMoveRef.current = null;
+    const atCandidate = nextPin && candidate && !event.nativeEvent.userInteraction &&
+      Math.abs(nextPin.latitude - candidate.pin.latitude) < 0.000001 && Math.abs(nextPin.longitude - candidate.pin.longitude) < 0.000001;
     const epoch = ++lookupEpoch.current;
-    if (nextPin) void settleSelection(nextPin, event.nativeEvent.zoom, epoch);
+    if (nextPin) void captureSelection(nextPin, event.nativeEvent.zoom, epoch, atCandidate ? candidate : undefined);
   }
 
-  async function settleSelection(rawCenter: JobPin, zoom: number, epoch: number): Promise<void> {
+  async function captureSelection(eventCenter: JobPin, zoom: number, epoch: number, candidate?: SelectionContext & { pin: JobPin }): Promise<void> {
+    const scope = captureScope();
+    const { raw, budgetMs } = !candidate && mapRef.current ? await captureMapPin(mapRef.current, pinTarget, eventCenter) : { raw: eventCenter, budgetMs: 750 };
+    if (!scope.isCurrent() || epoch !== lookupEpoch.current || movingRef.current) return;
+    // Explicit choices retain their exact numeric coordinates, not native camera rounding.
+    const effective = candidate?.pin ?? raw;
+    rawCenterRef.current = candidate?.rawPin ?? effective;
+    selection.select(effective, candidate);
+    void settleSelection(effective, zoom, epoch, budgetMs);
+  }
+
+  async function settleSelection(rawCenter: JobPin, zoom: number, epoch: number, budgetMs = 750): Promise<void> {
     const scope = captureScope();
     selectedScope.current = scope;
-    const maySnap = zoom >= SNAP_MIN_ZOOM && mapRef.current !== null;
+    const generation = selection.snapshot().generation;
+    const maySnap = budgetMs > 0 && selection.snapshot().origin === 'manual' && zoom >= SNAP_MIN_ZOOM && mapRef.current !== null;
     setCheckingSnap(maySnap);
+    // Address and optional native context start independently. Only a possible
+    // coordinate adjustment temporarily guards confirmation (bounded to 750 ms).
+    void resolveAddress();
     let candidate = null;
+    let landmarks: NearbyMappedFeature[] = [];
     try {
-      if (maySnap && mapRef.current) candidate = await findNearbySnap(mapRef.current, rawCenter, zoom);
+      if (zoom >= 15 && mapRef.current) {
+        const context = await findPickerMapContext(mapRef.current, rawCenter, zoom, maySnap, budgetMs);
+        candidate = maySnap ? context.snap : null;
+        landmarks = context.nearby;
+      }
     } catch { /* A failed feature query keeps the manually placed center. */ }
-    if (!scope.isCurrent() || epoch !== lookupEpoch.current || movingRef.current) return;
+    if (!scope.isCurrent() || epoch !== lookupEpoch.current || movingRef.current || generation !== selection.snapshot().generation) return;
     setCheckingSnap(false);
     if (candidate && cameraRef.current) {
       setSnapKind(candidate.kind);
-      selection.select(candidate.pin);
+      selection.adjust(candidate.pin, { label: candidate.label, pin: candidate.pin, source: 'mapped', mapped: candidate });
       programmaticMoveRef.current = true;
-      cameraRef.current.easeTo({ center: pinToLngLat(candidate.pin), duration: 200 });
+      cameraRef.current.easeTo({ center: pinToLngLat(candidate.pin), padding: cameraPadding, duration: reducedMotion ? 0 : 200 });
+      void resolveAddress();
     } else {
       setSnapKind(null);
-      selection.select(rawCenter);
     }
-    void resolveAddress();
-    if (maySnap && mapRef.current) {
-      void findNearbyMappedFeatures(mapRef.current, rawCenter, zoom).then((items) => {
-        if (scope.isCurrent() && epoch === lookupEpoch.current && !movingRef.current) setNearby(items);
-      }).catch(() => { /* Nearby context is optional. */ });
-    }
+    selection.setNearby(generation, landmarks);
+  }
+
+  async function resolveRenderedEntry(): Promise<void> {
+    if (initialRenderResolved.current || initialRenderPending.current || movingRef.current || !mapRef.current) return;
+    const epoch = lookupEpoch.current;
+    const generation = selection.snapshot().generation;
+    const scope = captureScope();
+    if (!scope.isCurrent()) return;
+    initialRenderPending.current = true;
+    try {
+      const view = await mapRef.current.getViewState();
+      if (!scope.isCurrent() || epoch !== lookupEpoch.current || movingRef.current) return;
+      const center = pinFromMapCenter(view.center);
+      if (!center || !Number.isFinite(view.zoom) || view.zoom < 15) return;
+      initialRenderResolved.current = true;
+      rawCenterRef.current = center;
+      // The display anchor is context, not a chosen service location.
+      // Restored drafts resolve independently; only deliberate input selects a new pin.
+      const context = await findPickerMapContext(mapRef.current, center, view.zoom, false);
+      if (scope.isCurrent() && epoch === lookupEpoch.current && !movingRef.current) selection.setNearby(generation, context.nearby);
+    } catch { /* Map/native label availability cannot block choosing a pin. */ }
+    finally { initialRenderPending.current = false; }
   }
 
   function useExactPin(): void {
-    const rawCenter = rawCenterRef.current;
-    if (!rawCenter || !snapKind || !cameraRef.current) return;
+    const current = selection.snapshot();
+    const rawCenter = current.rawPin;
+    if (!rawCenter || (!snapKind && current.origin !== 'mapped') || !cameraRef.current) return;
     lookupEpoch.current += 1;
     setSnapKind(null);
     setCheckingSnap(false);
-    setNearby([]);
     selection.select(rawCenter);
     programmaticMoveRef.current = true;
-    cameraRef.current.easeTo({ center: pinToLngLat(rawCenter), duration: 200 });
+    cameraRef.current.easeTo({ center: pinToLngLat(rawCenter), padding: cameraPadding, duration: reducedMotion ? 0 : 200 });
     void resolveAddress();
   }
 
   async function handleUseCurrentLocation(): Promise<void> {
     if (busy || mapAvailable !== 'ready') return;
     setLocating(true);
-    const requestEpoch = lookupEpoch.current;
+    // Android's permission dialog backgrounds the app and cancels geocoding.
+    // Its explicit permission result still belongs to this authenticated request.
+    const requestEpoch = ++locationRequestEpoch.current;
     const scope = captureScope();
-    const current = () => scope.isCurrent() && requestEpoch === lookupEpoch.current;
+    const current = () => scope.isCurrent() && requestEpoch === locationRequestEpoch.current;
     try {
-      const location = await import('expo-location');
+      // Keep optional native loading recoverable without a separate Metro chunk.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const location = require('expo-location') as typeof import('expo-location');
       if (!current()) return;
       const nextPermission = await inspectLocationPermission(location, true);
       if (!current()) return;
@@ -429,16 +544,19 @@ export function JobLocationPicker({
         onNote(COPY.permissionDenied);
         return;
       }
-      const result = await resolveCurrentLocationPin(location);
+      const result = await resolveCurrentLocationPin({
+        getForegroundPermissionsAsync: location.getForegroundPermissionsAsync,
+        requestForegroundPermissionsAsync: location.requestForegroundPermissionsAsync,
+        // A precise service pin needs a fresh foreground GPS-capable fix.
+        getCurrentPositionAsync: () => location.getCurrentPositionAsync({ accuracy: location.Accuracy.High }),
+      });
       if (!current()) return;
       if (result.kind !== 'pin') {
         onNote(result.kind === 'denied' ? COPY.permissionDenied : COPY.locationUnavailable);
         return;
       }
       if (!cameraRef.current) { onNote(COPY.mapUnavailable); return; }
-      beginMove();
-      currentMoveRef.current = true;
-      cameraRef.current.easeTo({ center: pinToLngLat(result.pin), zoom: SNAP_MIN_ZOOM, duration: 300 });
+      moveToCandidate(result.pin, { origin: 'gps' });
     } catch {
       if (current()) onNote(COPY.locationUnavailable);
     } finally {
@@ -446,27 +564,73 @@ export function JobLocationPicker({
     }
   }
 
-  function selectNearby(item: NearbyMappedFeature): void {
-    if (busy || !cameraRef.current) return;
-    beginMove();
-    currentMoveRef.current = true;
-    cameraRef.current.easeTo({ center: pinToLngLat(item.pin), zoom: SNAP_MIN_ZOOM, duration: 300 });
+  function updateSheetHeight(nextHeight: number): void {
+    if (!Number.isFinite(nextHeight) || nextHeight <= 0 || Math.abs(nextHeight - sheetHeight) < 0.5) return;
+    setSheetHeight(nextHeight);
+    if (movingRef.current || !cameraRef.current) return;
+    const center = selection.snapshot().pin ?? rawCenterRef.current ?? pin ?? SANTA_ANA_PATEROS_DISPLAY_REGION;
+    programmaticMoveRef.current = true;
+    try {
+      void Promise.resolve(cameraRef.current.easeTo({ center: pinToLngLat(center), padding: { top: topOverlayHeight, right: 0, bottom: nextHeight, left: 0 }, duration: 0 })).catch(() => { programmaticMoveRef.current = false; });
+    } catch { /* Initial native layout may precede the camera ref becoming ready. */ }
   }
 
-  function moveToCandidate(pin: JobPin): void {
+  const candidateScope = ownerMatches(selectedOwner) ? selectedOwner?.scope : ownerMatches(recentOwner) ? recentOwner?.scope : null;
+  function selectNearby(item: NearbyMappedFeature): void {
+    if (!candidateScope?.isCurrent() || movingRef.current || selectionState.generation !== selection.snapshot().generation) return;
+    const rawPin = selection.snapshot().rawPin ?? item.pin;
+    moveToCandidate(item.pin, { origin: 'mapped', rawPin, feature: { label: item.label, pin: item.pin, source: 'mapped', mapped: item } });
+  }
+
+  function moveToCandidate(pin: JobPin, context: SelectionContext = {}): void {
     if (busy || !cameraRef.current) return;
+    const selected = selection.snapshot();
+    if (!movingRef.current && selected.status === 'ready' && selected.pin && selectedScope.current?.isCurrent() &&
+      Math.abs(selected.pin.latitude - pin.latitude) < 0.0000001 && Math.abs(selected.pin.longitude - pin.longitude) < 0.0000001) {
+      // MapLibre need not emit an idle event for a camera already at this pin.
+      lookupEpoch.current += 1;
+      setSnapKind(null);
+      selection.identify(context);
+      const scope = captureScope();
+      selectedScope.current = scope;
+      setSelectedOwner({ scope, lifetime: sessionLifetime, revision: sessionRevision, generation: selection.snapshot().generation });
+      programmaticMoveRef.current = true;
+      cameraRef.current.easeTo({ center: pinToLngLat(pin), zoom: PICKER_STREET_ZOOM, padding: cameraPadding, duration: 300 });
+      return;
+    }
+    programmaticMoveRef.current = false;
     beginMove();
+    candidateMoveRef.current = { ...context, pin };
     currentMoveRef.current = true;
-    cameraRef.current.easeTo({ center: pinToLngLat(pin), zoom: SNAP_MIN_ZOOM, duration: 300 });
+    cameraRef.current.easeTo({ center: pinToLngLat(pin), zoom: PICKER_STREET_ZOOM, padding: cameraPadding, duration: 300 });
   }
 
   const addressCopy = !authorityIsCurrent || (selectedOwner && !ownerMatches(selectedOwner)) ? 'Move the map to choose a service location.' : showInitialAddress && initialAddress ? initialAddress : selectionState.address ?? (
     moving ? 'Move the map to position the center pin.' :
-    checkingSnap ? 'Checking nearby mapped features...' :
-    selectionState.status === 'resolving' ? 'Finding address…' :
     selectionState.error === 'outside' ? 'This location is outside Barangay Santa Ana.' :
+    selectionState.pin ? 'Selected map point' :
     'Move the map to choose a service location.'
   );
+
+  const addressParts = addressCopy.split(',').map(part => part.trim()).filter(Boolean);
+  const fallback = selectionState.error === 'geocode' && selectionState.status === 'ready';
+  const selectedFeature = authorityIsCurrent && ownerMatches(selectedOwner) && !moving && selectionState.error !== 'outside' ? selectionState.feature : null;
+  const nearby = authorityIsCurrent && candidateScope && !moving ? selectionState.nearby : [];
+  const nearPlace = !selectedFeature && selectionState.deliberate && selectionState.origin === 'manual' && !snapKind &&
+    selectionState.error !== 'outside' ? nearby.find(item => item.distanceMeters <= NEAR_LANDMARK_METERS) : null;
+  const primaryAddress = selectedFeature?.label ?? (nearPlace ? `Near ${nearPlace.label}` : fallback ? 'Santa Ana, Pateros' : addressParts[0] ?? addressCopy);
+  const secondaryAddress = fallback ? 'Exact street unavailable.' : selectedFeature || nearPlace ? selectionState.address : addressParts.slice(1).join(', ');
+  const alternatives = nearby.filter(item => item.id !== selectedFeature?.mapped?.id);
+  const candidateMarkers = alternatives.filter((item, index, items) => item.distancePx > 32 &&
+    !items.slice(0, index).some(other => Math.hypot(item.offsetPx[0] - other.offsetPx[0], item.offsetPx[1] - other.offsetPx[1]) < 48));
+  const canReturnToPoint = selectedFeature?.source === 'mapped' && selectionState.rawPin && selectionState.pin &&
+    (selectionState.rawPin.latitude !== selectionState.pin.latitude || selectionState.rawPin.longitude !== selectionState.pin.longitude);
+  const placeIcon = (category?: string) => {
+    if (category && /school|college|university/.test(category)) return { android: 'school', ios: 'graduationcap' } as const;
+    if (category && /hospital|clinic|pharmacy/.test(category)) return { android: 'local_hospital', ios: 'cross.case' } as const;
+    if (category && /shop|store|grocery/.test(category)) return { android: 'storefront', ios: 'storefront' } as const;
+    return { android: 'place', ios: 'mappin' } as const;
+  };
 
   return (
     <View style={styles.screen}>
@@ -474,11 +638,12 @@ export function JobLocationPicker({
         <MapErrorBoundary onError={() => setMapReady(false)}>
           <View
             style={styles.mapFrame}
+            onLayout={event => { const { width, height } = event.nativeEvent.layout; if (width > 0 && height > 0) setMapSize({ width, height }); }}
           >
             <Map
               ref={mapRef}
               style={styles.map}
-              mapStyle={JOB_MAP_STYLE}
+              mapStyle={PICKER_MAP_STYLE}
               androidView="texture"
               dragPan={!disabled && !locating}
               touchZoom={!disabled && !locating}
@@ -487,117 +652,136 @@ export function JobLocationPicker({
               touchPitch={false}
               touchRotate={false}
               compass={false}
+              attributionPosition={{ bottom: sheetHeight + spacing.sm, left: spacing.gutter }}
               onDidFailLoadingMap={() => setMapReady(false)}
-              onDidFinishRenderingMapFully={() => setMapLoaded(true)}
+              onDidFinishRenderingFrame={mapRendered ? undefined : () => { setMapRendered(true); void resolveRenderedEntry(); }}
+              onDidFinishRenderingMap={() => { setMapRendered(true); void resolveRenderedEntry(); }}
+              onDidFinishRenderingMapFully={() => { setMapLoaded(true); void resolveRenderedEntry(); }}
               accessibilityLabel="Job location map"
             >
               <Camera
                 ref={cameraRef}
-                initialViewState={{ center: pinToLngLat(pin ?? SANTA_ANA_PATEROS_DISPLAY_REGION), zoom: pin ? SNAP_MIN_ZOOM : 14, bearing: 0, pitch: 0 }}
+                minZoom={15}
+                maxZoom={19}
+                padding={cameraPadding}
+                initialViewState={{ center: pinToLngLat(pin ?? SANTA_ANA_PATEROS_DISPLAY_REGION), zoom: PICKER_STREET_ZOOM, padding: cameraPadding, bearing: 0, pitch: 0 }}
               />
+              {!searchOpen && Marker ? candidateMarkers.map(item => (
+                <Marker key={item.id} id={`candidate:${item.id}`} lngLat={pinToLngLat(item.pin)}
+                  onPress={() => selectNearby(item)}>
+                  <Pressable style={styles.candidateMarkerTarget} accessibilityRole="button"
+                    accessibilityLabel={`Mapped place ${item.label}`} onPress={() => selectNearby(item)}>
+                    <View style={styles.candidateMarker}>
+                      <AppSymbol name={placeIcon(item.category)} size={20} tintColor={colors.accent} />
+                    </View>
+                  </Pressable>
+                </Marker>
+              )) : null}
             </Map>
-            <View pointerEvents="none" style={styles.centerPinOverlay} accessibilityLabel="Center service location pin">
-              <View style={styles.destination} />
+            <View pointerEvents="none" testID="service-location-center-pin" style={{ ...styles.centerPinOverlay, top: pinTarget[1] }} accessible={false} importantForAccessibility="no-hide-descendants">
+              <View style={styles.pinShadow} />
+              <View style={styles.pinTip} />
+              <View style={styles.pinHead}><View style={styles.pinCenter} /></View>
             </View>
-            {!mapLoaded ? (
+            {!mapLoaded && !mapRendered ? (
               <View style={styles.loading} pointerEvents="none">
                 <ActivityIndicator accessibilityLabel="Loading job location map" />
               </View>
             ) : null}
             <Pressable
               style={[styles.floatingControl, styles.backControl, { top: insets.top + spacing.sm }]}
-              onPress={onCancel}
+              onPress={handleBack}
               accessibilityRole="button"
-              accessibilityLabel="Back to Post Job"
+              accessibilityLabel={searchOpen ? "Back to map" : "Back to Post Job"}
             ><AppSymbol name={{ android: 'arrow_back', ios: 'chevron.left' }} size={24} tintColor={colors.textPrimary} /></Pressable>
             <Pressable
-              style={[styles.floatingControl, styles.currentControl]}
+              style={[styles.floatingControl, styles.currentControl, { bottom: sheetHeight + spacing.md }]}
               onPress={() => { void handleUseCurrentLocation(); }}
               disabled={busy}
               accessibilityRole="button"
               accessibilityLabel={COPY.useCurrentLocation}
+              accessibilityState={{ disabled: busy, busy: locating }}
             >{locating ? <ActivityIndicator color={colors.accent} /> : <AppSymbol name={{ android: 'my_location', ios: 'location' }} size={24} tintColor={colors.accent} />}</Pressable>
           </View>
         </MapErrorBoundary>
       ) : (
         <View style={styles.unavailable} accessibilityLabel="Job location map unavailable">
           <Pressable style={[styles.floatingControl, styles.backControl, { top: insets.top + spacing.sm }]}
-            onPress={onCancel} accessibilityRole="button" accessibilityLabel="Back to Post Job">
+            onPress={handleBack} accessibilityRole="button" accessibilityLabel={searchOpen ? "Back to map" : "Back to Post Job"}>
             <AppSymbol name={{ android: 'arrow_back', ios: 'chevron.left' }} size={24} tintColor={colors.textPrimary} />
           </Pressable>
           <Text style={styles.addressText}>{COPY.mapUnavailable}</Text>
         </View>
       )}
-      <View style={[styles.sheet, { maxHeight: Math.min(height * 0.48, 430), paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
-        <View style={styles.handle} />
-        <ScrollView style={styles.sheetBody} contentContainerStyle={styles.sheetContent} nestedScrollEnabled>
-          <Text style={styles.sheetTitle}>Service location</Text>
-          <TextInput
-            value={visibleSearchQuery}
-            onChangeText={handleSearchQueryChange}
-            placeholder="Search for location"
-            placeholderTextColor={colors.textMuted}
-            style={styles.searchInput}
-            editable={!busy}
-            accessibilityLabel="Search for location"
-          />
-          {searching && ownerMatches(queryOwner) ? <ActivityIndicator accessibilityLabel="Searching locations" /> : null}
-          {searchUnavailable && ownerMatches(queryOwner) ? (
+      <View style={[styles.topSearch, { top: insets.top + spacing.sm }]}>
+        {searchOpen ? (
+          <TextInput value={visibleSearchQuery} onChangeText={handleSearchQueryChange}
+            placeholder="Search street or landmark" placeholderTextColor={colors.textMuted}
+            style={styles.searchInput} editable={!busy} autoFocus
+            accessibilityLabel="Search for location" returnKeyType="search" />
+        ) : (
+          <Pressable style={styles.searchAffordance} onPress={() => setSearchOpen(true)}
+            accessibilityRole="button" accessibilityLabel="Search locations" disabled={busy}>
+            <AppSymbol name={{ android: 'search', ios: 'magnifyingglass' }} size={22} tintColor={colors.textPrimary} />
+            <Text style={styles.nearbyLabel}>Search</Text>
+          </Pressable>
+        )}
+      </View>
+      {!searchOpen && !moving && !checkingSnap && authorityIsCurrent && ownerMatches(selectedOwner) && selectionState.status === 'ready' ? (
+        <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants"
+          style={[styles.pinLabel, { top: pinTarget[1] - 128 }]}>
+          <Text style={styles.pinLabelText} numberOfLines={2}>{primaryAddress}</Text>
+        </View>
+      ) : null}
+      <View testID="location-picker-sheet" style={[styles.sheet, { height: Math.min(height * 0.40, 400), maxHeight: Math.min(height * 0.40, 400), paddingBottom: Math.max(insets.bottom, spacing.md) }, searchOpen && { height: undefined, top: topOverlayHeight + spacing.sm, bottom: keyboardHeight, maxHeight: height }]}
+        onLayout={event => { if (!searchOpen) updateSheetHeight(event.nativeEvent.layout.height); }}>
+        <View style={styles.handle} accessible={false} />
+        <ScrollView keyboardShouldPersistTaps="handled" style={styles.sheetBody} contentContainerStyle={styles.sheetContent} nestedScrollEnabled>
+        {!searchOpen ? <View style={styles.selectedRow}>
+          <View style={styles.selectedIcon} accessible={false} importantForAccessibility="no-hide-descendants">
+            <AppSymbol name={{ android: 'location_on', ios: 'mappin' }} size={24} tintColor={colors.accent} />
+          </View>
+          <View style={styles.selectedCopy} collapsable={false} accessibilityLabel="Selected location address" accessibilityLiveRegion="polite">
+            <Text style={styles.addressText} numberOfLines={3}>{primaryAddress}</Text>
+            {fallback ? <Text style={styles.selectedCaption}>General area</Text> : null}
+            {secondaryAddress ? <Text style={styles.help} numberOfLines={2}>{secondaryAddress}</Text> : null}
+            {nearPlace ? <Text style={styles.help}>Your map point, not the place entrance.</Text> : null}
+            {selectedFeature ? <Text style={styles.help}>{selectedFeature.mapped?.kind === 'street' ? 'Selected point on mapped street' : 'Selected place · mapped point'}</Text> : null}
+          </View>
+        </View> : <Text style={styles.selectedTitle}>Find a service location</Text>}
+          {note ? <AppNotice variant="warning" message={note} /> : null}
+          {searchOpen && searching && ownerMatches(queryOwner) ? <ActivityIndicator accessibilityLabel="Searching locations" /> : null}
+          {searchOpen && searchUnavailable && ownerMatches(queryOwner) ? (
             <View>
               <AppNotice message="Search unavailable. Retry search or choose on the map." />
               <AppButton label="Retry search" variant="ghost" onPress={retrySearch}
                 disabled={busy || visibleSearchQuery.trim().length < LOCATION_SEARCH_MIN_LENGTH} />
             </View>
           ) : null}
-          {visibleSuggestions.map((item) => (
+          {searchOpen && visibleSuggestions.map((item) => (
             <Pressable key={`${item.label}:${item.pin.latitude}:${item.pin.longitude}`}
-              style={styles.searchRow} onPress={() => { if (displayedSearchScope?.isCurrent()) moveToCandidate(item.pin); }}
+              style={styles.searchRow} onPress={() => { if (displayedSearchScope?.isCurrent()) { closeSearch(); moveToCandidate(item.pin, { origin: 'search', feature: { label: item.label.split(',')[0], pin: item.pin, source: 'search' } }); } }}
               accessibilityRole="button" accessibilityLabel={`Search result ${item.label}`}>
-              <Text style={styles.nearbyLabel}>{item.label}</Text>
+              <AppSymbol name={{ android: 'search', ios: 'magnifyingglass' }} size={20} tintColor={colors.textSecondary} />
+              <View style={styles.rowCopy}><Text style={styles.nearbyLabel}>{item.label}</Text><Text style={styles.help}>Move map to this place</Text></View>
             </Pressable>
           ))}
-          {visibleRecents.length > 0 ? (
-            <View style={styles.nearbyBlock} accessibilityLabel="Recent locations">
-              <View style={styles.recentHeader}>
-                <Text style={styles.nearbyTitle}>Recent</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel="Clear recent locations"
-                  onPress={() => clearRecents(displayedRecentScope)}>
-                  <Text style={styles.clearText}>Clear</Text>
-                </Pressable>
-              </View>
-              {visibleRecents.map((item) => (
-                <Pressable key={`${item.timestamp}:${item.pin.latitude}:${item.pin.longitude}`}
-                  style={styles.searchRow} onPress={() => { if (displayedRecentScope?.isCurrent()) moveToCandidate(item.pin); }}
-                  accessibilityRole="button" accessibilityLabel={`Recent location ${item.address}`}>
-                  <Text style={styles.nearbyLabel}>{item.address}</Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
-          {clearRecentsError && ownerMatches(recentOwner) ? (
+          {!searchOpen && (snapKind || canReturnToPoint) ? (
             <View>
-              <AppNotice message="Couldn't clear saved recents. Try again." />
-              <AppButton label="Retry clear" variant="ghost" onPress={() => clearRecents(displayedRecentScope)} disabled={busy} />
-            </View>
-          ) : null}
-          <View style={styles.addressCard} accessibilityLabel="Selected location address">
-            <Text style={styles.addressText}>{addressCopy}</Text>
-          </View>
-          {snapKind ? (
-            <View>
-              <AppNotice variant="success" message={snapKind === 'building' ? 'Snapped to nearby building' : 'Nearby mapped place detected'} />
+              {snapKind && selectedFeature ? <AppNotice variant="success" message={`Adjusted to ${selectedFeature.label}`} /> : null}
               <AppButton label="Use exact pin instead" variant="ghost" onPress={useExactPin} disabled={busy || moving} />
             </View>
           ) : null}
-          {nearby.length > 0 ? (
-            <View style={styles.nearbyBlock} accessibilityLabel="Nearby mapped features">
-              <Text style={styles.nearbyTitle}>Nearby</Text>
-              {nearby.map((item) => (
-                <Pressable key={`${item.label}:${item.pin.latitude}:${item.pin.longitude}`}
-                  style={styles.nearbyRow} onPress={() => selectNearby(item)}
+          {alternatives.length > 0 ? (
+            <View style={styles.nearbyBlock} accessibilityLabel="Nearby landmarks">
+              <Text style={styles.nearbyTitle}>Nearby landmarks</Text>
+              {alternatives.map((item) => (
+                <Pressable key={item.id}
+                  style={styles.nearbyRow} onPress={() => { closeSearch(); selectNearby(item); }}
                   accessibilityRole="button" accessibilityLabel={`Move map to ${item.label}`}>
-                  <Text style={styles.nearbyLabel}>{item.label}</Text>
-                  <Text style={styles.nearbyDistance}>Nearby mapped place</Text>
+                  <View style={styles.candidateIcon}><AppSymbol name={placeIcon(item.category)} size={22} tintColor={colors.accent} /></View>
+                  <View style={styles.rowCopy}><Text style={styles.nearbyLabel}>{item.label}</Text>
+                    <Text style={styles.nearbyDistance}>Choose this mapped place</Text></View>
                 </Pressable>
               ))}
             </View>
@@ -611,24 +795,50 @@ export function JobLocationPicker({
           ) : null}
           {permission && permission !== 'granted' ? (
             <View>
-              <AppNotice message="Device location is optional. You can choose and confirm a location by moving the map." />
+              <Text style={styles.help}>Device location is optional. Move the map or search to choose a location.</Text>
               <AppButton label={permission === 'settings' ? 'Open settings' : 'Enable current location'}
+                variant="ghost"
                 onPress={() => { if (permission === 'settings') void Linking.openSettings().catch(() => onNote('Unable to open Settings. Open Android app settings manually.')); else void handleUseCurrentLocation(); }} disabled={busy || moving} />
             </View>
           ) : null}
-          {note ? <AppNotice variant="warning" message={note} /> : null}
+          {searchOpen && visibleRecents.length > 0 ? (
+            <View style={styles.nearbyBlock} accessibilityLabel="Recent locations">
+              <View style={styles.recentHeader}>
+                <Text style={styles.nearbyTitle}>Recent</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel="Clear recent locations"
+                  onPress={() => clearRecents(displayedRecentScope)}>
+                  <Text style={styles.clearText}>Clear</Text>
+                </Pressable>
+              </View>
+              {visibleRecents.map((item) => (
+                <Pressable key={`${item.timestamp}:${item.pin.latitude}:${item.pin.longitude}`}
+                  style={styles.searchRow} onPress={() => { if (displayedRecentScope?.isCurrent()) { closeSearch(); moveToCandidate(item.pin, { origin: 'recent' }); } }}
+                  accessibilityRole="button" accessibilityLabel={`Recent location ${item.address}`}>
+                  <AppSymbol name={{ android: 'history', ios: 'clock' }} size={20} tintColor={colors.textSecondary} />
+                  <View style={styles.rowCopy}><Text style={styles.nearbyLabel}>{item.address}</Text><Text style={styles.help}>Recent service location</Text></View>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+          {searchOpen && clearRecentsError && ownerMatches(recentOwner) ? (
+            <View>
+              <AppNotice message="Couldn't clear saved recents. Try again." />
+              <AppButton label="Retry clear" variant="ghost" onPress={() => clearRecents(displayedRecentScope)} disabled={busy} />
+            </View>
+          ) : null}
+
         </ScrollView>
-        <AppButton
-          label="Choose this location"
+        {!searchOpen ? <AppButton
+          label="Confirm location"
           variant="primary"
           disabled={busy || moving || checkingSnap || mapAvailable !== 'ready' || selectionState.status !== 'ready' || !ownerMatches(selectedOwner)}
           onPress={() => {
             if (movingRef.current || !selectedOwner?.scope.isCurrent() ||
-              selectedScope.current !== selectedOwner.scope || selectionGeneration.current !== selectedOwner.generation) return;
+              selectedScope.current !== selectedOwner.scope || selection.snapshot().generation !== selectedOwner.generation) return;
             const confirmed = selection.confirm();
-            if (confirmed) onConfirm(confirmed);
+            if (confirmed) { lookupEpoch.current += 1; onConfirm(confirmed); }
           }}
-        />
+        /> : null}
       </View>
     </View>
   );
@@ -636,12 +846,14 @@ export function JobLocationPicker({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
-  destination: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.accent, borderWidth: 4, borderColor: colors.onAccent, elevation: 4 },
-  centerPinOverlay: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+  centerPinOverlay: { position: 'absolute', left: '50%', top: '50%', width: 56, height: 76, transform: [{ translateX: -28 }, { translateY: -(34 + 15 + 15 * Math.SQRT2) }] },
+  pinHead: { position: 'absolute', top: 0, left: 4, width: 48, height: 48, borderRadius: 24, backgroundColor: colors.accent, borderWidth: 3, borderColor: colors.surface, alignItems: 'center', justifyContent: 'center', elevation: 6 },
+  pinCenter: { width: 16, height: 16, borderRadius: 8, backgroundColor: colors.onAccent },
+  pinTip: { position: 'absolute', top: 34, left: 13, width: 30, height: 30, backgroundColor: colors.accent, transform: [{ rotate: '45deg' }] },
+  pinShadow: { position: 'absolute', bottom: 2, left: 17, width: 22, height: 8, borderRadius: 11, backgroundColor: colors.accent, opacity: 0.18 },
   loading: { ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center' },
   mapFrame: {
-    flex: 1,
-    minHeight: 200,
+    position: 'absolute', top: 0, right: 0, bottom: 0, left: 0,
     overflow: 'hidden',
     backgroundColor: colors.surfaceSunken,
   },
@@ -669,6 +881,7 @@ const styles = StyleSheet.create({
   backControl: { left: spacing.gutter },
   currentControl: { right: spacing.gutter, bottom: spacing.lg },
   sheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
     borderTopLeftRadius: radius.card,
     borderTopRightRadius: radius.card,
     backgroundColor: colors.surface,
@@ -683,24 +896,31 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: colors.hairline,
   },
-  sheetBody: { flexShrink: 1 },
+  sheetBody: { flexShrink: 1, minHeight: 0 },
   sheetContent: { gap: spacing.sm, paddingBottom: spacing.sm },
-  sheetTitle: { ...type.screenTitle, color: colors.textPrimary },
-  addressCard: {
-    borderRadius: radius.control,
-    backgroundColor: colors.surfaceSunken,
-    padding: spacing.md,
-  },
-  addressText: { ...type.bodyEmphasis, color: colors.textPrimary },
+  selectedRow: { minHeight: 112, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, borderRadius: radius.control, backgroundColor: colors.accentSubtle },
+  selectedIcon: { width: 48, height: 48, borderRadius: radius.control, backgroundColor: colors.surfaceSunken, alignItems: 'center', justifyContent: 'center' },
+  selectedCopy: { flex: 1, gap: spacing.xs },
+  selectedCaption: { ...type.helper, color: colors.textSecondary },
+  selectedTitle: { ...type.sectionTitle, color: colors.textPrimary },
+  addressText: { ...type.sectionTitle, color: colors.textPrimary },
+  help: { ...type.helper, color: colors.textSecondary },
+  rowCopy: { flex: 1, gap: spacing.xs },
+  topSearch: { position: 'absolute', left: spacing.gutter + 60, right: spacing.gutter, alignItems: 'flex-end', elevation: 5 },
+  searchAffordance: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.surface },
+  pinLabel: { position: 'absolute', alignSelf: 'center', maxWidth: 230, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radius.control, backgroundColor: colors.surface, elevation: 3 },
+  pinLabelText: { ...type.bodyEmphasis, color: colors.textPrimary, textAlign: 'center' },
   searchInput: {
+    width: '100%',
     minHeight: 48,
     borderRadius: radius.control,
-    backgroundColor: colors.surfaceSunken,
+    backgroundColor: colors.surface,
     color: colors.textPrimary,
     paddingHorizontal: spacing.md,
     ...type.body,
   },
   searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     minHeight: SkillMatchTheme.ui.size.minTarget,
     justifyContent: 'center',
     paddingVertical: spacing.sm,
@@ -708,14 +928,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   recentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  clearText: { ...type.helper, color: colors.accent },
+  clearText: { ...type.helper, color: colors.accent, minHeight: 48, textAlignVertical: 'center', paddingHorizontal: spacing.sm },
   nearbyBlock: { gap: spacing.xs },
   nearbyTitle: { ...type.bodyEmphasis, color: colors.accent },
   nearbyRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    minHeight: 48,
     paddingVertical: spacing.sm,
     borderBottomColor: colors.hairline,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   nearbyLabel: { ...type.bodyEmphasis, color: colors.textPrimary },
   nearbyDistance: { ...type.helper, color: colors.textSecondary },
+  candidateMarkerTarget: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+  candidateMarker: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.accent, elevation: 2 },
+  candidateIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSubtle },
 });

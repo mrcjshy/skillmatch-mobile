@@ -58,7 +58,8 @@ function harness() {
       { 'react/jsx-runtime': { jsx, jsxs: jsx } }, { AppButton, styles: styles(file), ...context });
     return { props: result.element.props, control: AppButton(result.element.props) };
   };
-  const faqInteraction = () => {
+  // Mounts the real FAQ screen. Elements stay unrendered, as React passes them.
+  const mountFaq = (headerHeight = 0) => {
     const state: any[] = [];
     let cursor = 0;
     const useState = (initial: any) => {
@@ -68,11 +69,19 @@ function harness() {
         state[index] = typeof next === 'function' ? next(state[index]) : next;
       }];
     };
+    // Refs persist across renders by call order, as React keeps them.
+    const refs: any[] = [];
+    const useRef = (initial: any) => {
+      const index = cursor++;
+      if (!(index in refs)) refs[index] = { current: initial };
+      return refs[index];
+    };
     const knowledge = compile(read('src/lib/faq.ts'));
     const { default: FaqChatbot } = compile(read('src/components/faq-chatbot.tsx'), {
-      react: { useState },
-      'react-native': { ...native, View: 'View', ScrollView: 'ScrollView' },
+      react: { useState, useRef },
+      'react-native': { ...native, View: 'View', ScrollView: 'ScrollView', KeyboardAvoidingView: 'KeyboardAvoidingView' },
       'react/jsx-runtime': { jsx, jsxs: jsx },
+      'expo-router/react-navigation': { useHeaderHeight: () => headerHeight },
       '@/constants/theme': theme, '@/lib/faq': knowledge,
       '@/components/app-button': { AppButton },
       '@/components/app-chip': { AppChip: 'AppChip' },
@@ -87,6 +96,15 @@ function harness() {
         return find(tree.props?.children, predicate);
       }
     };
+    const findAll = (tree: any, predicate: (element: any) => boolean): any[] => {
+      if (Array.isArray(tree)) return tree.flatMap(child => findAll(child, predicate));
+      if (!tree || typeof tree !== 'object') return [];
+      return [...(predicate(tree) ? [tree] : []), ...findAll(tree.props?.children, predicate)];
+    };
+    return { knowledge, render, find, findAll };
+  };
+  const faqInteraction = () => {
+    const { knowledge, render, find } = mountFaq();
     const initial = render();
     const topic = find(initial, element => element.type === 'Pressable');
     expect(topic).toBeDefined();
@@ -104,7 +122,7 @@ function harness() {
       parentStyle: flatten(parent.props.style),
       ui: theme.SkillMatchTheme.ui };
   };
-  return { styles, button, faqInteraction, size: theme.SkillMatchTheme.ui.size };
+  return { styles, button, faqInteraction, mountFaq, ui: theme.SkillMatchTheme.ui, size: theme.SkillMatchTheme.ui.size };
 }
 const booking = 'src/components/booking-chat.tsx';
 const faq = 'src/components/faq-chatbot.tsx';
@@ -167,6 +185,166 @@ describe('FAQ presentation-only Ask compatibility', () => {
     const styles = harness().styles(faq);
     expect(styles.composerField.minWidth).toBe(52);
     expect(styles.composerField.flex).toBe(1);
+  });
+});
+
+describe('FAQ composer placeholder at large text (V8-05 P1)', () => {
+  // The old 36-character example wrapped inside the single-line search field at 130% text and
+  // its second line was clipped. At 130% on a 360dp-wide phone the field leaves about 217dp for
+  // text, about 21 body characters, so the approved placeholder must stay within that budget.
+  const PLACEHOLDER_BUDGET = 20;
+  it('passes the approved short placeholder to the real composer field', () => {
+    const { knowledge, render, find } = harness().mountFaq();
+    expect(knowledge.FAQ_COPY.placeholder).toBe('Magtanong dito…');
+    expect(Array.from(knowledge.FAQ_COPY.placeholder as string).length).toBeLessThanOrEqual(PLACEHOLDER_BUDGET);
+    const field = find(render(), (element: any) => element.type === 'AppField');
+    expect(field.props.placeholder).toBe(knowledge.FAQ_COPY.placeholder);
+    expect(field.props.accessibilityLabel).toBe(knowledge.FAQ_COPY.inputLabel);
+    expect(field.props.variant).toBe('search');
+  });
+  it('leaves font scaling on and the field free to grow', () => {
+    const h = harness();
+    const { render, find } = h.mountFaq();
+    const field = find(render(), (element: any) => element.type === 'AppField');
+    expect(field.props.allowFontScaling).not.toBe(false);
+    expect(field.props.maxFontSizeMultiplier).toBeUndefined();
+    expect(field.props.numberOfLines).toBeUndefined();
+    expect(flatten(field.props.style).height).toBeUndefined();
+    expect(flatten(field.props.inputStyle).height).toBeUndefined();
+    expect(h.styles(faq).composerField.height).toBeUndefined();
+    const input = h.styles('src/components/app-field.tsx');
+    expect(input.search.minHeight).toBe(h.size.searchHeight);
+    for (const style of [input.input, input.search]) {
+      expect(style.height).toBeUndefined();
+      expect(style.maxHeight).toBeUndefined();
+    }
+  });
+});
+
+describe('FAQ quick-topic touch targets (V8-05 P1)', () => {
+  const topics = () => {
+    const h = harness();
+    const { knowledge, render, findAll } = h.mountFaq();
+    const pressables = findAll(render(), (element: any) => element.type === 'Pressable');
+    return { h, knowledge, pressables };
+  };
+  it('keeps every topic, in order, as a named button wrapping its visual chip', () => {
+    const { knowledge, pressables } = topics();
+    expect(pressables.map(p => p.props.accessibilityLabel))
+      .toEqual(knowledge.QUICK_TOPICS.map((t: Props) => `${knowledge.FAQ_COPY.quickTopics}: ${t.label}`));
+    for (const [index, pressable] of pressables.entries()) {
+      expect(pressable.props.accessibilityRole).toBe('button');
+      expect(pressable.props.children.type).toBe('AppChip');
+      expect(pressable.props.children.props.label).toBe(knowledge.QUICK_TOPICS[index].label);
+    }
+  });
+  it('builds a 48dp target into each Pressable instead of extending past it', () => {
+    const { h, pressables } = topics();
+    for (const pressable of pressables) {
+      expect(pressable.props.hitSlop).toBeUndefined();
+      const resting = flatten(pressable.props.style({ pressed: false }));
+      const pressed = flatten(pressable.props.style({ pressed: true }));
+      for (const target of [resting, pressed]) {
+        expect(target.minHeight).toBeGreaterThanOrEqual(h.size.minTarget);
+        expect(target.minWidth).toBeGreaterThanOrEqual(h.size.minTarget);
+        expect(target.height).toBeUndefined();
+        expect(target).toMatchObject({ alignItems: 'center', justifyContent: 'center' });
+      }
+      expect(pressed.opacity).toBeLessThan(1);
+      expect({ ...pressed, opacity: undefined }).toEqual({ ...resting, opacity: undefined });
+    }
+  });
+  it('lays wrapped rows out with no overlapping targets at 100%, 130% and 200% text', () => {
+    const { h, pressables } = topics();
+    const { ui, size } = h;
+    const row = h.styles(faq).topicRow;
+    const chip = h.styles('src/components/app-chip.tsx').base;
+    const target = flatten(pressables[0].props.style({ pressed: false }));
+    const rowGap = row.rowGap ?? row.gap ?? 0;
+    const columnGap = row.columnGap ?? row.gap ?? 0;
+    const slop = { top: 0, bottom: 0, left: 0, right: 0, ...pressables[0].props.hitSlop };
+    expect(row).toMatchObject({ flexDirection: 'row', flexWrap: 'wrap' });
+    for (const scale of [1, 1.3, 2]) {
+      const chipHeight = Math.max(chip.minHeight, ui.type.badge.lineHeight * scale + 2 * chip.paddingVertical);
+      const targetHeight = Math.max(target.minHeight, chipHeight);
+      expect(targetHeight, `scale ${scale}`).toBeGreaterThanOrEqual(size.minTarget);
+      expect(chipHeight, `scale ${scale}`).toBeLessThanOrEqual(targetHeight);
+      // Row 1 touch area ends at targetHeight + bottom slop; row 2 starts at targetHeight + rowGap - top slop.
+      const overlap = (targetHeight + slop.bottom) - (targetHeight + rowGap - slop.top);
+      expect(overlap, `scale ${scale}`).toBeLessThanOrEqual(0);
+    }
+    expect(slop.right + slop.left - columnGap).toBeLessThanOrEqual(0);
+    // Visual chip spacing is kept between neighbours in a row.
+    expect(columnGap).toBe(ui.spacing.sm);
+  });
+});
+
+describe('FAQ keyboard avoidance (V8-05D)', () => {
+  // Edge-to-edge Android does not resize the window for the keyboard, so the screen pads itself
+  // by the keyboard height less the native header it sits under, as Booking Chat does.
+  it('pads the whole screen for the keyboard, offset by the real native header height', () => {
+    for (const headerHeight of [80, 112]) {
+      const root = harness().mountFaq(headerHeight).render();
+      expect(root.type).toBe('KeyboardAvoidingView');
+      expect(root.props.behavior).toBe('padding');
+      expect(root.props.keyboardVerticalOffset).toBe(headerHeight);
+      expect(flatten(root.props.style).flex).toBe(1);
+    }
+  });
+  it('keeps the transcript flexible and the field and Ask last inside the avoiding container', () => {
+    const h = harness();
+    const { render, find } = h.mountFaq(80);
+    const children = [render().props.children].flat().filter(Boolean);
+    const [transcript, , composer] = children;
+    expect(children).toHaveLength(3);
+    expect(transcript.type).toBe('ScrollView');
+    expect(flatten(transcript.props.style).flex).toBe(1);
+    expect(transcript.props.keyboardShouldPersistTaps).toBe('handled');
+    // A second inset adjustment on top of the padding would double the keyboard gap.
+    expect(transcript.props.automaticallyAdjustKeyboardInsets).toBeUndefined();
+    expect(find(composer, (element: any) => element.type === 'AppField')).toBeDefined();
+    expect(find(composer, (element: any) => element.props?.label === 'Ask')).toBeDefined();
+  });
+  it('keeps the entered question and the conversation through re-renders and Ask', () => {
+    const { render, find } = harness().mountFaq(80);
+    const field = () => find(render(), (element: any) => element.type === 'AppField');
+    field().props.onChangeText('Paano mag-apply?');
+    expect(render().type).toBe('KeyboardAvoidingView');
+    expect(field().props.value).toBe('Paano mag-apply?');
+    const ask = find(render(), (element: any) => element.props?.label === 'Ask');
+    expect(ask.props.disabled).toBe(false);
+    ask.props.onPress();
+    const tree = render();
+    expect(tree.type).toBe('KeyboardAvoidingView');
+    expect(find(tree, (element: any) => element.type === 'Text' && element.props.children === 'Paano mag-apply?')).toBeDefined();
+    expect(field().props.value).toBe('');
+  });
+  it('reveals each newly asked question once and leaves older lines alone for backreading', () => {
+    const { render, find, findAll } = harness().mountFaq(80);
+    const scrollTo = vi.fn();
+    const transcript = () => find(render(), (element: any) => element.type === 'ScrollView');
+    transcript().props.ref.current = { scrollTo };
+    const askText = (value: string) => {
+      find(render(), (element: any) => element.type === 'AppField').props.onChangeText(value);
+      find(render(), (element: any) => element.props?.label === 'Ask').props.onPress();
+    };
+    const userLines = () => findAll(render(), (element: any) => element.type === 'View' && typeof element.props.onLayout === 'function');
+    askText('Paano mag-apply?');
+    expect(userLines()).toHaveLength(1);
+    userLines()[0].props.onLayout({ nativeEvent: { layout: { y: 400 } } });
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo.mock.calls[0][0].y).toBeLessThanOrEqual(400);
+    expect(scrollTo.mock.calls[0][0].y).toBeGreaterThan(350);
+    // Re-layout of an already revealed line (keyboard, font change) never re-scrolls.
+    userLines()[0].props.onLayout({ nativeEvent: { layout: { y: 400 } } });
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    askText('How do I get paid?');
+    const lines = userLines();
+    expect(lines).toHaveLength(2);
+    lines[0].props.onLayout({ nativeEvent: { layout: { y: 400 } } });
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    lines[1].props.onLayout({ nativeEvent: { layout: { y: 900 } } });
+    expect(scrollTo).toHaveBeenCalledTimes(2);
   });
 });
 

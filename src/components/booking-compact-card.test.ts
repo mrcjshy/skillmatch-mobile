@@ -81,6 +81,15 @@ function fixture(role: string, status = 'confirmed', changes: Props = {}): Props
     job_address: '123 Eksaktong Kalye na Dapat Hindi Makita', job_barangay: area.split(', ')[0], job_city: 'Santa Ana Pampanga', job_budget: 987654321.75,
     ...(role === 'worker' ? { client_user_id: 'client-1', client_full_name: longName, client_phone: 'private-phone' } : { worker_user_id: 'worker-1', worker_full_name: longName, worker_phone: 'private-phone', worker_barangay: 'private-area', worker_skills: ['Plumbing'], worker_is_verified: true, worker_rating_avg: 4.9, worker_rating_count: 20 }), ...changes };
 }
+it('uses compact booking padding while retaining readable targets and horizontal gutters', () => {
+  const row = BookingCompactCard({ role: 'worker', booking: fixture('worker'), onPress() {} });
+  expect(flat(row.props.style({ pressed: false }))).toMatchObject({ paddingVertical: 12, paddingHorizontal: 12, minHeight: 56 });
+  const list = callerStyles('src/components/my-bookings-list.tsx');
+  expect(flat(list.content)).toMatchObject({ padding: 20, paddingTop: 12, gap: 12 });
+  expect(text(row)).toContain(title); expect(text(row)).toContain(longName);
+  expect(text(row)).not.toContain('private-phone'); expect(text(row)).not.toContain('123 Eksaktong');
+});
+
 it('retains full supplied summary text, real dates and callback in a wrapping row', () => {
   for (const role of ['worker', 'client']) {
     let calls = 0; const onPress = () => { calls++; };

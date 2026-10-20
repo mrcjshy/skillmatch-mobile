@@ -28,6 +28,7 @@ const FIELD_TYPES = ['AppField', 'PasswordField'];
  * auth-screen.test.ts.
  */
 function harness() {
+  const dismiss = vi.fn(), scrollToEnd = vi.fn(), focusField = vi.fn((ref: { current: { focus?: () => void } | null }) => ref.current?.focus?.());
   const signUp = vi.fn(async (_payload: unknown): Promise<{ error: null | { message: string } }> => ({ error: null }));
   const replace = vi.fn();
   const state: unknown[] = [];
@@ -51,13 +52,13 @@ function harness() {
       },
     },
     'react/jsx-runtime': { jsx, jsxs: jsx },
-    'react-native': { View: 'View', StyleSheet: { create: (styles: unknown) => styles } },
+    'react-native': { View: 'View', Keyboard: { dismiss }, StyleSheet: { create: (styles: unknown) => styles } },
     'expo-router': { useRouter: () => ({ replace }) },
     '@/components/refinement-theme': { useUiTheme: () => SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: Props) => children },
     '@/components/app-button': host('AppButton'),
     '@/components/app-divider': host('AppDivider'),
     '@/components/app-field': host('AppField'),
-    '@/components/auth-screen': { ...host('AuthScreen', 'AuthSection', 'AuthLink'), useAuthScroll: () => ({ scrollRef: { current: null }, focusField: (ref: { current: { focus?: () => void } | null }) => ref.current?.focus?.() }) },
+    '@/components/auth-screen': { ...host('AuthScreen', 'AuthSection', 'AuthLink'), useAuthScroll: () => ({ scrollRef: { current: { scrollToEnd } }, focusField }) },
     '@/components/consent-check': host('ConsentCheck'),
     '@/components/form-message': host('FormMessage'),
     '@/components/password-field': host('PasswordField'),
@@ -95,12 +96,25 @@ function harness() {
       ...nodes(tree).filter(node => FIELD_TYPES.includes(node.type as string)).map(node => node.props.errorText),
     ].filter(Boolean);
   };
-  return { render, choose, fill, consent, consents, field, fields, submit, messages, signUp, replace };
+  return { render, choose, fill, consent, consents, field, fields, submit, messages, signUp, replace, dismiss, scrollToEnd, focusField };
 }
 
 const titles = (tree: Element) => nodes(tree).filter(node => node.type === 'AuthSection').map(node => node.props.title);
 
 describe('role-specific registration refinement with inert auth', () => {
+  it('Next advances each field and Done exposes consent without submitting or accepting it', () => {
+    const h = harness(); h.choose('Worker');
+    const fields = h.fields();
+    fields.slice(0, -1).forEach((field, index) => {
+      expect(field.props.returnKeyType).toBe('next');
+      (field.props.onSubmitEditing as () => void)();
+      expect(h.focusField).toHaveBeenLastCalledWith(fields[index + 1].props.inputRef);
+    });
+    (fields.at(-1)!.props.onSubmitEditing as () => void)();
+    expect(h.dismiss).toHaveBeenCalledOnce(); expect(h.scrollToEnd).toHaveBeenCalledWith({ animated: true });
+    expect(h.consents().every(node => !node.props.checked)).toBe(true);
+    expect(h.signUp).not.toHaveBeenCalled();
+  });
   it('asks for the role first and shows no form, consent or create action until one is chosen', () => {
     const h = harness();
     const tree = h.render(), flat = nodes(tree);

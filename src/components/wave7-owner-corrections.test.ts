@@ -122,7 +122,7 @@ describe('W7-C1 Client central Post a job action', () => {
     const layout = source('src/app/(client)/(tabs)/_layout.tsx');
     for (const name of ['client/index', 'client/jobs', 'client/bookings', 'client/profile']) expect(layout).toContain(`name="${name}"`);
     expect(layout).toContain("router.push('/client/post-job' as Href)");
-    expect(layout).toContain('const postDisabled = isLoading || !!loadError || isPosting || !isOwnerCurrent();');
+    // Owner and posting readiness are exercised through the real layout in role-navigation-ui.test.ts.
     expect(layout).toContain('<ClientTabBar');
     // Post a job is not a route: no placeholder tab, no hidden href.
     expect(layout).not.toMatch(/href:\s*null|name="client\/post/);

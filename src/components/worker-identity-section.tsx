@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -54,6 +54,10 @@ export function WorkerIdentitySection({
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [resubmitOpen, setResubmitOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const pickingRef = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   const load = useCallback(async (run: { cancelled: boolean }) => {
     try {
@@ -85,7 +89,7 @@ export function WorkerIdentitySection({
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const status = submission?.status ?? null;
-  const locked = status === 'approved' || status === 'pending' || submitting || disabled;
+  const locked = status === 'approved' || status === 'pending' || submitting || picking || disabled;
   const canResubmit = canResubmitIdentity(status);
   const showForm = shouldShowWorkerIdentityForm({
     surface,
@@ -97,21 +101,24 @@ export function WorkerIdentitySection({
     surface === 'profile' ? identityProfileStatusLabel(status) : identityStatusLabel(status);
 
   async function handlePickImage() {
-    if (locked || !canResubmit) return;
+    if (locked || !canResubmit || pickingRef.current) return;
+    pickingRef.current = true;
+    setPicking(true);
     setError(null);
     setSuccess(null);
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setError(IDENTITY_COPY.invalidImage);
-      return;
-    }
     try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!mounted.current) return;
+      if (!permission.granted) {
+        setError('Allow photo access to choose your ID image, or update photo permissions in Settings.');
+        return;
+      }
       const picked = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsMultipleSelection: false,
         allowsEditing: false,
       });
-      if (picked.canceled) return;
+      if (!mounted.current || picked.canceled) return;
       const uri = picked.assets[0]?.uri;
       if (typeof uri !== 'string' || uri.length === 0) {
         setError(IDENTITY_COPY.invalidImage);
@@ -119,7 +126,10 @@ export function WorkerIdentitySection({
       }
       setImageUri(uri);
     } catch {
-      setError(IDENTITY_COPY.invalidImage);
+      if (mounted.current) setError(IDENTITY_COPY.invalidImage);
+    } finally {
+      pickingRef.current = false;
+      if (mounted.current) setPicking(false);
     }
   }
 
@@ -218,7 +228,8 @@ export function WorkerIdentitySection({
                 </Text>
                 <AppButton
                   variant="secondary"
-                  label={imageUri ? 'Change ID photo' : 'Choose ID photo'}
+                    label={picking ? 'Opening photo picker…' : imageUri ? 'Change ID photo' : 'Choose ID photo'}
+                    loading={picking}
                   onPress={() => {
                     void handlePickImage();
                   }}

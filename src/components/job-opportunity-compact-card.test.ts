@@ -73,6 +73,16 @@ const title = 'Pagkukumpuni ng bubong at paglalagay ng ligtas na kable para sa t
 const description = '  Kailangan ng masusing serbisyo sa pagkukumpuni ng malaking tahanan, paglilinis ng bubong at pagsusuri ng mga linya ng kuryente para sa kaligtasan ng buong pamilya. '.repeat(3);
 const skill = 'Pagkukumpuni ng bubong at masusing elektrikal na serbisyo';
 const opportunity = { job_id:'job-opportunity-1', title, description, barangay:'Barangay San Isidro Labrador na may mahabang pangalan', city:'Santa Ana Pampanga', budget:987654321.75, scheduled_at:timestamp, skill_points:50, location_points:30, rating_points:12.5, total_points:92.5, payment_method:'cod' };
+it('compacts opportunity padding while retaining the full scalable summary and touch target', () => {
+  const row = JobOpportunityCompactCard({ opportunity, compact: true, onPress() {} });
+  expect(flat(row.props.style({ pressed: false }))).toMatchObject({ paddingVertical: 12, paddingHorizontal: 12, minHeight: 56 });
+  expect(text(row)).toContain(title); expect(text(row)).toContain('Match Score: 92.5/100');
+  for (const label of all(row, 'Text')) {
+    expect(label.props.numberOfLines).toBeUndefined();
+    expect(label.props.allowFontScaling).not.toBe(false);
+  }
+});
+
 it('preserves full formatter output and callback in a wrapping row that reads title, skill, area, schedule, budget, match', () => {
   let calls=0; const onPress=()=>{calls++;};
   const tree=JobOpportunityCompactCard({ opportunity, primarySkillName:skill, onPress });
@@ -119,7 +129,9 @@ it('preserves server order and separate missing optional-data cases without inve
 it('lists every Home opportunity as a compact row on Home itself, with no overlay and no truncated preview', () => {
     const source = readFileSync('src/app/(worker)/(tabs)/worker/index.tsx', 'utf8');
     expect(source).not.toContain('FindWorkOverlay');
-    expect(source).not.toMatch(/<Modal|AppSheet/);
+    expect(source).not.toMatch(/<Modal/);
+    const sortSheet = source.slice(source.indexOf('<AppSheet'), source.indexOf('</AppSheet>'));
+    expect(sortSheet).not.toMatch(/JobOpportunityCompactCard|FlatList/);
     expect(source).not.toContain('opportunities.slice');
     expect(source).toMatch(/<JobOpportunityCompactCard\s+compact/);
   });

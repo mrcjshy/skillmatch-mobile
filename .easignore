@@ -35,7 +35,6 @@ yarn-error.*
 
 # local env files
 .env*
-!.env.example
 
 # typescript
 *.tsbuildinfo
@@ -50,3 +49,12 @@ example
 visual-reset-06/
 tests/e2e/
 .e2e/
+
+# Compatibility-build archive: ship app inputs, not local test/evidence tooling
+/docs/
+/tests/
+/.vscode/
+/e2e.runtime.config.mjs
+/vitest.config.cjs
+/vitest.setup.cjs
+**/*.test.*

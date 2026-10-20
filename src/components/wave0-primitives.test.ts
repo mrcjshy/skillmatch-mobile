@@ -97,6 +97,8 @@ describe('AppSheet', () => {
     const rn = {
       ...native,
       AccessibilityInfo: { isReduceMotionEnabled: () => Promise.resolve(reduced) },
+      Keyboard: { metrics: () => undefined, addListener: () => ({ remove: vi.fn() }) },
+      PanResponder: { create: () => ({ panHandlers: {} }) },
       Animated: { Value, timing, View: 'Animated.View' },
       Easing: { bezier: (...points: number[]) => ({ bezier: points }) },
       useWindowDimensions: () => ({ width: 360, height: 800 }),
@@ -104,12 +106,15 @@ describe('AppSheet', () => {
     const react = {
       useState: (initial: any) => { const i = cursor++; if (!(i in state)) state[i] = typeof initial === 'function' ? initial() : initial; return [state[i], (v: any) => { state[i] = v; }]; },
       useEffect: (fn: () => any) => { effects.push(fn); },
+      useRef: (value: any) => ({ current: value }),
+      useMemo: (fn: () => any) => fn(),
     };
     const sheet = compile('src/components/app-sheet.tsx', {
       ...seams, react, 'react-native': rn,
       'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24, bottom: 34 }) },
       '@/components/app-icon-button': iconButton,
       '@/constants/motion': compile('src/constants/motion.ts', {}),
+      '@/hooks/use-reduced-motion': { useReducedMotion: () => reduced },
     });
     const render = (v: boolean, props: Props = {}) => { cursor = 0; effects.length = 0; return sheet.AppSheet({ visible: v, onClose: vi.fn(), title: 'Work status', ...props }); };
     return { render: (v = visible, props = extra) => render(v, props), effects, timing };

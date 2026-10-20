@@ -14,6 +14,8 @@ type AppSegmentProps<T extends string> = {
   value: T;
   onChange: (value: T) => void;
   disabled?: boolean;
+  /** Give long labels their natural width; wrap whole options on narrow windows. */
+  contentSized?: boolean;
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 };
@@ -23,6 +25,7 @@ export function AppSegment<T extends string>({
   value,
   onChange,
   disabled = false,
+  contentSized = false,
   accessibilityLabel,
   style,
 }: AppSegmentProps<T>) {
@@ -33,7 +36,7 @@ export function AppSegment<T extends string>({
     <View
       accessibilityRole="radiogroup"
       accessibilityLabel={accessibilityLabel}
-      style={[styles.track, style]}
+      style={[styles.track, contentSized && styles.trackContentSized, style]}
     >
       {options.map((option) => {
         const selected = option.value === value;
@@ -47,6 +50,7 @@ export function AppSegment<T extends string>({
             onPress={() => onChange(option.value)}
             style={({ pressed }) => [
               styles.option,
+              contentSized && styles.optionContentSized,
               selected ? styles.optionSelected : null,
               pressed && !disabled ? styles.optionPressed : null,
               disabled ? styles.optionDisabled : null,
@@ -85,6 +89,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  trackContentSized: { flexWrap: 'wrap', gap: spacing.xs, borderRadius: radius.control },
+  optionContentSized: { flex: 0, flexBasis: 'auto', flexGrow: 1, flexShrink: 0, maxWidth: '100%', borderRadius: radius.control },
   optionSelected: {
     backgroundColor: colors.surface,
     borderColor: colors.accent,

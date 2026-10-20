@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import * as Linking from 'expo-linking';
 
 import { AppButton } from '@/components/app-button';
+import { MapPinLabel } from '@/components/map-pin-label';
 import {
   WorkerJobLocationMapLibre,
 } from '@/components/worker-job-location-map';
@@ -44,7 +45,8 @@ class MapErrorBoundary extends Component<
   }
 }
 
-function StaticJobMap({
+/** Shared read-only preview; callers must supply a currently authorized stored pin. */
+export function StaticJobMap({
   pin,
   accessibilityLabel,
 }: {
@@ -97,8 +99,8 @@ function StaticJobMap({
           accessibilityLabel={accessibilityLabel}
         >
           <Camera initialViewState={{ center: pinToLngLat(pin), zoom: 16, bearing: 0, pitch: 0 }} />
-          <Marker lngLat={pinToLngLat(pin)} accessibilityLabel="Authorized job pin">
-            <View style={styles.destination} />
+          <Marker lngLat={pinToLngLat(pin)} anchor="bottom" accessibilityLabel="Authorized job pin">
+            <MapPinLabel kind="destination" label="Job location" />
           </Marker>
         </Map>
         {!loaded ? <View style={styles.loading}><ActivityIndicator accessibilityLabel="Loading job location map" /></View> : null}
@@ -128,11 +130,14 @@ export function WorkerAssignedJobLocation({
   mapsNote,
   onOpenMaps,
   allowNavigation = true,
+  showMap = true,
 }: {
   surface: WorkerLocationSurface;
   mapsNote: string | null;
   onOpenMaps: () => void;
   allowNavigation?: boolean;
+  /** False where the booking's inline live map already shows this destination (no second map). */
+  showMap?: boolean;
 }) {
   const ui = useUiTheme();
   const { styles } = createStyles(ui);
@@ -166,7 +171,7 @@ export function WorkerAssignedJobLocation({
         <Text style={styles.exactHeading}>Job location</Text>
         {surface.address ? <Text style={styles.exactAddress}>{surface.address}</Text> : null}
         {areaLine ? <Text style={styles.exactArea}>{areaLine}</Text> : null}
-        {surface.showMap ? (
+        {!showMap ? null : surface.showMap ? (
           <StaticJobMap
             key={`${surface.pin.longitude}:${surface.pin.latitude}`}
             pin={surface.pin}
@@ -208,7 +213,6 @@ export async function openWorkerMapsUrl(url: string | null): Promise<boolean> {
 function createStyles(ui: UiTheme) {
   const { colors, type, spacing, radius } = ui;
 const styles = StyleSheet.create({
-  destination: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.accent, borderWidth: 3, borderColor: colors.onAccent },
   loading: { ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center' },
   block: {
     gap: spacing.sm,

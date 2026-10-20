@@ -1,6 +1,7 @@
 import { Component, useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
+import { MapPinLabel } from '@/components/map-pin-label';
 import { SkillMatchTheme } from '@/constants/theme';
 import { type JobPin } from '@/lib/job-location';
 
@@ -72,8 +73,8 @@ function JobMap({ pin }: { pin: JobPin }) {
         onDidFinishRenderingMapFully={() => setLoaded(true)}
       >
         <Camera initialViewState={{ center: [pin.longitude, pin.latitude], zoom: 16, bearing: 0, pitch: 0 }} />
-        <Marker lngLat={[pin.longitude, pin.latitude]} accessibilityLabel="Exact job destination">
-          <View style={styles.destination} />
+        <Marker lngLat={[pin.longitude, pin.latitude]} anchor="bottom" accessibilityLabel="Exact job destination">
+          <MapPinLabel kind="destination" label="Job location" />
         </Marker>
       </Map>
       {!loaded ? (
@@ -94,7 +95,6 @@ export function WorkerJobLocationMapLibre({ pin }: { pin: JobPin }) {
 }
 
 const styles = StyleSheet.create({
-  destination: { width: 20, height: 20, borderRadius: 10, backgroundColor: SkillMatchTheme.ui.colors.accent, borderWidth: 3, borderColor: SkillMatchTheme.ui.colors.onAccent },
   frame: {
     height: 180,
     borderRadius: SkillMatchTheme.ui.radius.sm,

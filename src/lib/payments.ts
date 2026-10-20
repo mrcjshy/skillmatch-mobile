@@ -37,7 +37,7 @@
  * mark anything paid, because neither call exists.
  */
 
-import type { JobPaymentMethod } from './job-payment';
+import { QRPH_TEST_LABEL, type JobPaymentMethod } from './job-payment';
 import { supabase } from './supabase';
 
 /** The values `bookings_payment_method_check` permits. `cod` and `qrph` are
@@ -168,10 +168,12 @@ export function isPaid(p: BookingPayment | undefined): boolean {
  * one place the two vocabularies meet.
  */
 const METHOD_LABEL: Record<PaymentMethod, string> = {
-  cod: 'Cash payment',
-  gcash: 'GCash',
-  maya: 'Maya',
-  qrph: 'QR Ph',
+  cod: 'Cash',
+  // Schema-retained values no SkillMatch screen offers. Labelled, not hidden,
+  // so a historical row reads as what it is instead of as Cash or an error.
+  gcash: 'GCash (legacy, not offered)',
+  maya: 'Maya (legacy, not offered)',
+  qrph: QRPH_TEST_LABEL,
 };
 
 export function formatPaymentMethod(method: PaymentMethod | null): string | null {
@@ -244,7 +246,7 @@ export const COPY = {
    *  `notSelected`, which explains an absent control rather than inviting
    *  a choice the Worker is not allowed to make. */
   chooseMethod: 'Choose a payment method.',
-  selectQrph: 'QR Ph',
+  selectQrph: QRPH_TEST_LABEL,
   starting: 'Starting…',
   showQr: 'Show or refresh QR',
   refreshingQr: 'Refreshing…',
@@ -253,8 +255,8 @@ export const COPY = {
   checking: 'Checking…',
   /** Method-specific on purpose: never the cash wording. */
   awaitingQrphClient: 'Status: Awaiting payment confirmation',
-  awaitingQrphWorker: 'Awaiting QR Ph payment confirmation.',
-  paidQrph: 'Status: Paid — QR Ph',
+  awaitingQrphWorker: 'Awaiting QR Ph TEST MODE payment confirmation.',
+  paidQrph: `Status: Paid — ${QRPH_TEST_LABEL}`,
   /** Neutral, not an error: reconciliation answered, it is simply not settled. */
   stillPending: 'Payment is still pending.',
   testModeTitle: 'Test mode',
@@ -316,21 +318,24 @@ function toStatus(v: unknown): PaymentStatus | null {
 }
 
 /**
- * An unrecognised value maps to null rather than being rendered verbatim, so a
- * widened CHECK constraint could never surface a raw database token in the UI.
- * A null method genuinely means "not chosen"; a null status is only reachable
- * from malformed data and is treated as not-payable by every predicate above.
+ * A NON-NULL value this module does not recognise drops the whole row, so the
+ * caller sees "payment state unavailable" and every payment/lifecycle action
+ * fails closed. Mapping it to null instead would read as "not chosen" -- which
+ * offers method selection and cancellation -- and a raw token is never
+ * rendered. A genuine null method means "not chosen"; a null status is legacy
+ * or malformed data and is treated as not-payable by every predicate above.
+ * Neither is ever shown as Cash or as paid.
  */
 function toBookingPayment(row: unknown): BookingPayment | null {
   if (typeof row !== 'object' || row === null) return null;
   const r = row as Record<string, unknown>;
   const id = typeof r.id === 'string' ? r.id : null;
   if (id === null) return null;
-  return {
-    id,
-    payment_method: toMethod(r.payment_method),
-    payment_status: toStatus(r.payment_status),
-  };
+  const method = toMethod(r.payment_method);
+  const status = toStatus(r.payment_status);
+  if (method === null && r.payment_method != null) return null;
+  if (status === null && r.payment_status != null) return null;
+  return { id, payment_method: method, payment_status: status };
 }
 
 /* ------------------------------------------------------------------ *

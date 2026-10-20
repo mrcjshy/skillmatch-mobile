@@ -192,7 +192,8 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     backgroundColor: colors.canvas,
     padding: spacing.gutter,
-    gap: spacing.lg,
+    paddingTop: spacing.md,
+    gap: spacing.md,
     paddingBottom: spacing.xxxxl,
   },
 });

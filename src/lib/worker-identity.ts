@@ -415,15 +415,59 @@ export async function submitMyValidIdImage(input: {
     p_storage_path: storagePath,
   });
   if (submitted.error) {
-    await supabase.storage.from(WORKER_IDENTITY_BUCKET).remove([storagePath]);
+    // The submit may have committed even though its response was lost. Resolve from the
+    // persisted submission before any cleanup; only a definitive rejection that the read
+    // confirms may remove the object this attempt uploaded.
+    const reconciled = await reconcileIdentitySubmission(storagePath);
+    if (reconciled.outcome === 'committed') return reconciled.submission;
+    if (reconciled.outcome === 'not_committed' && isDefinitiveServerRejection(submitted.error)) {
+      await supabase.storage.from(WORKER_IDENTITY_BUCKET).remove([storagePath]);
+    }
     throwIdentityError(submitted.error, IDENTITY_COPY.submitFailed);
   }
 
   const row = parseIdentitySubmissionResult(submitted.data);
-  if (row === null) {
-    throw new WorkerIdentityError(IDENTITY_COPY.submitFailed, null);
-  }
-  return row;
+  if (row !== null) return row;
+  const reconciled = await reconcileIdentitySubmission(storagePath);
+  if (reconciled.outcome === 'committed') return reconciled.submission;
+  throw new WorkerIdentityError(IDENTITY_COPY.submitFailed, null);
+}
+
+/**
+ * A Postgres/PostgREST code means the server answered and the submit transaction did not
+ * commit. Transport failures (lost response, timeout, abort) carry no code: outcome unknown.
+ */
+function isDefinitiveServerRejection(error: { code?: string | null }): boolean {
+  return typeof error.code === 'string' && error.code.length > 0;
+}
+
+type IdentitySubmissionReconciliation =
+  | { outcome: 'committed'; submission: WorkerIdentitySubmission }
+  | { outcome: 'not_committed' }
+  | { outcome: 'unknown' };
+
+/** Reads the caller's current submission and checks whether it is this attempt's object. */
+async function reconcileIdentitySubmission(
+  storagePath: string
+): Promise<IdentitySubmissionReconciliation> {
+  const result = await supabase.rpc('get_my_identity_submission');
+  if (result.error) return { outcome: 'unknown' };
+  const rows = Array.isArray(result.data)
+    ? result.data
+    : result.data !== null && result.data !== undefined
+      ? [result.data]
+      : [];
+  if (rows.length === 0) return { outcome: 'not_committed' };
+  const current: unknown = rows[0];
+  const submission = parseIdentitySubmission(current);
+  const currentPath =
+    typeof current === 'object' && current !== null
+      ? (current as { storage_path?: unknown }).storage_path
+      : undefined;
+  if (submission === null || typeof currentPath !== 'string') return { outcome: 'unknown' };
+  return currentPath === storagePath
+    ? { outcome: 'committed', submission }
+    : { outcome: 'not_committed' };
 }
 
 export async function listWorkersPendingIdReview(): Promise<PendingIdentityReview[]> {

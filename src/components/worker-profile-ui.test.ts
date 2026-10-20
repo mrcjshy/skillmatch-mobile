@@ -38,7 +38,7 @@ function harness() {
       'expo-router': { useRouter: () => ({ push }), useFocusEffect: (fn: () => void) => effects.push(fn) }, 'expo-image-picker': { requestMediaLibraryPermissionsAsync: vi.fn(), launchImageLibraryAsync: vi.fn() }, 'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) },
       '@/constants/theme': { SkillMatchTheme }, '@/lib/skill-catalog': catalog, '@/lib/worker-profile': profileHelpers,
       '@/lib/portfolio': { PORTFOLIO_PATH: '/worker/portfolio' }, '@/lib/sign-out': { signOutCurrentUser: signOut },
-      '@/providers/account-provider': { useAccount: () => ({ account }) }, '@/providers/worker-profile-provider': { useWorkerProfile: () => profile, PROFICIENCY_OPTIONS: [{ value: 'expert', label: 'Expert' }] },
+      '@/providers/account-provider': { useAccount: () => ({ account }) }, '@/providers/worker-profile-provider': { useWorkerProfile: () => profile, PROFICIENCY_OPTIONS: [{ value: 'beginner', label: 'Beginner' }, { value: 'intermediate', label: 'Intermediate' }, { value: 'expert', label: 'Expert' }] },
       '@/lib/worker-profile-photo': { getWorkerProfilePhoto: photoRead },
       '@/lib/worker-identity': { ...identityHelpers, getMyIdentitySubmission: vi.fn(async () => ({ id: 'id-1', status: 'approved', idType: 'national_id', submittedAt: '2026-09-24T08:16:42Z', rejectionReason: null })) }, '@/lib/date-time': dates, '@/components/worker-profile-photo-picker': inert('WorkerProfilePhotoPicker'), '@/components/initials-avatar': inert('InitialsAvatar'),
     };
@@ -138,15 +138,16 @@ describe('Worker Profile overview and deliberate editing', () => {
     expect(visibleNodes(tree).filter(n => String(n.props.accessibilityLabel ?? '').startsWith('Phone:'))).toHaveLength(0);
     expect(visibleNodes(tree).filter(n => String(n.props.accessibilityLabel ?? '').startsWith('Email:'))).toHaveLength(0);
   });
-  it('keeps identity and work overview primary while every original destination remains reachable', () => {
+  it('keeps profile and portfolio maintenance without resume or Skill Gap actions', () => {
     const h = harness(); let tree = h.render(); const values = texts(tree);
-    const titles = ['Edit profile', 'Work skills', 'About me', 'Professional identity', 'Account and support'];
+    const titles = ['Edit profile', 'Work skills', 'About me', 'Portfolio', 'Account and support'];
     for (const title of titles) expect(values).toContain(title);
     for (let i = 1; i < titles.length; i++) expect(values.indexOf(titles[i - 1])).toBeLessThan(values.indexOf(titles[i]));
     expect(values).toContain('Alexandra Maria Santos Dela Cruz with a long family name');
     expect(action(tree, 'Availability')).toBeUndefined();
     expect(action(tree, 'Verification')).toBeUndefined();
-    expect(action(tree, 'Resume builder')).toBeDefined();
+    expect(action(tree, 'Resume builder')).toBeUndefined();
+    expect(action(tree, 'Skill guidance')).toBeUndefined();
     expect(values).toContain('Long work experience description');
     expect(action(tree, 'View portfolio')).toBeDefined();
     // Editing stays behind its own disclosure; nothing else on the profile is hidden.
@@ -160,8 +161,26 @@ describe('Worker Profile overview and deliberate editing', () => {
     expect(values).not.toContain('About Me');
     for (const node of nodes(tree).filter(n => n.type === 'Text')) expect(node.props.numberOfLines).toBeUndefined();
     expect(visibleNodes(tree).filter(n => n.type === 'Pressable' && (n.props.accessibilityState as Props | undefined)?.expanded !== undefined).map(n => n.props.accessibilityLabel)).toEqual(['Edit profile']);
-    for (const [label, path] of [['View portfolio', '/worker/portfolio'], ['Resume builder', '/worker/resume'], ['Skill guidance', '/worker/skill-gap'], ['Help and FAQ', '/worker/help'], ['My reports', '/worker/my-reports'], ['Report an app issue', '/worker/report-app'], ['Terms and conditions', '/worker/terms'], ['Privacy policy', '/worker/privacy']]) { (action(tree, label).props.onPress as () => void)(); expect(h.push).toHaveBeenLastCalledWith(path); }
+    for (const [label, path] of [['View portfolio', '/worker/portfolio'], ['Help and FAQ', '/worker/help'], ['My reports', '/worker/my-reports'], ['Report an app issue', '/worker/report-app'], ['Terms and conditions', '/worker/terms'], ['Privacy policy', '/worker/privacy']]) { (action(tree, label).props.onPress as () => void)(); expect(h.push).toHaveBeenLastCalledWith(path); }
     expect(h.handleSave).not.toHaveBeenCalled();
+  });
+  it.each([1, 1.3])('uses content-sized proficiency controls at font scale %s without saving the staged selection', fontScale => {
+    const h = harness(); h.setFontScale(fontScale);
+    const tree = open(h, 'Edit profile');
+    (action(tree, 'Manage skills').props.onPress as () => void)();
+    const radios = () => nodes(h.render()).filter(n => n.props.accessibilityRole === 'radio');
+    expect(radios().map(n => n.props.accessibilityLabel)).toEqual(['Beginner', 'Intermediate', 'Expert']);
+    expect(radios().map(n => (n.props.accessibilityState as Props).selected)).toEqual([false, false, true]);
+    for (const radio of radios()) {
+      expect(style(radio)).toMatchObject({ flexBasis: 'auto', flexShrink: 0 });
+      expect(style(radio).minHeight).toBeGreaterThanOrEqual(48);
+    }
+    (radios()[1].props.onPress as () => void)();
+    expect(radios().map(n => (n.props.accessibilityState as Props).selected)).toEqual([false, true, false]);
+    expect(h.profile.selection).toEqual({ one: 'expert' });
+    expect(h.handleSave).not.toHaveBeenCalled(); expect(h.alert).not.toHaveBeenCalled();
+    (action(h.render(), 'Cancel').props.onPress as () => void)();
+    expect(h.profile.selection).toEqual({ one: 'expert' }); expect(h.handleSave).not.toHaveBeenCalled();
   });
   it('keeps bio callback and save, and cancels only the copied skill draft', async () => {
     const h = harness(); const tree = open(h, 'Edit profile');
@@ -183,7 +202,7 @@ describe('Worker Profile overview and deliberate editing', () => {
     for (const pressed of [false, true]) assertReadableTree(h.render(), pressed);
     h.profile.isSaving = true; const tree = h.render();
     for (const pressed of [false, true]) assertReadableTree(tree, pressed);
-    for (const label of ['Manage skills', 'Resume builder', 'Sign out']) expect(action(tree, label).props.disabled).toBe(true);
+    for (const label of ['Manage skills', 'View portfolio', 'Sign out']) expect(action(tree, label).props.disabled).toBe(true);
   });
   it('blocks profile saves while the existing availability update is pending', () => {
     const h = harness(); h.profile.isPersistingAvailability = true; const tree = open(h, 'Edit profile');

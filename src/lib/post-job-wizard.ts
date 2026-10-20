@@ -10,11 +10,11 @@ export type PostJobWizardValidation = {
 };
 
 export function validatePostJobWizardStep(step: PostJobWizardStep, validation: PostJobWizardValidation): string | null {
-  if (step === 1) {
+  if (step === 1) return validation.locationError;
+  if (step === 2) {
     if (!validation.hasPrimarySkill) return 'Please select at least one required skill.';
     return validation.descriptionError;
   }
-  if (step === 2) return validation.locationError;
   if (step === 3) {
     return validation.scheduleError ?? validation.budgetError ?? validation.paymentError;
   }

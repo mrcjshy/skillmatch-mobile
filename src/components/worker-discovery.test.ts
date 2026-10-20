@@ -58,6 +58,15 @@ function all(tree: any): any[] {
 const home = 'src/app/(worker)/(tabs)/worker/index.tsx';
 const rows = [{ job_id: 'ranked-first', title: 'A complete long opportunity name', total_points: 91 }, { job_id: 'ranked-tie', title: 'Second tied record', total_points: 91 }];
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+const sortButton = (h: ReturnType<typeof harness>) => all(h.render()).find(x => x.type === 'AppButton' && x.props.label?.startsWith('Sort by: '));
+const sortSheet = (h: ReturnType<typeof harness>) => all(h.render()).find(x => x.type === 'AppSheet' && x.props.title === 'Sort by');
+function chooseSort(h: ReturnType<typeof harness>, label: string) {
+  sortButton(h).props.onPress();
+  expect(sortSheet(h).props.visible).toBe(true);
+  const choice = all(sortSheet(h)).find(x => x.type === 'RadioRow' && x.props.label === label);
+  expect(choice).toBeDefined(); choice.props.onPress();
+  expect(sortSheet(h).props.visible).toBe(false);
+}
 function leaf(file: string): P {
   const exports: P = {};
   const require = (id: string): any => {
@@ -108,10 +117,13 @@ it('Home keeps name and status in the sticky header above the list and renders e
   expect(nodes.indexOf(header)).toBeLessThan(nodes.indexOf(list));
   const lead = all(list.props.ListHeaderComponent);
   expect(lead.some(x => x.type === 'HomeStickyHeader' || x.type === 'AvailabilityControl')).toBe(false);
-  // Active work rides in the sticky header (compact, with View all to the Active list), not the scroller.
-  expect(lead.filter(x => x.type === 'ActiveBookingHomeCard')).toHaveLength(0);
-  const active = all(header).find(x => x.type === 'ActiveBookingHomeCard');
-  expect(active.props).toMatchObject({ role: 'worker', compact: true });
+  // Active work is a screen-local sibling below the scrolling viewport.
+  expect(all(header).some(x => x.type === 'ActiveBookingHomeDock')).toBe(false);
+  expect(lead.filter(x => x.type === 'ActiveBookingHomeDock')).toHaveLength(0);
+  const active = nodes.find(x => x.type === 'ActiveBookingHomeDock');
+  expect(active).toBeDefined();
+  expect(nodes.indexOf(active)).toBeGreaterThan(nodes.indexOf(list));
+  expect(active.props).toMatchObject({ role: 'worker' });
   active.props.onPressViewAll();
   expect(h.navigation.at(-1)).toEqual({ pathname: '/worker/bookings', params: { segment: 'active' } });
   active.props.onPressPrimary({ booking_id: 'b-1' });
@@ -120,7 +132,8 @@ it('Home keeps name and status in the sticky header above the list and renders e
   expect(all(header).find(x => x.type === 'SectionHeader').props.title).toBe('Available jobs');
   // Server order is kept and every job is listed; there is no entry button, overlay or modal.
   expect(list.props.data.map((x: P) => x.job_id)).toEqual(['ranked-first', 'ranked-tie', 'ranked-first', 'ranked-tie']);
-  expect(nodes.some(x => x.type === 'FindWorkOverlay' || x.type === 'Modal' || x.type === 'AppButton')).toBe(false);
+  expect(nodes.some(x => x.type === 'FindWorkOverlay' || x.type === 'Modal')).toBe(false);
+  expect(nodes.filter(x => x.type === 'AppButton').map(x => x.props.label)).toEqual(['Sort by: Best match']);
   const card = all(list.props.renderItem({ item: rows[0], index: 0 })).find(x => x.type === 'JobOpportunityCompactCard');
   expect(card.props.compact).toBe(true); expect(card.props.opportunity).toBe(rows[0]);
   card.props.onPress();
@@ -197,7 +210,7 @@ it('Home hides already-loaded booking/opportunity content before passive cleanup
   const h = harness(home);
   h.states.splice(0, 6, false, null, rows, [{ booking_id: 'private-booking' }], null, true);
   const list = () => all(h.render()).find(x => x.type === 'FlatList');
-  const booking = () => all(all(h.render()).find(x => x.type === 'HomeStickyHeader')).find(x => x.type === 'ActiveBookingHomeCard').props.bookings;
+  const booking = () => all(h.render()).find(x => x.type === 'ActiveBookingHomeDock').props.bookings;
   expect(list().props.data).toHaveLength(2); expect(booking()).toHaveLength(1);
   h.account.id = 'new-worker';
   expect(list().props.data).toHaveLength(0);
@@ -296,27 +309,58 @@ it('Wave 7: Home offers Sort by (Best match, Job date, Date posted) and only reo
   const h = harness(home, { '@/lib/worker-opportunity-sort': sortModule({ best: '2026-09-01T00:00:00Z', soon: '2026-09-03T00:00:00Z', past: '2026-09-02T00:00:00Z' }) });
   h.states.splice(0, 6, false, null, dated, [], null, true);
   const list = () => all(h.render()).find(x => x.type === 'FlatList');
-  const control = () => all(h.render()).find(x => x.type === 'AppSegment');
   const ids = () => list().props.data.map((x: P) => x.job_id);
   // Default keeps the server ranking exactly as received.
-  expect(control().props).toMatchObject({ accessibilityLabel: 'Sort by', value: 'match' });
-  expect(control().props.options.map((x: P) => x.label)).toEqual(['Best match', 'Job date', 'Date posted']);
+  expect(sortButton(h).props).toMatchObject({ accessibilityLabel: 'Sort by: Best match', expanded: false });
+  expect(all(sortSheet(h)).filter(x => x.type === 'RadioRow').map(x => x.props.label)).toEqual(['Best match', 'Job date', 'Date posted']);
   expect(ids()).toEqual(['best', 'soon', 'past', 'unscheduled']);
-  control().props.onChange('jobDate');
+  chooseSort(h, 'Job date');
   expect(ids()).toEqual(['soon', 'best', 'past', 'unscheduled']);
-  control().props.onChange('posted');
+  chooseSort(h, 'Date posted');
+  expect(sortButton(h).props.label).toBe('Sort by: Date posted');
   h.render(); await h.effects.at(-1)(); await flush();
   expect(ids()).toEqual(['soon', 'past', 'best', 'unscheduled']);
   // The same rows every time: nothing added, dropped or re-scored.
   expect([...list().props.data].sort((a: P, b: P) => b.total_points - a.total_points)).toEqual(dated);
 });
 
+it('offers one compact sort disclosure and closes without changing order when dismissed', () => {
+  const h = harness(home); h.states.splice(0, 6, false, null, rows, [], null, true);
+  const button = sortButton(h);
+  expect(button).toBeDefined(); expect(button.props.variant).toBe('secondary');
+  expect(all(h.render()).filter(x => x.type === 'AppSegment')).toHaveLength(0);
+  expect(sortSheet(h).props.visible).toBe(false);
+  button.props.onPress(); expect(sortButton(h).props.expanded).toBe(true);
+  expect(sortSheet(h).props.visible).toBe(true);
+  const choices = all(sortSheet(h)).filter(x => x.type === 'RadioRow');
+  expect(choices.map(x => x.props.selected)).toEqual([true, false, false]);
+  expect(all(sortSheet(h)).find(x => x.props.accessibilityRole === 'radiogroup').props.accessibilityLabel).toBe('Sort by');
+  sortSheet(h).props.onClose(); expect(sortSheet(h).props.visible).toBe(false);
+  expect(sortButton(h).props.label).toBe('Sort by: Best match');
+  expect(all(h.render()).find(x => x.type === 'FlatList').props.data).toEqual(rows);
+  expect(h.navigation).toEqual([]);
+});
+
+it.each(['zero', 'one', 'loading', 'error'])('keeps the sort sheet closed when jobs return after %s hides an open disclosure', kind => {
+  const h = harness(home); h.states.splice(0, 6, false, null, rows, [], null, true);
+  chooseSort(h, 'Job date'); sortButton(h).props.onPress();
+  expect(sortSheet(h).props.visible).toBe(true);
+  if (kind === 'zero') h.states[2] = [];
+  if (kind === 'one') h.states[2] = [rows[0]];
+  if (kind === 'loading') h.states[0] = true;
+  if (kind === 'error') h.states[1] = 'Read failed';
+  expect(sortSheet(h).props.visible).toBe(false);
+  h.states[0] = false; h.states[1] = null; h.states[2] = rows;
+  expect(sortSheet(h).props.visible).toBe(false);
+  expect(sortButton(h).props).toMatchObject({ label: 'Sort by: Job date', expanded: false });
+});
+
 it('Wave 7: Sort by is hidden for zero or one job, so empty states stay as they were', () => {
   const h = harness(home); h.states.splice(0, 6, false, null, [rows[0]], [], null, true);
-  expect(all(h.render()).some(x => x.type === 'AppSegment')).toBe(false);
+  expect(sortButton(h)).toBeUndefined(); expect(sortSheet(h).props.visible).toBe(false);
   h.states[2] = [];
   const list = all(h.render()).find(x => x.type === 'FlatList');
-  expect(all(h.render()).some(x => x.type === 'AppSegment')).toBe(false);
+  expect(sortButton(h)).toBeUndefined(); expect(sortSheet(h).props.visible).toBe(false);
   expect(all(list.props.ListEmptyComponent).find(x => x.type === 'InlineStatus').props.variant).toBe('empty');
 });
 
@@ -341,18 +385,17 @@ it('UI-L1: pulling the job list refreshes its rows and finishes while keeping th
   const cleanups = h.focuses.slice(0, 2).map(fn => fn());
   await flush();
   const list = () => all(h.render()).find(x => x.type === 'FlatList');
-  const sort = () => all(h.render()).find(x => x.type === 'AppSegment');
   expect(list().props.data.map((row: P) => row.job_id)).toEqual(['later', 'soon']);
-  sort().props.onChange('jobDate');
+  chooseSort(h, 'Job date');
   list().props.refreshControl.props.onRefresh();
   expect(list().props.refreshControl.props.refreshing).toBe(true);
-  expect(sort().props.value).toBe('jobDate');
+  expect(sortButton(h).props.label).toBe('Sort by: Job date');
   expect(list().props.data.map((row: P) => row.job_id)).toEqual(['soon', 'later']);
   release([...initial, { job_id: 'earliest', title: 'New work', scheduled_at: '2098-12-01T00:00:00Z', total_points: 80 }]);
   await flush();
   expect(list().props.refreshControl.props.refreshing).toBe(false);
   expect(list().props.data.map((row: P) => row.job_id)).toEqual(['earliest', 'soon', 'later']);
-  expect(sort().props.value).toBe('jobDate');
+  expect(sortButton(h).props.label).toBe('Sort by: Job date');
   cleanups.forEach(cleanup => cleanup?.());
 });
 
@@ -372,7 +415,7 @@ it('Motion: rows reveal by id in display order, sorting glides the same rows, an
   expect(row.props.entering).toEqual({ entering: 'best' });
   expect(all(row).find(x => x.type === 'JobOpportunityCompactCard').props.opportunity).toBe(dated[0]);
   // Changing the sort hands the same ids, in the new order, to the reveal (a reorder, not an arrival).
-  all(h.render()).find(x => x.type === 'AppSegment').props.onChange('jobDate');
+  chooseSort(h, 'Job date');
   list();
   expect(revealIds.at(-1)).toEqual(['soon', 'best']);
   expect([...revealIds.at(-1)!].sort()).toEqual([...revealIds.at(-2)!].sort());

@@ -41,9 +41,9 @@ describe('phone verification', () => {
   it('uses the existing-user phone change contract', async () => {
     const updateUser = vi.fn().mockResolvedValue({ error: null });
     const verifyOtp = vi.fn().mockResolvedValue({ error: null });
-    await expect(requestPhoneChangeOtp({ updateUser }, '0917 123 4567')).resolves.toBe(true);
+    await expect(requestPhoneChangeOtp({ updateUser }, '0917 123 4567')).resolves.toBe('sent');
     expect(updateUser).toHaveBeenCalledWith({ phone: '+639171234567' });
-    await expect(verifyPhoneChangeOtp({ verifyOtp }, '+639171234567', '012345')).resolves.toBe(true);
+    await expect(verifyPhoneChangeOtp({ verifyOtp }, '+639171234567', '012345')).resolves.toBe('verified');
     expect(verifyOtp).toHaveBeenCalledWith({
       phone: '+639171234567',
       token: '012345',
@@ -51,10 +51,37 @@ describe('phone verification', () => {
     });
   });
 
+  it('separates invalid input, rate limits, provider failure and network failure for phone change', async () => {
+    const send = (error: unknown) =>
+      requestPhoneChangeOtp({ updateUser: vi.fn().mockResolvedValue({ error }) }, '09171234567');
+    await expect(requestPhoneChangeOtp({ updateUser: vi.fn() }, '12345')).resolves.toBe('invalid_phone');
+    await expect(send({ status: 429, code: 'over_sms_send_rate_limit' })).resolves.toBe('rate_limited');
+    await expect(send({ status: 500, code: 'sms_send_failed' })).resolves.toBe('provider_failed');
+    await expect(send({ status: 400, code: 'phone_provider_disabled' })).resolves.toBe('unavailable');
+    // A number already linked to another account is not disclosed.
+    await expect(send({ status: 422, code: 'phone_exists' })).resolves.toBe('failed');
+    await expect(
+      requestPhoneChangeOtp({ updateUser: vi.fn().mockRejectedValue(new Error('offline')) }, '09171234567')
+    ).resolves.toBe('failed');
+
+    const verify = (error: unknown) =>
+      verifyPhoneChangeOtp({ verifyOtp: vi.fn().mockResolvedValue({ error }) }, '09171234567', '012345');
+    await expect(verifyPhoneChangeOtp({ verifyOtp: vi.fn() }, '09171234567', '12a456')).resolves.toBe('invalid_code');
+    await expect(verify({ status: 403, code: 'otp_expired' })).resolves.toBe('wrong_or_expired');
+    await expect(verify({ status: 429 })).resolves.toBe('rate_limited');
+    await expect(verify({ status: 500 })).resolves.toBe('failed');
+  });
+
   it('requires a confirmed Auth phone matching registration metadata', () => {
     expect(isAuthPhoneVerifiedForBootstrap({
       registrationPhone: '09171234567',
       authPhone: '+639171234567',
+      phoneConfirmedAt: '2026-09-29T00:00:00Z',
+    })).toBe(true);
+    // Supabase Auth stores and returns the phone without the leading plus sign.
+    expect(isAuthPhoneVerifiedForBootstrap({
+      registrationPhone: '+639171234567',
+      authPhone: '639171234567',
       phoneConfirmedAt: '2026-09-29T00:00:00Z',
     })).toBe(true);
     expect(isAuthPhoneVerifiedForBootstrap({

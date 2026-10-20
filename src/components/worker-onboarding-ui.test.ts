@@ -71,10 +71,13 @@ function routingModule() {
     'react/jsx-runtime': { jsx, jsxs: jsx },
     'expo-router': { Stack },
     '@/components/state-screen': { StateScreen: 'StateScreen' },
+    '@/components/session-reconnecting-screen': { SessionReconnectingScreen: 'SessionReconnectingScreen' },
     tamagui: { TamaguiProvider: 'TamaguiProvider' },
     '../../tamagui.config': { tamaguiConfig: {} },
     '@/components/push-notification-inbox-intent': { PushNotificationInboxIntent: 'Push' },
     '@/components/incoming-message-banner-host': { IncomingMessageBannerHost: 'Banner' },
+    '@/components/location-stop-host': { LocationStopHost: 'LocationStopHost' },
+    '@/components/incoming-call-host': { IncomingCallHost: 'IncomingCall' },
     '@/lib/auth-recovery': {
       isRecoverySurfaceActive: (status: string) => status === 'active',
     },

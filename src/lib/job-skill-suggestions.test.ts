@@ -92,7 +92,7 @@ describe('optional normalized PNG classification request', () => {
   it('sends one image through the existing authenticated function adapter', async () => {
     const invoke = vi.fn().mockResolvedValue({ data: response, error: null });
     const request = { mode: 'job_skill_suggestions' as const, description: 'Repair', image };
-    expect(await createJobSkillSuggestionsInvoker({ invoke })(request)).toEqual(response);
+    expect(await createJobSkillSuggestionsInvoker({ invoke }, true)(request)).toEqual(response);
     expect(invoke.mock.calls).toEqual([['skillmatch-ai', { body: request }]]);
   });
 
@@ -360,7 +360,7 @@ describe('explicit freshness-checked Apply', () => {
 describe('transport request rejection', () => {
   it('rejects extra private fields before the existing client is invoked', async () => {
     const invoke = vi.fn().mockResolvedValue({ data: response, error: null });
-    await expect(createJobSkillSuggestionsInvoker({ invoke })({
+    await expect(createJobSkillSuggestionsInvoker({ invoke }, true)({
       mode: 'job_skill_suggestions', description: 'Repair', address: 'private',
     } as never)).rejects.toMatchObject({ kind: 'service_error' });
     expect(invoke).not.toHaveBeenCalled();
@@ -441,7 +441,7 @@ describe('authenticated Supabase invocation seam', () => {
 
   it('uses one existing-client function invocation with the exact minimal body', async () => {
     const invoke = vi.fn().mockResolvedValue({ data: response, error: null });
-    expect(await createJobSkillSuggestionsInvoker({ invoke })(request)).toEqual(response);
+    expect(await createJobSkillSuggestionsInvoker({ invoke }, true)(request)).toEqual(response);
     expect(invoke.mock.calls).toEqual([['skillmatch-ai', { body: request }]]);
   });
 
@@ -451,7 +451,7 @@ describe('authenticated Supabase invocation seam', () => {
     const invoke = vi.fn().mockResolvedValue({ data: null, error: {
       message: 'PRIVATE_PROVIDER_TOKEN', context: new Response('PRIVATE_PROVIDER_TOKEN', { status }),
     } });
-    const error = await createJobSkillSuggestionsInvoker({ invoke })(request).catch((value: unknown) => value);
+    const error = await createJobSkillSuggestionsInvoker({ invoke }, true)(request).catch((value: unknown) => value);
     expect(error).toBeInstanceOf(JobSkillSuggestionsError);
     expect(error).toMatchObject({ kind });
     expect(String(error)).not.toContain('PRIVATE_PROVIDER_TOKEN');
@@ -462,12 +462,12 @@ describe('authenticated Supabase invocation seam', () => {
     const invoke = vi.fn().mockResolvedValue({ data: null, error: {
       context: new Response('{"error":"ai_limit_reached"}', { status: 503 }),
     } });
-    await expect(createJobSkillSuggestionsInvoker({ invoke })(request)).rejects.toMatchObject({ kind: 'rate_limited' });
+    await expect(createJobSkillSuggestionsInvoker({ invoke }, true)(request)).rejects.toMatchObject({ kind: 'rate_limited' });
   });
 
   it('recognizes safe ai_limit_reached data without accepting provider prose', async () => {
     const invoke = vi.fn().mockResolvedValue({ data: { error: 'ai_limit_reached' }, error: null });
-    await expect(createJobSkillSuggestionsInvoker({ invoke })(request)).rejects.toMatchObject({ kind: 'rate_limited' });
+    await expect(createJobSkillSuggestionsInvoker({ invoke }, true)(request)).rejects.toMatchObject({ kind: 'rate_limited' });
   });
 
   it('bounds unknown-length error streams and cancels oversized input', async () => {
@@ -476,13 +476,13 @@ describe('authenticated Supabase invocation seam', () => {
       start(controller) { controller.enqueue(new TextEncoder().encode('x'.repeat(1025))); }, cancel,
     });
     const invoke = vi.fn().mockResolvedValue({ data: null, error: { context: new Response(body, { status: 503 }) } });
-    await expect(createJobSkillSuggestionsInvoker({ invoke })(request)).rejects.toMatchObject({ kind: 'service_error' });
+    await expect(createJobSkillSuggestionsInvoker({ invoke }, true)(request)).rejects.toMatchObject({ kind: 'service_error' });
     expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it('sanitizes rejected transports and makes no silent retry', async () => {
     const invoke = vi.fn().mockRejectedValue(new Error('PRIVATE_PROVIDER_TOKEN'));
-    const error = await createJobSkillSuggestionsInvoker({ invoke })(request).catch((value: unknown) => value);
+    const error = await createJobSkillSuggestionsInvoker({ invoke }, true)(request).catch((value: unknown) => value);
     expect(error).toMatchObject({ kind: 'service_error' });
     expect(String(error)).not.toContain('PRIVATE_PROVIDER_TOKEN');
     expect(invoke).toHaveBeenCalledTimes(1);
@@ -543,5 +543,18 @@ describe('strict current-catalog classification response', () => {
 
   it('revalidates catalog membership before presenting names', () => {
     expect(jobSkillSuggestionLabels(response, [])).toBeNull();
+  });
+});
+
+describe('reconciliation hold', () => {
+  it('blocks description requests before any transport call by default', async () => {
+    const invoke = vi.fn().mockResolvedValue({ data: response, error: null });
+    await expect(createJobSkillSuggestionsInvoker({ invoke })({ mode: 'job_skill_suggestions', description: 'Synthetic repair' })).rejects.toMatchObject({ kind: 'service_error' });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+  it('blocks optional image requests before any transport call by default', async () => {
+    const invoke = vi.fn().mockResolvedValue({ data: response, error: null });
+    await expect(createJobSkillSuggestionsInvoker({ invoke })({ mode: 'job_skill_suggestions', description: 'Synthetic repair', image: { mime_type: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==' } })).rejects.toMatchObject({ kind: 'service_error' });
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

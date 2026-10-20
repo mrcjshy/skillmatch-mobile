@@ -14,6 +14,10 @@ const base = {
   job_barangay: 'Santa Ana',
   job_city: 'Pateros',
   job_budget: 500,
+  cancellation_reason_code: null,
+  cancellation_reason_detail: null,
+  cancelled_by: null,
+  cancelled_at: null,
 } as const;
 
 function workerBooking(jobId: string, bookingId: string): WorkerBooking {

@@ -4,6 +4,7 @@ import {
   assembleClientPortfolioItems,
   isClientPortfolioVisible,
   loadClientBookingPortfolio,
+  type ClientPortfolioDeps,
   resolveClientPortfolioAccess,
   type ClientPortfolioBooking,
 } from './client-portfolio';
@@ -43,6 +44,12 @@ function clientBooking(overrides: Partial<ClientPortfolioBooking> = {}): ClientP
     booking_status: 'confirmed',
     worker_user_id: WORKER_USER_ID,
     worker_full_name: 'Demo Worker',
+    worker_phone: null,
+    worker_barangay: null,
+    worker_skills: ['Carpentry'],
+    worker_is_verified: true,
+    worker_rating_avg: null,
+    worker_rating_count: 0,
     ...overrides,
   };
 }
@@ -326,6 +333,58 @@ describe('loadClientBookingPortfolio', () => {
       'portfolio_items',
       'portfolio_item_images',
     ]);
+  });
+});
+
+describe('combined resume and portfolio authorization', () => {
+  beforeEach(() => { fromMock.mockReset(); storageFromMock.mockReset(); });
+
+  function emptyPortfolio() {
+    queueFrom([
+      { table: 'worker_profiles', result: { data: { id: WORKER_PROFILE_ID }, error: null } },
+      { table: 'portfolio_items', result: { data: [], error: null } },
+    ]);
+  }
+  const missingPhoto = async () => ({ status: 'fallback' as const, reason: 'missing' as const });
+
+  it('automatically includes the latest authorized resume even with no portfolio', async () => {
+    emptyPortfolio();
+    const loadBookings = vi.fn().mockResolvedValueOnce([clientBooking()])
+      .mockResolvedValueOnce([clientBooking({ worker_skills: ['Painting'], worker_full_name: 'Updated Worker' })]);
+    const result = await loadClientBookingPortfolio(BOOKING_ID, { loadBookings, loadProfilePhoto: missingPhoto });
+    expect(result).toMatchObject({ kind: 'ready', workerName: 'Updated Worker', items: [], resume: { fullName: 'Updated Worker', skills: ['Painting'] } });
+    expect(loadBookings).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['completed', 'cancelled', 'pending', 'no_show'] as const)('discards loaded content when the booking becomes %s during the read', async (booking_status) => {
+    emptyPortfolio();
+    const loadBookings = vi.fn().mockResolvedValueOnce([clientBooking()])
+      .mockResolvedValueOnce([clientBooking({ booking_status })]);
+    expect(await loadClientBookingPortfolio(BOOKING_ID, { loadBookings, loadProfilePhoto: missingPhoto })).toEqual({ kind: 'revoked' });
+  });
+
+  it('discards a previous Worker when the final relationship no longer matches', async () => {
+    emptyPortfolio();
+    const loadBookings = vi.fn().mockResolvedValueOnce([clientBooking()])
+      .mockResolvedValueOnce([clientBooking({ worker_user_id: OTHER_WORKER_USER_ID })]);
+    expect(await loadClientBookingPortfolio(BOOKING_ID, { loadBookings, loadProfilePhoto: missingPhoto })).toEqual({ kind: 'unavailable' });
+  });
+
+  it('stops subsequent reads when the originating account or request is invalidated', async () => {
+    let current = true;
+    const deps: ClientPortfolioDeps = {
+      loadBookings: async () => [clientBooking()],
+      loadProfilePhoto: async () => { current = false; return missingPhoto(); },
+      isCurrent: () => current,
+    };
+    expect(await loadClientBookingPortfolio(BOOKING_ID, deps)).toEqual({ kind: 'unavailable' });
+    expect(fromMock).not.toHaveBeenCalled();
+  });
+
+  it('never reads any data for an already invalidated account', async () => {
+    const loadBookings = vi.fn();
+    expect(await loadClientBookingPortfolio(BOOKING_ID, { loadBookings, isCurrent: () => false })).toEqual({ kind: 'unavailable' });
+    expect(loadBookings).not.toHaveBeenCalled();
   });
 });
 

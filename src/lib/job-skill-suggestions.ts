@@ -1,6 +1,9 @@
 import type { CatalogSkill } from './skill-catalog';
 import { validateAiImageInput, type AiImageInput } from './ai-image-input';
 
+// Held until the hosted AI path and product/privacy decisions are reconciled.
+export const JOB_SKILL_SUGGESTIONS_ENABLED = false;
+
 export type JobSkillSuggestion = { skill_id: string; explanation: string; confidence?: number };
 export type JobSkillSuggestionsResponse = {
   mode: 'job_skill_suggestions'; suggestions: JobSkillSuggestion[]; source: 'gemini';
@@ -151,9 +154,13 @@ export type JobSkillSuggestionsInvoke = (request: JobSkillSuggestionsRequest) =>
 export type JobSkillSuggestionsFunctions = {
   invoke(name: string, options: { body: JobSkillSuggestionsRequest }): Promise<{ data: unknown; error: unknown }>;
 };
-export function createJobSkillSuggestionsInvoker(functions: JobSkillSuggestionsFunctions): JobSkillSuggestionsInvoke {
+export function createJobSkillSuggestionsInvoker(
+  functions: JobSkillSuggestionsFunctions,
+  enabled: boolean = JOB_SKILL_SUGGESTIONS_ENABLED,
+): JobSkillSuggestionsInvoke {
   return async (request) => {
     try {
+      if (enabled !== true) throw new JobSkillSuggestionsError('service_error');
       if (!isRecord(request) || !exactKeys(request, ['mode', 'description'], ['image']) ||
           request.mode !== 'job_skill_suggestions') throw new JobSkillSuggestionsError('service_error');
       const body = buildJobSkillSuggestionsRequest(request.description, request.image);

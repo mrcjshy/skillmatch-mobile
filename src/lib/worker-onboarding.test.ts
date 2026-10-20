@@ -339,4 +339,23 @@ describe('Worker onboarding provider refresh races', () => {
       workerOnboardingState: 'rejected',
     });
   });
+
+  // 2026-10-14 standalone APK: returning from the ID photo picker fires AppState 'active', which
+  // refreshes identity. Dropping to 'loading' unmounted the form and discarded the chosen photo.
+  it('a background identity refresh keeps the settled form state until the new read returns', async () => {
+    boundary.identityRow = null;
+    const app = await mountWorker();
+    await until(() => app.value().workerOnboardingState === 'needs-submission');
+    const read = deferredBoundaryResult();
+    boundary.identityResponses.push(read.promise);
+    let refresh!: Promise<void>;
+    await act(async () => { refresh = app.value().refreshIdentity(); });
+    expect(app.value().workerOnboardingState).toBe('needs-submission');
+
+    await act(async () => {
+      read.resolve({ data: rawIdentity('pending'), error: null });
+      await refresh;
+    });
+    expect(app.value().workerOnboardingState).toBe('pending-review');
+  });
 });

@@ -360,6 +360,7 @@ export default function WorkerPortfolio() {
                 accessibilityRole="radio"
                 accessibilityState={{ selected, disabled: busy }}
                 accessibilityLabel={option.label}
+                style={{ minHeight: 48, minWidth: 48, justifyContent: 'center' }}
               >
                 <AppChip label={option.label} variant={selected ? 'selected' : 'neutral'} />
               </Pressable>

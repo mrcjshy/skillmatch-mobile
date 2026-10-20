@@ -1,4 +1,4 @@
-import { AuthError, type Session } from '@supabase/supabase-js';
+import { AuthError, isAuthRetryableFetchError, type Session } from '@supabase/supabase-js';
 import { toByteArray } from 'base64-js';
 import * as Linking from 'expo-linking';
 import {
@@ -40,6 +40,14 @@ export type SessionContextValue = {
   isSessionLoading: boolean;
   /** Set only when session restoration itself failed. Distinct from "no session". */
   sessionError: AuthError | null;
+  /**
+   * True when a stored session could not be restored because Auth was unreachable
+   * (timeout, 5xx). Supabase keeps the stored session and keeps retrying; no session is
+   * exposed, so nothing is authorized, until Auth confirms or rejects it.
+   */
+  isSessionReconnecting?: boolean;
+  /** Re-checks the stored session while reconnecting. A tap during a running check is ignored. */
+  retrySessionRestore?: () => Promise<void>;
   recoveryStatus: RecoveryStatus;
   recoveryUserId: string | null;
   recoveryError: string | null;
@@ -102,6 +110,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isSessionLoading, setIsSessionLoading] = useState(true);
   const [sessionError, setSessionError] = useState<AuthError | null>(null);
+  const [isSessionReconnecting, setIsSessionReconnecting] = useState(false);
   const [recoveryStatus, setRecoveryStatus] = useState<RecoveryStatus>('idle');
   const [recoveryUserId, setRecoveryUserId] = useState<string | null>(null);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
@@ -111,6 +120,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const recoveryUserIdRef = useRef<string | null>(null);
   const lastHandledRecoveryUrlRef = useRef<string | null>(null);
   const handleRecoveryUrlRef = useRef<(url: string) => Promise<void>>(async () => {});
+  const isMountedRef = useRef(false);
+  const isReconnectingRef = useRef(false);
+  const retryInFlightRef = useRef(false);
+
+  const applyReconnecting = useCallback((next: boolean) => {
+    isReconnectingRef.current = next;
+    setIsSessionReconnecting(next);
+  }, []);
 
   const applySession = useCallback((next: Session | null, terminated = false) => {
     lifecycle.replace(next, process.env.EXPO_PUBLIC_SUPABASE_URL, terminated || recoveryStatusRef.current !== 'idle');
@@ -232,15 +249,58 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     handleRecoveryUrlRef.current = handleRecoveryUrl;
   }, [handleRecoveryUrl]);
 
+  /**
+   * Reads the stored session once. A result is dropped if any auth event arrived
+   * meanwhile (the lifecycle revision moved), so a late answer never undoes a newer state.
+   */
+  const restoreStoredSession = useCallback(async (isActive: () => boolean = () => isMountedRef.current) => {
+    const restoringRevision = lifecycle.revision;
+    const { data, error } = await supabase.auth.getSession();
+    if (!isActive() || !lifecycle.isRevisionCurrent(restoringRevision)) return;
+    if (error && isAuthRetryableFetchError(error)) {
+      // Auth unreachable: the stored session is kept and auth-js keeps retrying, so this is
+      // not a sign-out. Nothing is authorized until a refreshed session arrives.
+      setSessionError(null);
+      applyReconnecting(true);
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('[session] Auth unreachable during restore', error.name, error.status);
+      }
+    } else if (error) {
+      applyReconnecting(false);
+      applySession(null);
+      setSessionError(error);
+    } else {
+      applyReconnecting(false);
+      applySession(data.session);
+      setSessionError(null);
+    }
+  }, [applyReconnecting, applySession, lifecycle]);
+
+  const retrySessionRestore = useCallback(async () => {
+    if (retryInFlightRef.current || !isReconnectingRef.current) return;
+    retryInFlightRef.current = true;
+    try {
+      await restoreStoredSession();
+    } finally {
+      retryInFlightRef.current = false;
+    }
+  }, [restoreStoredSession]);
+
   // Initial restoration + auth-state subscription + recovery-link handling.
   useEffect(() => {
     let isMounted = true;
+    isMountedRef.current = true;
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       // Identity/session update only. Ordinary SIGNED_IN never authorizes recovery.
       if (!isMounted) return;
+      // auth-js reports a failed restore (including Auth being unreachable) as
+      // INITIAL_SESSION with no session, the same as "nobody is signed in". The restore
+      // below reads the real outcome, so this ambiguous null must not pre-empt it.
+      if (event === 'INITIAL_SESSION' && nextSession === null) return;
+      applyReconnecting(false);
       applySession(nextSession, event === 'SIGNED_OUT' || event === 'PASSWORD_RECOVERY');
       if (nextSession) setSessionError(null);
 
@@ -281,17 +341,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (initialUrl !== null && isSkillMatchRecoveryDestination(initialUrl)) {
           await handleRecoveryUrlRef.current(initialUrl);
         } else {
-          const restoringRevision = lifecycle.revision;
-          const { data, error } = await supabase.auth.getSession();
-          if (!isMounted) return;
-          if (!lifecycle.isRevisionCurrent(restoringRevision)) return;
-          if (error) {
-            applySession(null);
-            setSessionError(error);
-          } else {
-            applySession(data.session);
-            setSessionError(null);
-          }
+          await restoreStoredSession(() => isMounted);
         }
       } catch (caught: unknown) {
         if (!isMounted) return;
@@ -304,10 +354,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     return () => {
       isMounted = false;
+      isMountedRef.current = false;
       subscription.unsubscribe();
       linking.remove();
     };
-  }, [applyRecoveryStatus, applyRecoveryUserId, applySession, lifecycle]);
+  }, [applyReconnecting, applyRecoveryStatus, applyRecoveryUserId, applySession, restoreStoredSession]);
 
   // Foreground/background token-refresh lifecycle (native only).
   useEffect(() => {
@@ -340,6 +391,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         session,
         isSessionLoading,
         sessionError,
+        isSessionReconnecting,
+        retrySessionRestore,
         recoveryStatus,
         recoveryUserId,
         recoveryError,

@@ -74,7 +74,9 @@ describe('Worker navigation and Home', () => {
     expect(home).toMatch(/<MotionFlatList[\s\S]*data=\{jobs\}/);
     expect(home).toMatch(/<JobOpportunityCompactCard\s+compact/);
     expect(home).toContain('title="Available jobs"');
-    expect(home).not.toMatch(/FindWorkOverlay|Browse opportunities|<AppButton|\.slice\(/);
+    expect(home).not.toMatch(/FindWorkOverlay|Browse opportunities|\.slice\(/);
+    expect((home.match(/<AppButton/g) ?? []).length).toBe(1);
+    expect(home).toContain('label={sortControlLabel}');
   });
 
   it('keeps work status in the header through the shared sheet, as a compact 48dp control', () => {
@@ -93,7 +95,7 @@ describe('Worker Profile identity', () => {
   const profile = code(WORKER_PROFILE);
 
   it('puts phone, email and Edit profile with the identity, ahead of the professional content', () => {
-    const order = ['<InitialsAvatar', 'styles.identityName', 'styles.trade', 'label="Phone"', 'label="Email"', 'label="Edit profile"', 'title="Work skills"', 'title="Professional identity"', 'title="Account and support"'].map((marker) => profile.indexOf(marker));
+    const order = ['<InitialsAvatar', 'styles.identityName', 'styles.trade', 'label="Phone"', 'label="Email"', 'label="Edit profile"', 'title="Work skills"', 'title="Portfolio"', 'title="Account and support"'].map((marker) => profile.indexOf(marker));
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(profile).not.toContain('<Collapsible');

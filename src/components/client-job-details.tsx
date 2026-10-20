@@ -11,7 +11,7 @@ import { SurfaceGroup } from '@/components/surface-group';
 import { ClientJobLocation } from '@/components/client-job-location';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatCardDateTime } from '@/lib/date-time';
-import { formatClientPostedPaymentLine } from '@/lib/job-payment';
+import { formatPostedPaymentValue } from '@/lib/job-payment';
 import { jobStatusLabel, jobStatusVariant } from '@/lib/status-presentation';
 import { loadClientBookings, type ClientBooking } from '@/lib/booking-records';
 import { listJobPhotos, type SignedJobPhoto } from '@/lib/job-photos';
@@ -148,7 +148,7 @@ export default function ClientJobDetails({ jobId }: { jobId: string | null }) {
           <SurfaceGroup>
             <FactRow icon={{ android: 'schedule', ios: 'clock' }} label="Schedule" value={formatCardDateTime(job.scheduled_at) ?? 'No schedule'} strong selectable />
             <FactRow icon={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} label="Budget" value={job.budget === null ? 'Not set' : `₱${job.budget.toLocaleString()}`} strong inline />
-            {job.payment_method_readable ? <FactRow icon={{ android: 'receipt_long', ios: 'doc.plaintext' }} label="Payment" value={formatClientPostedPaymentLine(job.payment_method)} /> : null}
+            {job.payment_method_readable ? <FactRow icon={{ android: 'receipt_long', ios: 'doc.plaintext' }} label="Payment method" value={formatPostedPaymentValue(job.payment_method)} /> : null}
             <FactRow icon={{ android: 'handyman', ios: 'wrench.and.screwdriver' }} label="Skills" value={job.skills.length ? job.skills.join(', ') : 'None'} />
           </SurfaceGroup>
           <View style={styles.section}>

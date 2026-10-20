@@ -17,12 +17,13 @@ const POST = 'src/components/client-post-job-screen.tsx';
 describe('Client Home hierarchy', () => {
   const source = code(HOME);
 
-  it('reads sticky name, current booking, then the jobs awaiting workers, with no hero block or metric tiles', () => {
+  it('reads sticky name, scrolling awaiting jobs, and a separate booking dock without hero or metric tiles', () => {
     // Wave 7: Post a job left Home for the bottom bar's central action.
     expect(source).not.toContain('label="Post a job"');
-    before(source, '<HomeStickyHeader', '<ActiveBookingHomeCard');
+    before(source, '<HomeStickyHeader', '<ActiveBookingHomeDock');
     before(source, '</HomeStickyHeader>', '<ScrollView');
-    before(source, '<ActiveBookingHomeCard', 'title="Awaiting workers"');
+    before(source, 'title="Awaiting workers"', '<ActiveBookingHomeDock');
+    before(source, '</ScrollView>', '<ActiveBookingHomeDock');
     expect(source).not.toContain('masthead');
     expect(source).not.toContain('variant="inverse"');
     expect(source).not.toContain('AppCard');
@@ -42,8 +43,7 @@ describe('Client Home hierarchy', () => {
 describe('Post Job structure', () => {
   const source = code(POST);
 
-  it('keeps the four real steps, gives each a plain title, and keeps text input out of the docked review step', () => {
-    for (const title of ['What needs to be done', 'Where', 'When, budget and payment', 'Review your job']) expect(source).toContain(title);
+  it('keeps step navigation and text input out of the docked review step', () => {
     expect(source).toContain('wizardStep === 4 && !isLoading && !loadError');
     expect(source).toMatch(/wizardStep < 4 \? \(\s*<AppButton[^>]*label="Next"/);
     expect((source.match(/validatePostJobWizardStep\(/g) ?? []).length).toBe(1);

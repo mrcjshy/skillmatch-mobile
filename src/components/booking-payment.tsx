@@ -238,7 +238,7 @@ export default function BookingPayment({
           </>
         ) : entry === 'cash' ? (
           <>
-            <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? 'Cash')}</Text>
+            <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? formatJobPaymentLabel('cod'))}</Text>
             <AppButton
               label={isBusy ? COPY.selecting : COPY.continueCash}
               onPress={() => run(() => selectCod(bookingId), selectErrorCopy, {
@@ -250,7 +250,7 @@ export default function BookingPayment({
           </>
         ) : entry === 'qrph' ? (
           <>
-            <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? 'QR Ph')}</Text>
+            <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? formatJobPaymentLabel('qrph'))}</Text>
             <AppButton
               label={isBusy ? COPY.starting : COPY.startQrphPayment}
               onPress={startQrph}
@@ -346,12 +346,12 @@ export default function BookingPayment({
 
       {entry === 'cash' ? (
         <>
-          <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? 'Cash')}</Text>
+          <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? formatJobPaymentLabel('cod'))}</Text>
           <Text style={styles.line}>{COPY.waitingClientCash}</Text>
         </>
       ) : entry === 'qrph' ? (
         <>
-          <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? 'QR Ph')}</Text>
+          <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? formatJobPaymentLabel('qrph'))}</Text>
           <Text style={styles.line}>{COPY.waitingClientQrph}</Text>
         </>
       ) : methodLabel ? (

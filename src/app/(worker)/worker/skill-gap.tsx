@@ -1,21 +1,9 @@
-import { Stack } from 'expo-router';
-
-import SkillGap from '@/components/skill-gap';
-import { SKILL_GAP_COPY } from '@/lib/skill-gap';
+import { Redirect } from 'expo-router';
 
 /**
- * Worker Skill Gap (AI-03).
- *
- * Worker-only by construction: the route lives inside the already-protected
- * (worker) group and has no Client or Admin counterpart, because it compares
- * the Worker's own saved skills against their own current Job Opportunities.
- * See src/components/skill-gap.tsx and src/lib/skill-gap.ts.
+ * Obsolete standalone Skill Gap links return to Worker Home. Skill Gap / AI Guidance
+ * lives on each Job Opportunity, never as a separate Worker screen.
  */
 export default function WorkerSkillGap() {
-  return (
-    <>
-      <Stack.Screen options={{ title: SKILL_GAP_COPY.title }} />
-      <SkillGap />
-    </>
-  );
+  return <Redirect href="/worker" />;
 }

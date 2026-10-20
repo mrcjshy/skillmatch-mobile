@@ -4,6 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
+import { withAuthRequestTimeout } from '@/lib/auth-request-timeout';
+
 // Expo inlines EXPO_PUBLIC_* variables only when read with static dot notation.
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const publishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -33,12 +35,17 @@ function resolveClientKey(): string {
   return key;
 }
 
+const url = resolveSupabaseUrl();
+
 // Low-privilege client only. Never configure a service or secret key here.
-export const supabase = createClient(resolveSupabaseUrl(), resolveClientKey(), {
+export const supabase = createClient(url, resolveClientKey(), {
   auth: {
     ...(Platform.OS !== 'web' ? { storage: AsyncStorage } : {}),
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
   },
+  // Bounds Auth requests only, so a refresh that is never answered cannot stall the
+  // session for good; every other request is passed through unchanged.
+  global: { fetch: withAuthRequestTimeout(url) },
 });

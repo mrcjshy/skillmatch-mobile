@@ -57,12 +57,20 @@ export default function VerifyPhoneScreen() {
     setNotice(null);
     setCooldownEndsAtMs(getPhoneResendCooldownEndsAt(requestTime));
     setNowMs(requestTime);
-    const sent = await requestPhoneChangeOtp(supabase.auth, phone);
-    if (sent) {
+    const outcome = await requestPhoneChangeOtp(supabase.auth, phone);
+    if (outcome === 'sent') {
       setHasSent(true);
       setNotice('A six-digit verification code was sent by SMS.');
     } else {
-      setError(PHONE_VERIFICATION_COPY.sendFailed);
+      setError(
+        outcome === 'rate_limited'
+          ? PHONE_VERIFICATION_COPY.rateLimited
+          : outcome === 'provider_failed'
+            ? PHONE_VERIFICATION_COPY.providerFailed
+            : outcome === 'unavailable'
+              ? PHONE_VERIFICATION_COPY.providerUnavailable
+              : PHONE_VERIFICATION_COPY.sendFailed
+      );
     }
     setIsSending(false);
     inFlight.current = false;
@@ -78,13 +86,19 @@ export default function VerifyPhoneScreen() {
     setIsVerifying(true);
     setError(null);
     setNotice(null);
-    const verified = await verifyPhoneChangeOtp(supabase.auth, phone, code);
-    if (verified) {
+    const outcome = await verifyPhoneChangeOtp(supabase.auth, phone, code);
+    if (outcome === 'verified') {
       setPhoneVerified(true);
       setNotice('Phone verified. Finishing account setup…');
       await finishSetup();
     } else {
-      setError(PHONE_VERIFICATION_COPY.verifyFailed);
+      setError(
+        outcome === 'wrong_or_expired'
+          ? PHONE_VERIFICATION_COPY.wrongOrExpired
+          : outcome === 'rate_limited'
+            ? PHONE_VERIFICATION_COPY.rateLimited
+            : PHONE_VERIFICATION_COPY.verifyFailed
+      );
     }
     setIsVerifying(false);
     inFlight.current = false;

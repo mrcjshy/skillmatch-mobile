@@ -50,6 +50,7 @@ function setup(options: { owner?: ReturnType<typeof createClientPostJobDraftOwne
     'expo-symbols': { SymbolView: 'SymbolView' },
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },
     '@/providers/account-provider': { useAccount: () => ({ account: { id: 'client-a', full_name: 'Alex Example' } }) },
+    '@/providers/session-provider': { useSession: () => ({ session: { user: { id: 'client-a' } }, sessionRevision: 1 }) },
     '@/providers/client-jobs-provider': { useClientJobs: () => ({ jobs: options.jobs ?? [], skills: [], isLoading: options.loading ?? false, loadError: options.error ?? null, refresh: noop }) },
     '@/providers/client-post-job-draft-provider': { useClientPostJobDraft: () => owner },
     '@/lib/booking-records': { loadClientBookings: loadBookings },
@@ -96,20 +97,23 @@ describe('Client Post a job entry (Wave 7: central bar action)', () => {
     expect(postAction().bar.props.postDisabled).toBe(false);
     const s = setup({ bookings: active ? [{ booking_status: 'confirmed', booking_id: 'booking-a' }] : [] });
     const tree = s.render();
-    const card = descendants(tree).find(e => e.type === 'ActiveBookingHomeCard')!;
+    const card = descendants(tree).find(e => e.type === 'ActiveBookingHomeDock')!;
+    expect(card).toBeDefined();
+    const nodes = descendants(tree);
+    expect(nodes.indexOf(card)).toBeGreaterThan(nodes.findIndex(e => e.type === 'ScrollView'));
     (card.props.onPressPrimary as (row: Props) => void)({ booking_id: 'booking-a' });
     expect(s.push).toHaveBeenLastCalledWith({ pathname: '/client/booking-details', params: { bookingId: 'booking-a' } });
-    expect(card.props.compact).toBe(true);
+    expect(card.props.role).toBe('client');
     (card.props.onPressViewAll as () => void)();
     expect(s.push).toHaveBeenLastCalledWith({ pathname: '/client/bookings', params: { segment: 'active' } });
   });
-  it.each(['loading', 'error', 'busy'] as const)('preserves %s posting eligibility without adding an active-booking prohibition', status => {
+  it.each(['loading', 'error', 'busy'] as const)('allows location entry during %s unless a post is already in flight', status => {
     const owner = createClientPostJobDraftOwner('client-a');
     if (status === 'busy') { owner.updateDraft({ wizardStep: 4 }); owner.beginPost(); }
     const { push, bar } = postAction({ owner, loading: status === 'loading', error: status === 'error' ? 'Read failed' : undefined });
-    expect(bar.props.postDisabled).toBe(true);
+    expect(bar.props.postDisabled).toBe(status === 'busy');
     expect(bar.props.posting).toBe(status === 'busy');
-    (bar.props.onPostJob as () => void)(); expect(push).not.toHaveBeenCalled();
+    (bar.props.onPostJob as () => void)(); expect(push.mock.calls).toEqual(status === 'busy' ? [] : [['/client/post-job']]);
     const tree = setup({ owner, loading: status === 'loading', error: status === 'error' ? 'Read failed' : undefined }).render();
     if (status !== 'busy') expect(descendants(tree).some(e => e.type === 'InlineStatus' && e.props.variant === status)).toBe(true);
   });

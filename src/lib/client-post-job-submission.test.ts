@@ -102,11 +102,13 @@ it.each([1, 2, 3] as const)('creates nothing before final step %s', async wizard
   expect(supabase.rpc).not.toHaveBeenCalled(); expect(api.list).not.toHaveBeenCalled(); expect(value.isPosting).toBe(false);
 });
 it.each([
-  [{ description: '', address: '', scheduleDate: null, budgetText: 'bad', paymentMethod: null, primarySkillId: null }, 'Please describe the work needed.'],
+  [{ description: '', address: '', scheduleDate: null, budgetText: 'bad', paymentMethod: null, primarySkillId: null }, 'Please confirm your selected job location.'],
   [{ address: '', scheduleDate: null, budgetText: 'bad' }, 'Please confirm your selected job location.'],
+  [{ description: '', scheduleDate: null, primarySkillId: null }, 'Please select a primary skill.'],
+  [{ description: '', scheduleDate: null }, 'Please describe the work needed.'],
   [{ scheduleDate: null, budgetText: 'bad' }, 'Please choose a date.'],
-  [{ budgetText: 'bad', paymentMethod: null, primarySkillId: null }, 'Budget must be a number of 0 or more.'],
-  [{ paymentMethod: null, primarySkillId: null }, 'Please select a payment method.'],
+  [{ budgetText: 'bad', paymentMethod: null }, 'Budget must be a number of 0 or more.'],
+  [{ paymentMethod: null }, 'Please select a payment method.'],
   [{ primarySkillId: null }, 'Please select a primary skill.'],
 ] as const)('retains final validation order and draft for %s', async (patch, message) => {
   const value = owner(); value.updateDraft(patch as any); storage();

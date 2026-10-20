@@ -121,6 +121,19 @@ it.each([false, true])('preserves the accepted-state hierarchy, decorative seman
   expect(routes).toEqual(['/worker/bookings']);
 });
 
+it('uses compact section spacing while retaining the protected location, guidance and wrapping Accept dock', () => {
+  const { tree, location } = render(opportunity);
+  const nodes = all(tree), scroll = nodes.find(n => n.type === 'ScrollView');
+  expect(flatStyle(scroll.props.contentContainerStyle)).toMatchObject({ gap: 16, paddingBottom: 16 });
+  expect(nodes.find(n => n.type === 'WorkerOpportunityJobLocation').props.location).toBe(location);
+  expect(nodes.find(n => n.type === 'GuidanceSection').props).toMatchObject({ jobId: id, buttonLabel: 'View skill gap guidance' });
+  const dock = tree.props.children[1];
+  expect(flatStyle(dock.props.style)).toMatchObject({ flexWrap: 'wrap', gap: 12, paddingBottom: 24 });
+  const accept = nodes.find(n => n.type === 'AppButton' && n.props.label === 'Accept');
+  expect(accept.props.accessibilityLabel).toBe(`Accept ${opportunity.title}`);
+  expect(flatStyle(dock.props.children[1].props.style).minWidth).toBeGreaterThanOrEqual(148);
+});
+
 it('keeps complete long job facts, original scores, requirements and authorized map props in scroll-owned content', () => {
   const { tree, location, format, payment } = render(opportunity);
   const copy = text(tree);

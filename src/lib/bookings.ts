@@ -62,6 +62,64 @@ export function cancellationDetailLength(value: string): number {
   return Array.from(value.trim()).length;
 }
 
+export function isCancellationReasonCode(value: unknown): value is CancellationReasonCode {
+  return typeof value === 'string' && (CANCELLATION_REASON_CODES as readonly string[]).includes(value);
+}
+
+export type CancellationDetails = {
+  cancelledBy: 'You' | 'Your client' | 'Your worker';
+  reason: string;
+  detail: string | null;
+  cancelledAt: string;
+};
+
+/**
+ * V4 #19 history copy for a cancelled Booking, from the participant RPC's metadata bundle.
+ * Mirrors bookings_cancellation_metadata_check: anything legacy (all-NULL), incomplete or
+ * inconsistent returns null, and the screen keeps showing only the plain Cancelled status.
+ */
+export function cancellationDetails(input: {
+  bookingStatus: string;
+  role: 'worker' | 'client';
+  viewerUserId: string | null | undefined;
+  counterpartyUserId: string;
+  reasonCode: unknown;
+  reasonDetail: unknown;
+  cancelledBy: unknown;
+  cancelledAt: unknown;
+}): CancellationDetails | null {
+  const { reasonCode, reasonDetail, cancelledBy, cancelledAt, viewerUserId, counterpartyUserId } = input;
+  if (input.bookingStatus !== 'cancelled' || !isCancellationReasonCode(reasonCode)) return null;
+  if (typeof cancelledBy !== 'string' || cancelledBy === '') return null;
+  if (typeof cancelledAt !== 'string' || !Number.isFinite(Date.parse(cancelledAt))) return null;
+
+  let detail: string | null = null;
+  if (reasonDetail !== null && reasonDetail !== undefined) {
+    if (
+      typeof reasonDetail !== 'string' ||
+      reasonDetail === '' ||
+      reasonDetail !== reasonDetail.trim() ||
+      cancellationDetailLength(reasonDetail) > CANCELLATION_DETAIL_MAX
+    ) {
+      return null;
+    }
+    detail = reasonDetail;
+  }
+  if (reasonCode === 'other' && detail === null) return null;
+
+  // The actor is always one of the two participants; anything else is not shown.
+  let actor: CancellationDetails['cancelledBy'];
+  if (counterpartyUserId !== '' && cancelledBy === counterpartyUserId) {
+    actor = input.role === 'worker' ? 'Your client' : 'Your worker';
+  } else if (typeof viewerUserId === 'string' && viewerUserId !== '' && cancelledBy === viewerUserId) {
+    actor = 'You';
+  } else {
+    return null;
+  }
+
+  return { cancelledBy: actor, reason: CANCELLATION_REASON_LABELS[reasonCode], detail, cancelledAt };
+}
+
 const BOOKING_STATUS_LABEL: Record<BookingStatus, string> = {
   pending: 'Pending',
   confirmed: 'Confirmed',

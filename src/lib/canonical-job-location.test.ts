@@ -6,6 +6,17 @@ import { SANTA_ANA_PATEROS_INTERIOR_TEST_PIN as pin } from './santa-ana-service-
 vi.mock('./supabase', () => ({ supabase: { rpc: vi.fn() } }));
 
 describe('Client canonical location confirmation', () => {
+  it('confirms a valid coordinate while display geocoding is pending and freezes that explicit confirmation', async () => {
+    const selection = createCanonicalLocationSelection();
+    let finish!: (rows: { formattedAddress: string }[]) => void;
+    selection.select(pin);
+    const pending = selection.resolve({ reverseGeocodeAsync: () => new Promise(resolve => { finish = resolve; }) });
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    expect(selection.confirm()).toEqual({ pin, address: 'Selected Job location — Santa Ana, Pateros' });
+    finish([{ formattedAddress: 'Too late after confirmation' }]);
+    await pending;
+    expect(selection.snapshot().address).toBe('Selected Job location — Santa Ana, Pateros');
+  });
   it('confirms the selected coordinate together with its derived address', async () => {
     const geocode = vi.fn().mockResolvedValue([{ formattedAddress: 'Selected street, Santa Ana' }]);
     const selection = createCanonicalLocationSelection();

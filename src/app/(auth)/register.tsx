@@ -1,6 +1,6 @@
 import { type Href, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { StyleSheet, View, type TextInput } from 'react-native';
+import { Keyboard, StyleSheet, View, type TextInput } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
 import { AppDivider } from '@/components/app-divider';
@@ -167,6 +167,9 @@ function RegisterContent() {
   const nameField = (
     <AppField
       inputRef={fullNameRef}
+      returnKeyType="next"
+      submitBehavior="submit"
+      onSubmitEditing={() => focusField(phoneRef)}
       label="Full name"
       value={fullName}
       onChangeText={edit('fullName', setFullName)}
@@ -182,6 +185,9 @@ function RegisterContent() {
   const phoneField = (
     <AppField
       inputRef={phoneRef}
+      returnKeyType="next"
+      submitBehavior="submit"
+      onSubmitEditing={() => focusField(emailRef)}
       label="Phone number"
       value={phone}
       onChangeText={edit('phone', setPhone)}
@@ -200,6 +206,9 @@ function RegisterContent() {
   const emailField = (
     <AppField
       inputRef={emailRef}
+      returnKeyType="next"
+      submitBehavior="submit"
+      onSubmitEditing={() => focusField(passwordRef)}
       label="Email"
       value={email}
       onChangeText={edit('email', setEmail)}
@@ -218,6 +227,9 @@ function RegisterContent() {
     <>
       <PasswordField
         inputRef={passwordRef}
+        returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => focusField(confirmPasswordRef)}
         label="Password"
         value={password}
         onChangeText={edit('password', setPassword)}
@@ -229,6 +241,8 @@ function RegisterContent() {
       />
       <PasswordField
         inputRef={confirmPasswordRef}
+        returnKeyType="done"
+        onSubmitEditing={() => { Keyboard.dismiss(); scrollRef.current?.scrollToEnd({ animated: true }); }}
         label="Confirm password"
         value={confirmPassword}
         onChangeText={edit('confirmPassword', setConfirmPassword)}

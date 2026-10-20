@@ -504,7 +504,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       return;
     }
     const generation = ++identityGeneration.current;
-    setWorkerOnboardingState('loading');
+    // A settled state stays on screen while it is re-read: returning from the ID photo picker
+    // refreshes here, and dropping to 'loading' would unmount the form and lose the chosen photo.
+    setWorkerOnboardingState((current) => (current === 'load-error' ? 'loading' : current));
     const identity = await loadWorkerIdentityGate(account.id);
     if (!isCurrentRevision()) return;
     if (generation !== identityGeneration.current) return;

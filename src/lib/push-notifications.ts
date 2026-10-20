@@ -127,6 +127,15 @@ let pendingOpenNotificationsInbox = false;
 let pendingNotificationId: string | null = null;
 /** Chat routing hint; opens a chat only after the Booking is re-authorized. */
 let pendingChatBookingId: string | null = null;
+let pendingCall: { bookingId: string; callId: string } | null = null;
+
+export function parseCallPushData(data: unknown): { bookingId: string; callId: string } | null {
+  if (!data || typeof data !== 'object') return null;
+  const value = data as Record<string, unknown>;
+  return value.kind === 'call' && typeof value.booking_id === 'string' && UUID_RE.test(value.booking_id) &&
+    typeof value.call_id === 'string' && UUID_RE.test(value.call_id) ? { bookingId: value.booking_id, callId: value.call_id } : null;
+}
+export const getPendingCall = () => pendingCall;
 
 export function getRememberedExpoPushToken(): string | null {
   return rememberedExpoPushToken;
@@ -142,6 +151,7 @@ export function clearRememberedExpoPushToken(): void {
 
 /** Test-only reset for module-level idempotence flags. */
 export function resetPushClientState(): void {
+  pendingCall = null;
   rememberedExpoPushToken = null;
   androidChannelReady = false;
   foregroundHandlerConfigured = false;
@@ -163,6 +173,7 @@ export function getPendingChatBookingId(): string | null {
 }
 
 export function clearPendingNotificationsInboxIntent(): void {
+  pendingCall = null;
   pendingOpenNotificationsInbox = false;
   pendingNotificationId = null;
   pendingChatBookingId = null;
@@ -201,6 +212,7 @@ export function isSkillMatchNotificationResponse(response: unknown): boolean {
 export function captureNotificationResponse(response: unknown): boolean {
   if (!isSkillMatchNotificationResponse(response)) return false;
   const data = extractTapData(response);
+  pendingCall = parseCallPushData(data);
   pendingNotificationId = parsePushTapData(data)?.notificationId ?? null;
   pendingChatBookingId = parseChatPushData(data)?.bookingId ?? null;
   pendingOpenNotificationsInbox = true;

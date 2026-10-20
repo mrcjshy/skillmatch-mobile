@@ -18,7 +18,8 @@
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"]
     },
     "web": {
       "output": "static",
@@ -53,8 +54,19 @@
         "expo-image-picker",
         {
           "photosPermission": "SkillMatch uses your photos so you can attach project images to your portfolio.",
-          "cameraPermission": false,
-          "microphonePermission": false
+          "cameraPermission": "SkillMatch uses your camera only during a video call you start or accept on a confirmed booking.",
+          "microphonePermission": "SkillMatch uses your microphone only during a video call you start or accept on a confirmed booking."
+        }
+      ],
+      [
+        "@livekit/react-native-expo-plugin",
+        { "android": { "audioType": "communication" } }
+      ],
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "SkillMatch uses your camera only during a video call you start or accept on a confirmed booking.",
+          "microphonePermission": "SkillMatch uses your microphone only during a video call you start or accept on a confirmed booking."
         }
       ]
     ],

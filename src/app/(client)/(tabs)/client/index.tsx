@@ -3,25 +3,28 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import { useFocusEffect, type Href, useRouter } from 'expo-router';
 import { AppSymbol as SymbolView } from '@/components/app-symbol';
 
-import { ActiveBookingHomeCard } from '@/components/active-booking-home-card';
+import { ActiveBookingHomeDock } from '@/components/active-booking-home-dock';
 import { AppChip } from '@/components/app-chip';
 import { groupPosition, groupedRowStyle } from '@/components/grouped-row';
 import { HomeStickyHeader } from '@/components/home-header';
 import { InlineStatus } from '@/components/inline-status';
 import { SectionHeader } from '@/components/section-header';
 import { useUiTheme, type UiTheme, RefinementThemeProvider } from '@/components/refinement-theme';
-import { loadClientBookings, type ClientBooking } from '@/lib/booking-records';
+import { isClientBooking, loadClientBookings, type ClientBooking } from '@/lib/booking-records';
 import { createClientHomeBookingFocus, type ClientHomeBookingFocus } from '@/lib/client-home-booking-focus';
 import { formatCardDateTime } from '@/lib/date-time';
 import { firstNameFromFullName } from '@/lib/initials';
 import { useAccount } from '@/providers/account-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
 import { useClientPostJobDraft } from '@/providers/client-post-job-draft-provider';
+import { useSession } from '@/providers/session-provider';
 
 
 
 export default function ClientHome() {
-  return <RefinementThemeProvider><ClientHomeContent /></RefinementThemeProvider>;
+  const { account, hasCurrentConsent } = useAccount();
+  const { session, sessionRevision } = useSession();
+  return <RefinementThemeProvider><ClientHomeContent key={`${account?.id}:${account?.role}:${account?.is_active}:${hasCurrentConsent}:${session?.user.id}:${sessionRevision}`} /></RefinementThemeProvider>;
 }
 
 function ClientHomeContent() {
@@ -60,7 +63,7 @@ function ClientHomeContent() {
       focus.cancel();
       if (bookingFocus.current === focus) bookingFocus.current = null;
     };
-  }, [clientId, isOwnerCurrent, takePendingCreatedJob, router]));
+  }, [clientId, isOwnerCurrent, takePendingCreatedJob, router, setBookings]));
 
   // Only requests still waiting for a worker; finished and matched jobs stay in My jobs.
   const openJobs = jobs.filter(job => job.status === 'open');
@@ -81,17 +84,6 @@ function ClientHomeContent() {
     <View style={styles.screen}>
       {/* Post a job is the bottom bar's central action (Wave 7); the current booking stays in view. */}
       <HomeStickyHeader name={firstNameFromFullName(account?.full_name ?? '')} role="client">
-        <ActiveBookingHomeCard
-          role="client"
-          compact
-          bookings={isOwnerCurrent() ? bookings : []}
-          onPressPrimary={(booking) => {
-            if (isOwnerCurrent()) router.push({ pathname: '/client/booking-details', params: { bookingId: booking.booking_id } } as unknown as Href);
-          }}
-          onPressViewAll={() => {
-            if (isOwnerCurrent()) router.push({ pathname: '/client/bookings', params: { segment: 'active' } } as unknown as Href);
-          }}
-        />
       </HomeStickyHeader>
 
       <ScrollView
@@ -99,7 +91,7 @@ function ClientHomeContent() {
         contentContainerStyle={styles.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refreshHome(); }} tintColor={colors.accent} colors={[colors.accent]} />}
       >
-        {/* Requests still waiting scroll below the compact, fixed current booking. */}
+        {/* Awaiting requests retain their own viewport above the booking dock. */}
         <View style={styles.section}>
           <SectionHeader
             title="Awaiting workers"
@@ -147,6 +139,17 @@ function ClientHomeContent() {
           )}
         </View>
       </ScrollView>
+      <ActiveBookingHomeDock
+        role="client"
+        bookings={isOwnerCurrent() ? bookings : []}
+        onBookings={rows => { if (isOwnerCurrent()) setBookings(rows.filter(isClientBooking)); }}
+        onPressPrimary={(booking) => {
+          if (isOwnerCurrent()) router.push({ pathname: '/client/booking-details', params: { bookingId: booking.booking_id } } as unknown as Href);
+        }}
+        onPressViewAll={() => {
+          if (isOwnerCurrent()) router.push({ pathname: '/client/bookings', params: { segment: 'active' } } as unknown as Href);
+        }}
+      />
     </View>
   );
 }

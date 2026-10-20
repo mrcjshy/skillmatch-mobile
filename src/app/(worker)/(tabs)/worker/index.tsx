@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import { ActivityIndicator, AppState, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
-import { ActiveBookingHomeCard } from '@/components/active-booking-home-card';
-import { AppSegment } from '@/components/app-segment';
+import { ActiveBookingHomeDock } from '@/components/active-booking-home-dock';
+import { AppButton } from '@/components/app-button';
+import { AppSheet } from '@/components/app-sheet';
 import { AvailabilityControl } from '@/components/availability-control';
 import { groupPosition } from '@/components/grouped-row';
 import { HomeStickyHeader } from '@/components/home-header';
@@ -11,10 +12,11 @@ import { InlineStatus } from '@/components/inline-status';
 import { JobOpportunityCompactCard } from '@/components/job-opportunity-compact-card';
 import { MotionFlatList, MotionView, useListReveal, useMotion } from '@/components/motion';
 import { SectionHeader } from '@/components/section-header';
+import { RadioRow } from '@/components/radio-row';
 import { SkillMatchMascot } from '@/components/skillmatch-mascot';
 import { AppSymbol } from '@/components/app-symbol';
 import { useUiTheme, type UiTheme, RefinementThemeProvider } from '@/components/refinement-theme';
-import { loadWorkerBookings, type WorkerBooking } from '@/lib/booking-records';
+import { isWorkerBooking, loadWorkerBookings, type WorkerBooking } from '@/lib/booking-records';
 import { firstNameFromFullName } from '@/lib/initials';
 import {
   JOB_OPPORTUNITY_COPY,
@@ -98,6 +100,7 @@ function WorkerHomeContent() {
   const [postedError, setPostedError] = useState(false);
   // The moment Job date order splits upcoming from passed work; taken when the order is chosen.
   const [sortNow, setSortNow] = useState(() => Date.now());
+  const [isSortOpen, setIsSortOpen] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -219,6 +222,10 @@ function WorkerHomeContent() {
   // Authoritative rows from list_my_job_opportunities; nothing is shown while a read is unsettled.
   const rankedJobs = canRenderOwnedContent && canLoadOpportunities && !oppLoading && !oppError ? opportunities : [];
   const jobs = sortWorkerOpportunities(rankedJobs, sort, { now: sortNow, postedAt });
+  // A live result can remove the control; catch-up must not reopen its old disclosure.
+  if (isSortOpen && (!canRenderOwnedContent || jobs.length < 2)) setIsSortOpen(false);
+  const sortLabel = WORKER_JOB_SORT_OPTIONS.find(option => option.value === sort)?.label ?? 'Best match';
+  const sortControlLabel = `${WORKER_JOB_SORT_COPY.label}: ${sortLabel}`;
   // Motion only explains changes: arriving rows fade in once, re-sorted rows glide to their places.
   // Order, count and the fixed Sort by control are untouched; reduced motion makes both immediate.
   const motion = useMotion();
@@ -266,19 +273,6 @@ function WorkerHomeContent() {
             {isPersistingAvailability ? <ActivityIndicator color={colors.accent} /> : null}
           </View>
         )}
-        {/* Current work stays in reach with the header; it renders nothing without a confirmed booking. */}
-        <ActiveBookingHomeCard
-          role="worker"
-          compact
-          bookings={canRenderOwnedContent ? bookings : []}
-          onPressPrimary={(booking) =>
-            router.push({
-              pathname: '/worker/booking-details',
-              params: { bookingId: booking.booking_id },
-            } as unknown as Href)
-          }
-          onPressViewAll={() => router.push({ pathname: '/worker/bookings', params: { segment: 'active' } } as unknown as Href)}
-        />
         {/* One fixed surface: opportunity controls share the existing Home header. */}
         <View style={styles.opportunityHeader}>
           <SectionHeader
@@ -287,18 +281,30 @@ function WorkerHomeContent() {
           />
           {jobs.length > 1 ? (
             <View style={styles.sort}>
-              <Text style={styles.sortLabel} accessible={false} importantForAccessibility="no">{WORKER_JOB_SORT_COPY.label}</Text>
-              <AppSegment
-                accessibilityLabel={WORKER_JOB_SORT_COPY.label}
-                options={WORKER_JOB_SORT_OPTIONS}
-                value={sort}
-                onChange={(next) => { setSortNow(Date.now()); setSort(next); }}
+              <AppButton
+                variant="secondary"
+                label={sortControlLabel}
+                accessibilityLabel={sortControlLabel}
+                icon={{ android: 'sort', ios: 'arrow.up.arrow.down' }}
+                expanded={isSortOpen}
+                style={styles.sortButton}
+                onPress={() => setIsSortOpen(true)}
               />
               {sort === 'posted' && postedError ? <InlineStatus variant="note" message={WORKER_JOB_SORT_COPY.postedUnavailable} /> : null}
             </View>
           ) : null}
         </View>
       </HomeStickyHeader>
+      <AppSheet visible={canRenderOwnedContent && jobs.length > 1 && isSortOpen}
+        title={WORKER_JOB_SORT_COPY.label} onClose={() => setIsSortOpen(false)}>
+        <View accessibilityRole="radiogroup" accessibilityLabel={WORKER_JOB_SORT_COPY.label} style={styles.sortChoices}>
+          {WORKER_JOB_SORT_OPTIONS.map(option => (
+            <RadioRow key={option.value} label={option.label} accessibilityLabel={option.label}
+              selected={sort === option.value}
+              onPress={() => { setSortNow(Date.now()); setSort(option.value); setIsSortOpen(false); }} />
+          ))}
+        </View>
+      </AppSheet>
 
       <MotionFlatList
         style={styles.list}
@@ -348,6 +354,18 @@ function WorkerHomeContent() {
           </MotionView>
         ) : null}
       />
+      <ActiveBookingHomeDock
+        role="worker"
+        bookings={canRenderOwnedContent ? bookings : []}
+        onBookings={rows => { if (canRenderOwnedContent) setBookings(rows.filter(isWorkerBooking)); }}
+        onPressPrimary={(booking) =>
+          router.push({
+            pathname: '/worker/booking-details',
+            params: { bookingId: booking.booking_id },
+          } as unknown as Href)
+        }
+        onPressViewAll={() => router.push({ pathname: '/worker/bookings', params: { segment: 'active' } } as unknown as Href)}
+      />
     </View>
   );
 }
@@ -359,18 +377,19 @@ function createStyles(ui: UiTheme) {
     list: { flex: 1, backgroundColor: colors.canvas },
     content: {
       flexGrow: 1,
-      paddingTop: spacing.md,
+      paddingTop: spacing.sm,
       paddingBottom: spacing.xxxxl,
     },
     // Notices scroll with the rows; opportunity controls stay in the existing fixed header.
     lead: { gap: spacing.lg },
-    opportunityHeader: { gap: spacing.sm, paddingTop: spacing.md },
+    opportunityHeader: { gap: spacing.sm, paddingTop: spacing.sm },
     inset: { paddingHorizontal: spacing.gutter },
     statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     headerNote: { ...type.helper, color: colors.textSecondary, minHeight: size.minTarget, textAlignVertical: 'center' },
     count: { ...type.label, color: colors.textSecondary },
     sort: { gap: spacing.sm },
-    sortLabel: { ...type.label, color: colors.textSecondary },
+    sortButton: { paddingHorizontal: spacing.md },
+    sortChoices: { gap: spacing.sm },
     notice: {
       marginHorizontal: spacing.gutter,
       flexDirection: 'row',

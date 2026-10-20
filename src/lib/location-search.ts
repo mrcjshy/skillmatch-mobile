@@ -20,7 +20,7 @@ export function parsePhotonSuggestions(data: unknown): LocationSuggestion[] {
     const label = [p.name, p.street, p.locality, p.city, p.state, p.country]
       .filter((value, index, values): value is string => typeof value === 'string' && value.trim() !== '' && values.indexOf(value) === index)
       .join(', ');
-    if (!label) continue;
+    if (!label || parsed.some(item => item.label === label && item.pin.latitude === latitude && item.pin.longitude === longitude)) continue;
     parsed.push({ label, pin: { latitude, longitude }, ph: String(p.countrycode ?? '').toUpperCase() === 'PH' });
   }
   return parsed.sort((a, b) => Number(b.ph) - Number(a.ph)).slice(0, 5).map(({ label, pin }) => ({ label, pin }));

@@ -20,6 +20,7 @@ const booking: WorkerBooking = {
   payment_status: null, booked_at: null, completed_at: null,
   job_description: null, job_scheduled_at: null, job_address: null, job_barangay: null,
   job_city: null, job_budget: null,
+  cancellation_reason_code: null, cancellation_reason_detail: null, cancelled_by: null, cancelled_at: null,
 };
 const context: BannerContext = {
   accountId: me, role: 'worker', active: true, pathname: '/worker', bookingId: null, routeKey: '/worker',

@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   bookingActionPresentation,
+  canSelectCod,
   clientPaymentEntry,
+  COPY,
+  fetchBookingPayments,
+  formatPaymentMethod,
+  isPaid,
+  isPaidCod,
   isPayableStatus,
   type BookingPayment,
 } from './payments';
+import { supabase } from './supabase';
 
 vi.mock('./supabase', () => ({
   supabase: {
@@ -83,5 +90,61 @@ describe('FT-05 payment-before-completion presentation', () => {
       .toEqual({ showPayment: true, showCompletion: false, showCancellation: false });
     expect(bookingActionPresentation('worker', 'completed', payment('qrph', 'pending'), true))
       .toEqual({ showPayment: true, showCompletion: false, showCancellation: false });
+  });
+});
+
+describe('Cash and QR Ph TEST MODE labels', () => {
+  it('labels the two offered methods and marks GCash/Maya as legacy, not offered', () => {
+    expect(formatPaymentMethod('cod')).toBe('Cash');
+    expect(formatPaymentMethod('qrph')).toBe('QR Ph — TEST MODE');
+    expect(formatPaymentMethod('gcash')).toMatch(/legacy/i);
+    expect(formatPaymentMethod('maya')).toMatch(/legacy/i);
+    expect(formatPaymentMethod(null)).toBeNull();
+  });
+
+  it('keeps the QR Ph selection and paid copy in TEST MODE wording', () => {
+    expect(COPY.selectQrph).toBe('QR Ph — TEST MODE');
+    expect(COPY.paidQrph).toMatch(/TEST MODE/);
+    expect(COPY.paidQrph).not.toMatch(/cash/i);
+  });
+});
+
+describe('historical or unknown payment values fail closed', () => {
+  const from = vi.mocked(supabase.from);
+  function rows(data: unknown[]) {
+    const inFn = vi.fn(async () => ({ data, error: null }));
+    from.mockReturnValue({ select: vi.fn(() => ({ in: inFn })) } as never);
+  }
+
+  it('drops a row whose method is unrecognised instead of reading it as "not chosen" or Cash', async () => {
+    rows([
+      { id: 'a', payment_method: 'pay_after_work', payment_status: 'pending' },
+      { id: 'b', payment_method: 'cod', payment_status: 'pending' },
+    ]);
+    const map = await fetchBookingPayments(['a', 'b']);
+    expect(map.has('a')).toBe(false);
+    expect(map.get('b')).toEqual({ id: 'b', payment_method: 'cod', payment_status: 'pending' });
+  });
+
+  it('drops a row whose status is unrecognised so it can never be treated as paid', async () => {
+    rows([{ id: 'a', payment_method: 'cod', payment_status: 'settled' }]);
+    const map = await fetchBookingPayments(['a']);
+    expect(map.has('a')).toBe(false);
+  });
+
+  it('keeps a legacy null method/status row but never labels it Cash or paid', async () => {
+    rows([{ id: 'a', payment_method: null, payment_status: null }]);
+    const p = (await fetchBookingPayments(['a'])).get('a');
+    expect(p).toEqual({ id: 'a', payment_method: null, payment_status: null });
+    expect(formatPaymentMethod(p!.payment_method)).toBeNull();
+    expect(isPaid(p)).toBe(false);
+    expect(isPaidCod(p)).toBe(false);
+    expect(canSelectCod(p)).toBe(false);
+    expect(clientPaymentEntry(p, null)).toBe('none');
+  });
+
+  it('an unpaid legacy Booking is never paid regardless of Job intent', () => {
+    expect(isPaid(payment(null, 'pending'))).toBe(false);
+    expect(clientPaymentEntry(payment(null, 'pending'), null)).toBe('legacy-choice');
   });
 });

@@ -2,20 +2,18 @@ import { Tabs, useRouter, type Href } from 'expo-router';
 import { TabIcon, TabLabel, useAppTabScreenOptions } from '@/components/app-tab-bar';
 import { ClientTabBar } from '@/components/client-tab-bar';
 import { SkillMatchTheme } from '@/constants/theme';
-import { useClientJobs } from '@/providers/client-jobs-provider';
 import { useClientPostJobDraft } from '@/providers/client-post-job-draft-provider';
 
 const { size } = SkillMatchTheme.ui;
 
 // Home owns its own sticky header (name, bell), so it has no navigator header. Post a job is the
 // bar's central circular action (Wave 7), not a tab: it pushes the existing Post Job flow, guarded
-// exactly as the former Home button was.
+// by the current draft owner. Catalog readiness is handled inside Job details.
 export default function ClientTabsLayout() {
   const screenOptions = useAppTabScreenOptions();
   const router = useRouter();
-  const { isLoading, loadError } = useClientJobs();
   const { isPosting, isOwnerCurrent } = useClientPostJobDraft();
-  const postDisabled = isLoading || !!loadError || isPosting || !isOwnerCurrent();
+  const postDisabled = isPosting || !isOwnerCurrent();
   return (
       <Tabs
         backBehavior="initialRoute"

@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 
 import { AppButton } from '@/components/app-button';
 import { AppChip } from '@/components/app-chip';
@@ -16,9 +17,6 @@ import {
 } from '@/lib/faq';
 
 const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
-
-/** Expand the 28dp chip to a 44dp hit target without changing its look. */
-const TOPIC_HIT_SLOP = { top: 8, bottom: 8, left: 4, right: 4 } as const;
 
 /**
  * The FAQ / Help chatbot (AI-01), shared by the Worker and Client routes.
@@ -52,11 +50,19 @@ type Line =
   | { key: number; from: 'bot'; text: string; entryId: string | null; choices: FaqEntry[]; choicesLabel: string | null };
 
 export default function FaqChatbot() {
+  const headerHeight = useHeaderHeight();
   const [input, setInput] = useState('');
   const [lines, setLines] = useState<Line[]>([
     { key: 0, from: 'bot', text: FAQ_COPY.greeting, entryId: null, choices: [], choicesLabel: null },
   ]);
   const [nextKey, setNextKey] = useState(1);
+  /**
+   * A new question line only ever comes from the user's own ask, pick or topic tap,
+   * so revealing it once (question at the top, answer starting below) makes the new
+   * answer discoverable. Older lines never re-trigger, so backreading is left alone.
+   */
+  const transcriptRef = useRef<ScrollView>(null);
+  const revealedKey = useRef(0);
 
   /** Append lines in one state update so keys stay unique and ordered. */
   function append(...items: Omit<Line, 'key'>[]) {
@@ -118,15 +124,26 @@ export default function FaqChatbot() {
   const canAsk = input.trim() !== '';
 
   return (
-    <View style={styles.screen}>
+    // Edge-to-edge Android does not resize the window for the keyboard, so pad on every platform and
+    // subtract the native header; otherwise a docked keyboard covers the question field and Ask.
+    <KeyboardAvoidingView style={styles.screen} behavior="padding" keyboardVerticalOffset={headerHeight}>
       <ScrollView
+        ref={transcriptRef}
         style={styles.transcript}
         contentContainerStyle={styles.transcriptContent}
         keyboardShouldPersistTaps="handled"
       >
         {lines.map((line) =>
           line.from === 'user' ? (
-            <View key={line.key} style={[styles.bubble, styles.userBubble]}>
+            <View
+              key={line.key}
+              style={[styles.bubble, styles.userBubble]}
+              onLayout={(e) => {
+                if (line.key <= revealedKey.current) return;
+                revealedKey.current = line.key;
+                transcriptRef.current?.scrollTo({ y: Math.max(0, e.nativeEvent.layout.y - spacing.sm), animated: true });
+              }}
+            >
               <Text style={styles.speaker}>{FAQ_COPY.youName}</Text>
               <Text style={styles.bubbleText}>{line.text}</Text>
             </View>
@@ -165,8 +182,7 @@ export default function FaqChatbot() {
               onPress={() => topic(t.label, entriesForCategories(t.categories))}
               accessibilityRole="button"
               accessibilityLabel={`${FAQ_COPY.quickTopics}: ${t.label}`}
-              hitSlop={TOPIC_HIT_SLOP}
-              style={({ pressed }) => [pressed ? styles.topicPressed : null]}
+              style={({ pressed }) => [styles.topicTarget, pressed ? styles.topicPressed : null]}
             >
               <AppChip label={t.label} />
             </Pressable>
@@ -197,7 +213,7 @@ export default function FaqChatbot() {
           style={styles.askButton}
         />
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -263,7 +279,16 @@ const styles = StyleSheet.create({
   topicRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    // The 48dp targets already space the rows; a row gap would only add empty space.
+    columnGap: spacing.sm,
+    rowGap: 0,
+  },
+  /** The real 48dp Android target, with the 28dp chip centred in it unchanged. */
+  topicTarget: {
+    minHeight: size.minTarget,
+    minWidth: size.minTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   topicPressed: {
     opacity: 0.72,
