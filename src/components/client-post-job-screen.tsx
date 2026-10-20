@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useFocusEffect, useNavigation } from 'expo-router';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useHeaderHeight, useIsFocused, usePreventRemove } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -34,6 +34,7 @@ import { formatDetailDateTime } from '@/lib/date-time';
 import { JOB_SKILL_SUGGESTIONS_ENABLED } from '@/lib/job-skill-suggestions';
 import { postingDescriptionError, postingLocationError } from '@/lib/job-location';
 import { submitClientPostJob } from '@/lib/client-post-job-submission';
+import { openPostedJobMap, postingRecoveryNotice } from '@/lib/client-post-job-navigation';
 import { useClientPostJobDraft, type ClientPostJobDraft, type FeePreset } from '@/providers/client-post-job-draft-provider';
 import {
   formatJobPaymentReviewValue,
@@ -106,6 +107,7 @@ export function ClientPostJobScreen() {
   const { draft, isPosting } = owner;
   const { description, address, pin, locationNote, scheduleDate, scheduleTime, budgetText, feePreset, paymentMethod, primarySkillId, additionalSkillIds, modalQuery, modalPrimaryId, modalAdditionalIds, jobPhotos, wizardStep, postError, postSuccess, photoError } = draft;
   const navigation = useNavigation();
+  const router = useRouter();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -257,6 +259,16 @@ export function ClientPostJobScreen() {
     if (!skillsReady || locationAuthority.pickerOpen || skillsModalVisible || !isFocused || !owner.isOwnerCurrent()) return;
     invalidateSuggestions();
     await submitClientPostJob({ owner, skills, refresh });
+    // Settlement publishes a server-confirmed Job ID after photo/refresh outcomes.
+    // A lost screen lifetime retains that receipt for Home instead of navigating late.
+    openPostedJobMap({
+      isCurrent: () => locationAuthority.focused && AppState.currentState === 'active' && owner.isOwnerCurrent() && !owner.isPosting,
+      takePendingCreatedJob: owner.takePendingCreatedJob,
+      navigate: jobId => {
+        const postingWarning = postingRecoveryNotice(owner.draft);
+        router.replace({ pathname: '/client/job-details', params: { jobId, ...(postingWarning ? { postingWarning } : {}) } });
+      },
+    });
   }
 
   async function retrySkills() {

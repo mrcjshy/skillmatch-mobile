@@ -1,4 +1,6 @@
 // @ts-expect-error -- Node-only prop/lifetime harness, not native layout evidence.
+// UI-V3 (owner, 2026-10-20): the dock no longer expands an intermediate "Active booking" sheet; a tap or a swipe up
+// opens the booking's map-first Booking details directly.
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { expect, it, vi } from 'vitest';
@@ -11,7 +13,6 @@ vi.mock('react-native', () => ({ Platform: { OS: 'web', select: (v: any) => v.de
 type Props = Record<string, any>;
 const nodes = (tree: any): any[] => !tree || typeof tree !== 'object' ? [] : Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)];
 const text = (tree: any): string => tree == null || typeof tree === 'boolean' ? '' : Array.isArray(tree) ? tree.map(text).join(' ') : typeof tree === 'object' ? text(tree.props?.children) : String(tree);
-const settle = async () => { for (let n = 0; n < 30; n++) await Promise.resolve(); };
 const booking = { booking_id: 'b', job_id: 'j', booking_status: 'confirmed', payment_status: 'pending', booked_at: '2026-10-08T10:00:00Z', completed_at: null,
   job_title: 'Plumbing service', job_description: '', job_scheduled_at: '2026-10-09T10:00:00Z', job_address: 'BROAD ROW ADDRESS MUST NOT BE USED', job_barangay: null, job_city: null, job_budget: 500,
   client_user_id: 'client', client_full_name: 'Client Person', client_phone: 'private phone', worker_user_id: 'worker', worker_full_name: 'Worker Person' };
@@ -80,113 +81,55 @@ function harness(role = 'worker', initial = [booking]) {
 it.each(['pending', 'completed', 'cancelled', 'no_show'])('reclaims all dock space for %s and absent bookings', status => {
   expect(harness('worker', []).render()).toBeNull(); expect(harness('worker', [{ ...booking, booking_status: status }]).render()).toBeNull();
 });
-it('renders the real compact summary and expands instead of navigating', async () => {
-  const h = harness(); const tree = h.render(); expect(text(tree)).toContain('Active booking'); expect(text(tree)).toContain('Plumbing service');
-  expect(text(tree)).toContain('Confirmed'); expect(h.readLocation).not.toHaveBeenCalled(); h.expand(); h.expand(); await settle();
-  expect(nodes(h.render()).find(n => n.type === 'Sheet')?.props.visible).toBe(true); expect(h.details).not.toHaveBeenCalled(); expect(h.reads).toHaveBeenCalledTimes(1);
+const card = (tree: any) => nodes(tree).find(n => n.type === 'Pressable' && n.props.accessibilityLabel?.startsWith('Active booking'))!;
+const gesture = (tree: any) => nodes(tree).find(n => n.props?.gesture)!.props.gesture;
+it('renders the compact summary and a tap opens the map-first Booking details directly (no intermediate sheet)', () => {
+  const h = harness(); const tree = h.render();
+  for (const value of ['Active booking', 'Plumbing service', 'Confirmed']) expect(text(tree)).toContain(value);
+  expect(card(tree).props.accessibilityHint).toMatch(/map/i);
+  card(tree).props.onPress();
+  expect(h.details).toHaveBeenCalledTimes(1); expect(h.details.mock.calls[0][0].booking_id).toBe('b');
+  expect(nodes(h.render()).some(n => n.type === 'Sheet' || n.type === 'Map')).toBe(false);
+  // The dock reads nothing itself: Booking details owns the protected booking and location lifetimes.
+  expect(h.reads).not.toHaveBeenCalled(); expect(h.readLocation).not.toHaveBeenCalled(); expect(h.subscriptions.size).toBe(0);
 });
-it('uses existing deterministic primary selection for dock and expanded sheet', async () => {
+it('a clear upward swipe on the dock opens Booking details; short or sideways drags do not', () => {
+  const h = harness(); const g = gesture(h.render());
+  expect(g.onMoveShouldSetPanResponderCapture({}, { dx: 2, dy: -20 })).toBe(true);
+  expect(g.onMoveShouldSetPanResponderCapture({}, { dx: 40, dy: -20 })).toBe(false);
+  g.onPanResponderRelease({}, { dx: 4, dy: -30 }); g.onPanResponderRelease({}, { dx: 90, dy: -60 });
+  expect(h.details).not.toHaveBeenCalled();
+  g.onPanResponderRelease({}, { dx: 4, dy: -80 });
+  expect(h.details).toHaveBeenCalledTimes(1);
+});
+it('opens the same deterministic primary booking the dock shows', () => {
   const h = harness('worker', [{ ...booking, booking_id: 'later', job_scheduled_at: null as any }, booking]);
-  expect(text(h.render())).toContain('Plumbing service'); h.expand(); await settle();
-  nodes(h.render()).find(n => n.type === 'Button' && n.props.label === 'View booking details')!.props.onPress(); expect(h.details).toHaveBeenCalledWith(booking);
+  const tree = h.render(); expect(text(tree)).toContain('Plumbing service');
+  card(tree).props.onPress();
+  // Soonest schedule first, nulls last: the scheduled booking 'b' is primary, not the unscheduled 'later'.
+  expect(h.details.mock.calls[0][0].booking_id).toBe('b');
 });
-it('compacts sheet spacing without hiding the client, payment, authorized location or controls', async () => {
-  const h = harness(); h.expand(); await settle();
-  const sheet = nodes(h.render()).find(n => n.type === 'Sheet')!;
-  const details = sheet.props.children;
-  expect(details.props.style.gap).toBe(12);
-  expect(details.props.children[0].props.style).toMatchObject({ padding: 12, gap: 8 });
-  expect(text(sheet)).toContain('Client Person'); expect(text(sheet)).toContain('pending');
-  expect(text(sheet)).toContain('Authorized address'); expect(text(sheet)).not.toContain('BROAD ROW');
-  expect(nodes(sheet).find(n => n.type === 'Button' && n.props.label === 'View booking details')).toBeDefined();
-  expect(h.details).not.toHaveBeenCalled(); expect(h.viewAll).not.toHaveBeenCalled();
+it('shows no private booking content on Home (no address, phone, counterpart or map)', () => {
+  for (const role of ['worker', 'client']) {
+    const copy = text(harness(role).render());
+    for (const secret of ['BROAD ROW ADDRESS', 'private phone', 'Client Person', 'Worker Person', 'Authorized address']) expect(copy).not.toContain(secret);
+  }
 });
-
-it('introduces the job and schedule before the destination in the expanded reading order', async () => {
-  const h = harness(); h.expand(); await settle();
-  const sheet = nodes(h.render()).find(n => n.type === 'Sheet')!;
-  const content = nodes(sheet.props.children);
-  const title = content.findIndex(n => n.props.accessibilityRole === 'header' && text(n) === booking.job_title);
-  const schedule = content.findIndex(n => n.props.accessibilityLabel === `Schedule: ${dates.formatCardDateTime(booking.job_scheduled_at)}`);
-  const map = content.findIndex(n => n.type === 'Map');
-  expect(title).toBeGreaterThanOrEqual(0); expect(schedule).toBeGreaterThan(title); expect(map).toBeGreaterThan(schedule);
+it.each([
+  ['blur', (h: any) => h.blur()],
+  ['background', (h: any) => h.background()],
+  ['lifecycle loss', (h: any) => h.lifecycle()],
+])('does not navigate after %s', (_name, lose) => {
+  const h = harness(); const tree = h.render(); lose(h);
+  card(tree).props.onPress(); gesture(tree).onPanResponderRelease({}, { dx: 0, dy: -90 });
+  expect(h.details).not.toHaveBeenCalled();
 });
-it('announces an accessible loading state without showing private summary content', () => {
-  const h = harness(); h.expand();
-  const sheet = nodes(h.render()).find(n => n.type === 'Sheet')!;
-  expect(nodes(sheet).find(n => n.props.accessibilityRole === 'progressbar')?.props).toMatchObject({
-    accessibilityLabel: 'Loading active booking', accessibilityState: { busy: true },
-  });
-  expect(text(sheet)).not.toContain('Client Person'); expect(text(sheet)).not.toContain('Authorized address');
-  expect(nodes(sheet).find(n => n.type === 'Map')).toBeUndefined();
-});
-it('keeps the full authorized address without repeating an area already included in it', async () => {
-  const h = harness(); h.readLocation.mockResolvedValue({ ...location, address: '24 Market Street, Santa Ana, Pateros' });
-  h.expand(); await settle(); const sheet = nodes(h.render()).find(n => n.type === 'Sheet')!;
-  expect(text(sheet)).toContain('24 Market Street, Santa Ana, Pateros');
-  expect(text(sheet).split('Santa Ana, Pateros')).toHaveLength(2);
-});
-it.each(['worker', 'client'])('shows only the %s counterpart and authorized location before Details', async role => {
-  const h = harness(role); h.expand(); await settle(); const tree = h.render();
-  expect(text(tree)).toContain(role === 'worker' ? 'Client Person' : 'Worker Person');
-  expect(text(tree)).not.toContain(role === 'worker' ? 'Worker Person' : 'Client Person');
-  expect(text(tree)).toContain('Authorized address'); expect(text(tree)).not.toContain('BROAD ROW'); expect(text(tree)).not.toContain('private phone');
-  expect(nodes(tree).find(n => n.type === 'Map')?.props.pin).toEqual(location.pin);
-  expect(nodes(tree).find(n => n.type === 'Avatar')?.props.name).toBe(role === 'worker' ? 'Client Person' : 'Worker Person');
-  expect(text(tree)).toContain(role === 'worker' ? 'Your client' : 'Your worker');
-  expect(text(tree)).toContain('pending'); expect(text(tree)).toContain('500');
-});
-it('keeps missing schedule, budget, payment, counterpart and location honest', async () => {
-  const h = harness('worker', [{ ...booking, job_scheduled_at: null as any, job_budget: null as any, payment_status: null as any, client_full_name: null as any }]);
-  h.readLocation.mockRejectedValue(new Error('offline')); h.expand(); await settle(); const tree = h.render();
-  expect(nodes(tree).filter(n => n.type === 'Map')).toHaveLength(0); expect(text(tree)).toContain('Location unavailable');
-  expect(text(tree)).not.toContain('BROAD ROW'); expect(text(tree)).not.toContain('paid'); expect(text(tree)).not.toContain('500');
-  expect(nodes(tree).find(n => n.type === 'Button' && n.props.label === 'View booking details')).toBeDefined();
-});
-it('offers accessible expansion and collapse with a separate View all action for multiple bookings', async () => {
-  const h = harness('client', [booking, { ...booking, booking_id: 'z', job_scheduled_at: null as any }]);
-  const tree = h.render(), dock = nodes(tree).find(n => n.type === 'Pressable')!;
-  expect(dock.props.accessibilityRole).toBe('button'); expect(dock.props.accessibilityHint).toContain('Expand');
-  const gesture = nodes(tree).find(n => n.props.gesture)?.props.gesture;
-  // Pressable replaces responder handlers internally; the enclosing native View must own the swipe.
-  expect(dock.props.gesture).toBeUndefined();
-  expect(gesture.onMoveShouldSetPanResponderCapture({}, { dx: 1, dy: -45 })).toBe(true); gesture.onPanResponderRelease({}, { dx: 1, dy: -70 });
-  await settle(); const sheet = nodes(h.render()).find(n => n.type === 'Sheet')!;
-  expect(sheet.props.swipeToClose).toBe(true); sheet.props.onClose(); expect(nodes(h.render()).find(n => n.type === 'Map')).toBeUndefined();
-  h.expand(); await settle(); const viewAll = nodes(h.render()).find(n => n.type === 'Button' && n.props.label === 'View all bookings')!;
-  viewAll.props.onPress(); viewAll.props.onPress(); expect(h.viewAll).toHaveBeenCalledTimes(1);
-});
-it.each(['consent', 'inactive', 'role', 'owner', 'session', 'lifecycle', 'blur', 'background'])('conceals private sheet data after %s loss', async kind => {
-  const h = harness(); h.expand(); await settle(); expect(nodes(h.render()).find(n => n.type === 'Map')).toBeDefined();
-  if (kind === 'consent') h.changeAccount({ hasCurrentConsent: false });
-  if (kind === 'inactive') h.changeAccount({ account: { id: 'owner', role: 'worker', is_active: false } });
-  if (kind === 'role') h.changeAccount({ account: { id: 'owner', role: 'client', is_active: true } });
-  if (kind === 'owner') h.changeAccount({ account: { id: 'other', role: 'worker', is_active: true } });
-  if (kind === 'session') h.session.session = null;
-  if (kind === 'lifecycle') h.lifecycle(); if (kind === 'blur') h.blur(); if (kind === 'background') h.background();
-  expect(nodes(h.render()).find(n => n.type === 'Map')).toBeUndefined();
-});
-it('drops a terminal primary after authoritative refresh and features the next confirmed booking', async () => {
-  const h = harness(); h.expand(); await settle();
-  h.setRows([{ ...booking, booking_status: 'completed' }, { ...booking, booking_id: 'next', job_id: 'next-job', job_title: 'Next job' }]);
-  expect(nodes(h.render()).find(n => n.type === 'Map')).toBeUndefined(); expect(text(h.render())).toContain('Next job');
-  h.setRows([]); expect(h.render()).toBeNull();
-});
-it('keeps operational booking actions and location mutation APIs off the sheet', () => {
-  const source = readFileSync('src/components/active-booking-home-dock.tsx', 'utf8');
-  expect(source).not.toMatch(/expo-location|snap(?:Pin|To|Point)|geocod|acceptBooking|cancelBooking|completeBooking|markPaid|supabase\./i);
-});
-it('conceals precise data on the existing status event before authoritative terminal revalidation', async () => {
-  const h = harness(); expect(h.subscriptions.size).toBe(0); h.expand(); await settle();
-  expect(nodes(h.render()).find(n => n.type === 'Map')).toBeDefined();
-  let finish!: (rows: any) => void; h.reads.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-  h.invalidate();
-  const pending = h.render(); expect(nodes(pending).find(n => n.type === 'Map')).toBeUndefined();
-  expect(text(pending)).not.toContain('Authorized address'); expect(text(pending)).not.toContain('Client Person');
-  finish([{ ...booking, booking_status: 'completed' }]); await settle(); expect(h.render()).toBeNull(); expect(h.subscriptions.size).toBe(0);
-});
-it('clears an expanded map on transport loss and removes its receive-only subscription', async () => {
-  const h = harness(); h.expand(); await settle(); h.render();
-  expect([...h.subscriptions][0]).toMatchObject({ topic: 'booking:b:messages', events: ['booking_status_changed'] });
-  h.unavailable(); const tree = h.render(); expect(nodes(tree).find(n => n.type === 'Map')).toBeUndefined(); expect(h.subscriptions.size).toBe(0);
+it.each([
+  ['consent', { hasCurrentConsent: false }], ['role', { account: { id: 'owner', role: 'client', is_active: true } }],
+  ['inactive', { account: { id: 'owner', role: 'worker', is_active: false } }], ['owner', { account: { id: 'other', role: 'worker', is_active: true } }],
+])('removes the dock and refuses navigation after %s loss', (_name, change) => {
+  const h = harness(); const tree = h.render(); h.changeAccount(change);
+  expect(h.render()).toBeNull();                       // React re-renders on the authority change: the dock unmounts
+  card(tree).props.onPress(); gesture(tree).onPanResponderRelease({}, { dx: 0, dy: -90 });
+  expect(h.details).not.toHaveBeenCalled();           // a late tap on the unmounted dock does nothing
 });

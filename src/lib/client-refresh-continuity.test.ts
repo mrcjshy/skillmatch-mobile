@@ -78,7 +78,7 @@ vi.mock('expo-router', () => {
   const Stack = ({ children }: any) => children;
   Stack.Protected = function ProtectedBoundary({ guard, children }: any) { return guard ? children : null; };
   Stack.Screen = function ScreenBoundary({ name }: any) { return name === '(client)' ? createElement(ClientLayout) : name === '(tabs)' ? createElement(DraftObserver) : null; };
-  return { Stack };
+  return { Stack, usePathname: () => '/client', useGlobalSearchParams: () => ({}) };
 });
 
 function GateObserver({ children }: any) {

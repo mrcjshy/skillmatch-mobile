@@ -46,7 +46,6 @@ import {
   formatTimestamp,
   isForbidden,
   loadErrorCopy,
-  MESSAGE_MAX_LENGTH,
   MessageRow,
   remainingCharacters,
   sendBookingMessage,
@@ -625,7 +624,7 @@ export default function BookingChat({
               {/* Counts down against the same trimmed length the server
                   measures. Over-length is reported, never truncated. */}
               <Text style={remaining < 0 ? styles.counterOver : styles.counter}>
-                {remaining} / {MESSAGE_MAX_LENGTH}
+                {remaining >= 0 ? `${remaining} characters remaining` : `${-remaining} characters over limit`}
               </Text>
               <AppButton
                 variant="primary"

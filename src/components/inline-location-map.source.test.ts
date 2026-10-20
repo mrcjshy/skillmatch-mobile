@@ -43,8 +43,13 @@ describe('Worker-to-Client live location (source contracts, not native proof)', 
     expect(worker).toMatch(/useLocationSharing\(bookingId, accountId,/);
     expect(worker).toMatch(/useBookingPins\(bookingId, accountId, 'worker', sharing\.shareId,/);
     expect(map.match(/sharing\.start/g)).toHaveLength(1);
-    expect(worker).toMatch(/label="Share my location"[^\n]*onPress=\{sharing\.start\}/);
-    expect(worker).toContain('label="Stop sharing on this device"');
+    // Share is the floating theme-accent control (2026-10-20 demo UI): the one start, with the same conditions.
+    expect(worker).toContain('<ShareLocationFab mode={fabMode}');
+    expect(worker).toContain('onPress={stopping ? sharing.stop : sharing.start}');
+    expect(worker).toContain("const canShare = surface.ready && !sharing.shareId && pins.view.status !== 'denied';");
+    expect(code('components/share-location-fab.tsx')).toContain("'Share my location'");
+    expect(worker).not.toContain('label="Stop sharing on this device"');
+    expect(code('components/share-location-fab.tsx')).toContain('Stop sharing location on this device');
     expect(worker).toContain('label="Stop sharing on all devices"');
     // The Worker's map is fed no counterpart: a Client position is never drawn for the Worker.
     expect(worker).toContain("viewerRole: 'worker', destination, ownPosition: own, workerPin: null");
@@ -102,10 +107,12 @@ describe('Worker-to-Client live location (source contracts, not native proof)', 
     expect(map.match(/\{renderPanel\(\{ primary, secondary \}\)\}/g)).toHaveLength(2);
     expect(map).toMatch(/<View style=\{\[StyleSheet\.absoluteFill, styles\.canvas\]\}><Map /);
     const worker = fn(map, 'WorkerBookingMap');
-    // Stop stays in the always-visible (collapsed) part while sharing.
+    // The circle owns Stop while live/requesting; the duplicate panel button is removed.
     const primary = worker.slice(worker.indexOf('const primary'), worker.indexOf('const secondary'));
-    expect(primary).toContain('label="Stop sharing on this device" onPress={sharing.stop}');
-    expect(primary).toContain('label="Share my location"');
+    expect(primary).not.toContain('label="Stop sharing on this device"');
+    expect(worker).toContain('onPress={stopping ? sharing.stop : sharing.start}');
+    // The circle sits on the map; the accessible Show map handle restores access from the expanded sheet.
+    expect(worker).toMatch(/fabMode \? <ShareLocationFab[\s\S]*\{renderPanel\(\{ primary, secondary \}\)\}/);
     expect(fn(map, 'ClientBookingMap')).not.toMatch(/Share my location|Stop sharing|useLocationSharing/);
     // The map is still keyed to the booking session: leaving/backgrounding remounts it and ends sharing.
     expect(details).toContain('<BookingLocationMap key={`${account.id}:${booking.booking_id}:${pinsSession}`}');

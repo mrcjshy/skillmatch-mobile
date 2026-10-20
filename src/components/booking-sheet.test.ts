@@ -17,12 +17,14 @@ const flat = (style: any): Props => Array.isArray(style)
   ? Object.assign({}, ...style.filter(Boolean).map(flat)) : style ?? {};
 const body = (tree: Node) => nodes(tree).find(node => node.props.accessibilityElementsHidden !== undefined)!;
 const panel = (tree: Node) => nodes(tree).find(node => node.props.accessibilityLabel?.startsWith('Booking details panel'))!;
-const toggle = (tree: Node) => nodes(tree).find(node => node.type === 'IconButton')!;
+const toggle = (tree: Node) => nodes(tree).find(node => node.type === 'Pressable' && node.props.accessibilityRole === 'button')!;
 const scroll = (tree: Node) => nodes(tree).find(node => node.type === 'ScrollView')!;
 
-function harness(bottom = 24) {
+function harness(bottom = 24, extraProps: Props = {}) {
   const slots: any[] = [], effects: (() => void)[] = [];
   let cursor = 0;
+  let reducedMotion = false;
+  const timings: Props[] = [];
   const hook = (initial: any) => {
     const index = cursor++;
     if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial;
@@ -58,7 +60,7 @@ function harness(bottom = 24) {
     },
     'react/jsx-runtime': { jsx, jsxs: jsx },
     'react-native': {
-      View: 'View', ScrollView: 'ScrollView',
+      View: 'View', ScrollView: 'ScrollView', Pressable: 'Pressable',
       StyleSheet: { create: (styles: Props) => styles, absoluteFill: {} },
       Easing: { bezier: () => 'easing' },
       PanResponder: { create: (handlers: Props) => ({ panHandlers: { gesture: handlers } }) },
@@ -69,16 +71,16 @@ function harness(bottom = 24) {
           setValue(value: number) { this.value = value; }
           interpolate() { return 0; }
         },
-        timing: (value: { setValue: (next: number) => void }, config: Props) => ({
-          start: () => value.setValue(config.toValue), stop() {},
-        }),
+        timing: (value: { setValue: (next: number) => void }, config: Props) => {
+          timings.push(config);
+          return { start: () => value.setValue(config.toValue), stop() {} };
+        },
       },
     },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24, bottom, left: 0, right: 0 }) },
     '@/components/refinement-theme': { useUiTheme: () => SkillMatchTheme.ui },
-    '@/components/app-icon-button': { AppIconButton: 'IconButton' },
     '@/constants/motion': { MotionTokens },
-    '@/hooks/use-reduced-motion': { useReducedMotion: () => false },
+    '@/hooks/use-reduced-motion': { useReducedMotion: () => reducedMotion },
     '@/lib/booking-sheet': geometry,
   };
   const exports: Props = {};
@@ -91,7 +93,7 @@ function harness(bottom = 24) {
   }, exports);
   const render = (): Node => {
     cursor = 0;
-    const tree = exports.BookingSheet({ header, children, topReserve: 88, onCollapsedHeight, refreshControl });
+    const tree = exports.BookingSheet({ header, children, topReserve: 88, onCollapsedHeight, refreshControl, ...extraProps });
     effects.splice(0).forEach(effect => effect());
     return tree;
   };
@@ -101,10 +103,60 @@ function harness(bottom = 24) {
     nodes(tree).find(node => node !== tree && node.props.onLayout)!.props.onLayout({ nativeEvent: { layout: { height: headerHeight } } });
     return render();
   };
-  return { render, measure, children, header, refreshControl, onCollapsedHeight, action, stop };
+  return { render, measure, children, header, refreshControl, onCollapsedHeight, action, stop, timings,
+    setReducedMotion: (value: boolean) => { reducedMotion = value; } };
 }
 
 describe('collapsed booking sheet safe area', () => {
+  it('settles a partial header drag immediately after reduced motion is enabled while mounted', () => {
+    const h = harness();
+    const tree = h.measure();
+    // This is the installed native responder, retained through the live preference update.
+    const gesture = nodes(tree).find(node => node.props.gesture?.onMoveShouldSetPanResponder)!.props.gesture;
+    h.setReducedMotion(true); h.render(); h.timings.length = 0;
+    gesture.onPanResponderGrant();
+    gesture.onPanResponderMove({}, { dy: -40 });
+    gesture.onPanResponderRelease({}, { dy: -40, vy: 0 });
+    expect(toggle(h.render()).props.accessibilityLabel).toBe('Show booking details');
+    expect(h.timings.map(config => config.duration)).toEqual([0]);
+  });
+
+  it.each([
+    { target: 'header', position: 'collapsed', end: 'terminate', initial: false, next: true, immediate: true },
+    { target: 'body', position: 'expanded', end: 'release', initial: false, next: true, immediate: true },
+    { target: 'body', position: 'expanded', end: 'terminate', initial: false, next: true, immediate: true },
+    { target: 'header', position: 'collapsed', end: 'release', initial: true, next: false, immediate: false },
+    { target: 'header', position: 'collapsed', end: 'terminate', initial: true, next: false, immediate: false },
+    { target: 'body', position: 'expanded', end: 'release', initial: true, next: false, immediate: false },
+    { target: 'body', position: 'expanded', end: 'terminate', initial: true, next: false, immediate: false },
+    { target: 'header', position: 'collapsed', end: 'release', initial: false, next: false, immediate: false },
+    { target: 'body', position: 'expanded', end: 'release', initial: true, next: true, immediate: true },
+  ])('uses the current motion preference for partial $target $end ($initial to $next)', ({ target, position, end, initial, next, immediate }) => {
+    const h = harness(24, { initialPosition: position });
+    h.setReducedMotion(initial);
+    const tree = h.measure();
+    const gesture = nodes(tree).find(node => target === 'header'
+      ? node.props.gesture?.onMoveShouldSetPanResponder
+      : node.props.gesture?.onMoveShouldSetPanResponderCapture)!.props.gesture;
+    h.setReducedMotion(next); h.render(); h.timings.length = 0;
+    const dy = position === 'collapsed' ? -40 : 40;
+    gesture.onPanResponderGrant();
+    gesture.onPanResponderMove({}, { dy });
+    gesture[end === 'release' ? 'onPanResponderRelease' : 'onPanResponderTerminate']({}, { dy, vy: 0 });
+    expect(toggle(h.render()).props.accessibilityLabel).toBe(position === 'expanded' ? 'Show map' : 'Show booking details');
+    expect(h.timings).toHaveLength(1);
+    if (immediate) expect(h.timings[0].duration).toBe(0);
+    else expect(h.timings[0].duration).toBeGreaterThan(0);
+  });
+
+  it('retains an expanded detent when the tracking presentation becomes a Booking', () => {
+    const onPositionChange = vi.fn();
+    const h = harness(24, { initialPosition: 'expanded', onPositionChange });
+    const tree = h.measure();
+    expect(panel(tree).props.accessibilityLabel).toBe('Booking details panel, expanded');
+    expect(body(tree).props.pointerEvents).toBe('auto');
+    expect(onPositionChange).toHaveBeenCalledWith('expanded');
+  });
   it.each([
     { bottom: 24, headerHeight: 180 },
     { bottom: 48, headerHeight: 248 },
@@ -125,6 +177,13 @@ describe('collapsed booking sheet safe area', () => {
     expect(scroll(tree).props.children).toBe(h.children);
     expect(h.action).not.toHaveBeenCalled();
     expect(h.stop).not.toHaveBeenCalled();
+  });
+
+  it('has no arrow control: the drag handle is the only (accessible) toggle', () => {
+    const tree = harness().measure();
+    expect(nodes(tree).some(node => node.type === 'IconButton' || /expand_(less|more)|chevron\.(up|down)/.test(JSON.stringify(node.props.icon ?? '')))).toBe(false);
+    expect(toggle(tree).props.accessibilityHint).toMatch(/Swipe up or down/);
+    expect(nodes(toggle(tree)).some(node => node.props.style && flat(node.props.style).height === 5)).toBe(true);
   });
 
   it('restores the same booking content, actions and scrolling through the accessible toggle', () => {

@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { ACCESS_ROUTE, deriveAccessState } from '@/app/_layout';
 import { SkillMatchTheme } from '@/constants/theme';
+import { sessionRouteContinuation } from '@/lib/session-route-continuation';
 import {
   decidePendingInboxNavigation,
   getPendingChatBookingId,
@@ -53,7 +54,12 @@ export default function RootIndex() {
     );
   }
 
-  return <Redirect href={home} />;
+  // A refresh must not send a Chat reader Home. Restore only a navigation intent from the
+  // same live session AFTER fresh account/consent/verification guards have resolved again.
+  // Explicit notification and call intents retain priority over this ordinary continuation.
+  const continuation = getPendingChatBookingId() === null && getPendingCall() === null && !hasPendingNotificationsInboxIntent()
+    ? sessionRouteContinuation.destination(access, sessionValue.session?.user.id ?? null, sessionValue.sessionLifetime) : null;
+  return <Redirect href={(continuation ?? home) as Href} />;
 }
 
 const styles = StyleSheet.create({

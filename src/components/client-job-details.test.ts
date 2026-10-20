@@ -1,13 +1,16 @@
-import { act, createElement, createContext, useContext, useLayoutEffect, useId, Suspense } from 'react';
+import { act, createElement, createContext, useContext, useLayoutEffect, useId, useState, Suspense } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ClientJobDetails from './client-job-details';
 import { ClientJobsProvider } from '@/providers/client-jobs-provider';
 import { createClientPostJobDraftOwner } from '@/providers/client-post-job-draft-provider';
 import { AppButton } from '@/components/app-button';
 import { SkillMatchTheme } from '@/constants/theme';
+import RootLayout from '@/app/_layout';
+import RootIndex from '@/app/index';
+import { sessionRouteContinuation } from '@/lib/session-route-continuation';
 
 const { colors } = SkillMatchTheme.ui;
-vi.mock('@/components/refinement-theme', () => ({ useUiTheme: () => SkillMatchTheme.ui }));
+vi.mock('@/components/refinement-theme', () => ({ useUiTheme: () => SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children }));
 
 const b = vi.hoisted(() => ({
   nodes: new Map<string, any>(), owner: null as any, session: null as any, account: null as any,
@@ -15,6 +18,8 @@ const b = vi.hoisted(() => ({
   focus: true, active: 'active', appEvents: new Set<(state: string) => void>(),
   jobs: [] as any[], bookingReply: null as any, listReply: null as any, signReply: null as any,
   rpc: vi.fn(), list: vi.fn(), sign: vi.fn(), push: vi.fn(), jobsReply: null as any,
+  invalidations: new Set<any>(), alert: vi.fn(), deleteJob: vi.fn(), replace: vi.fn(),
+  pathname: '/client/job-details', params: {} as Record<string, string>, rootRouting: false, navigate: null as any,
 }));
 const NativeParent = createContext<string | null>(null);
 function Native({ kind, children, ...props }: any) {
@@ -23,6 +28,7 @@ function Native({ kind, children, ...props }: any) {
   return kind === 'Image' || kind === 'Text' || kind === 'ActivityIndicator' ? null : createElement(NativeParent.Provider, { value: id }, children);
 }
 vi.mock('react-native', () => ({
+  Alert: { alert: (...args: any[]) => b.alert(...args) },
   ...Object.fromEntries(['View', 'Text', 'ScrollView', 'Pressable', 'ActivityIndicator', 'Modal'].map(kind => [kind, (props: any) => createElement(Native, { ...props, kind })])),
   StyleSheet: { create: (s: any) => s }, Platform: { OS: 'web', select: (s: any) => s.default },
   useWindowDimensions: () => ({ width: 412, height: 915, fontScale: 1 }),
@@ -30,18 +36,56 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('expo-image', () => ({ Image: (props: any) => createElement(Native, { ...props, kind: 'Image' }) }));
 vi.mock('expo-font', () => ({ useFonts: () => [true] }));
+// The Reanimated/Compose carousel is native presentation; it has its own test.
+vi.mock('@/components/motion', () => ({ MotionView: (props: any) => createElement(Native, { ...props, kind: 'MotionView' }), usePressScale: () => ({ style: undefined, onPressIn() {}, onPressOut() {} }) }));
+// UI-V3 map-first open job: native map, sheet, safe area and icon button are seams here (native QA covers them).
+vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 16, left: 0, right: 0 }) }));
+vi.mock('@/components/finding-job-map', () => ({ FindingJobMap: (props: any) => createElement(Native, { ...props, kind: 'FindingJobMap' }) }));
+vi.mock('@/components/booking-sheet', () => ({ BookingSheet: ({ header, children, ...props }: any) => createElement(Native, { ...props, kind: 'BookingSheet' },
+  createElement(Native, { kind: 'SheetHeader' }, header), createElement(Native, { kind: 'SheetBody' }, children)) }));
+vi.mock('@/components/app-icon-button', () => ({ AppIconButton: (props: any) => createElement(Native, { ...props, kind: 'IconButton' }) }));
+vi.mock('@/components/finding-worker-carousel', () => ({ FindingWorkerCarousel: () => createElement(Native, { kind: 'FindingWorkerCarousel' }) }));
+vi.mock('@/components/booking-details', () => ({ default: (props: any) => createElement(Native, { ...props, kind: 'BookingDetails' }) }));
+vi.mock('@/lib/realtime', async importOriginal => ({ ...await importOriginal<any>(),
+  subscribeInvalidation: (options: any) => { b.invalidations.add(options); return () => b.invalidations.delete(options); },
+}));
 vi.mock('expo-symbols/androidWeights/regular', () => ({ default: { name: 'MaterialSymbols_400Regular', font: 1 } }));
 vi.mock('expo-symbols', () => ({ SymbolView: () => null }));
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: b.push }),
-  useFocusEffect: (fn: () => void | (() => void)) => { const focused = b.focus; useLayoutEffect(() => focused ? fn() : undefined, [fn, focused]); } }));
-vi.mock('@/providers/account-provider', () => ({ useAccount: () => b.account }));
-vi.mock('@/providers/session-provider', () => ({ useSession: () => b.session }));
+vi.mock('expo-router', () => {
+  const Stack = Object.assign(({ children }: any) => children, {
+    Protected: ({ guard, children }: any) => guard ? children : null,
+    Screen: ({ name }: any) => !b.rootRouting ? null : name === 'index' && b.pathname === '/'
+      ? createElement(RootIndex) : name === '(client)' && b.pathname === '/client/job-details'
+        ? createElement(ClientJobsProvider, { ownerId: CLIENT, isOwnerCurrent: b.owner.isOwnerCurrent } as any,
+          createElement(ClientJobDetails, { jobId: b.params.jobId })) : null,
+  });
+  return { useRouter: () => ({ push: b.push, back: vi.fn(), canGoBack: () => true, replace: b.replace }), Stack,
+    usePathname: () => b.pathname, useGlobalSearchParams: () => b.params,
+    Redirect: ({ href }: any) => { useLayoutEffect(() => b.navigate(href), [href]); return null; },
+    useFocusEffect: (fn: () => void | (() => void)) => { const focused = b.focus; useLayoutEffect(() => focused ? fn() : undefined, [fn, focused]); } };
+});
+vi.mock('@/providers/account-provider', () => ({ useAccount: () => b.account, AccountProvider: ({ children }: any) => children }));
+vi.mock('@/providers/session-provider', () => ({ useSession: () => b.session, SessionProvider: ({ children }: any) => children }));
+vi.mock('../../tamagui.config', () => ({ tamaguiConfig: {} }));
+vi.mock('tamagui', async importOriginal => ({ ...await importOriginal<any>(), TamaguiProvider: ({ children }: any) => children }));
+vi.mock('@/components/state-screen', () => ({ StateScreen: (props: any) => createElement(Native, { ...props, kind: 'StateScreen' }) }));
+vi.mock('@/components/session-reconnecting-screen', () => ({ SessionReconnectingScreen: () => null }));
+vi.mock('@/components/push-notification-inbox-intent', () => ({ PushNotificationInboxIntent: () => null }));
+vi.mock('@/components/incoming-message-banner-host', () => ({ IncomingMessageBannerHost: () => null }));
+vi.mock('@/components/incoming-call-host', () => ({ IncomingCallHost: () => null }));
+vi.mock('@/components/location-stop-host', () => ({ LocationStopHost: () => null }));
+vi.mock('@/lib/push-notifications', () => ({ decidePendingInboxNavigation: () => ({ kind: 'none' }),
+  getPendingChatBookingId: () => null, getPendingCall: () => null, hasPendingNotificationsInboxIntent: () => false }));
 vi.mock('@/providers/client-post-job-draft-provider', async importOriginal => {
   const real = await importOriginal<any>(); return { ...real, useClientPostJobDraft: () => ({ ...b.owner }) };
 });
 vi.mock('@/components/client-job-location', () => ({ ClientJobLocation: (props: any) => createElement(Native, { ...props, kind: 'ClientJobLocation' }) }));
 vi.mock('@/lib/supabase', () => ({ supabase: {
-  from: (table: string) => ({ select: () => ({
+  from: (table: string) => ({ delete: () => {
+    const filters: any[] = [];
+    const chain = { eq: (key: string, value: string) => { filters.push([key, value]); return chain; }, select: () => b.deleteJob(table, filters) };
+    return chain;
+  }, select: () => ({
     order: async () => ({ data: [], error: null }),
     eq: () => ({ order: () => b.jobsReply ?? Promise.resolve({ data: b.jobs, error: null }) }),
     in: async () => ({ data: [], error: null }),
@@ -58,7 +102,8 @@ function deferred<T = any>() { let resolve!: (v: T) => void, reject!: (e: unknow
 const roots: any[] = [];
 async function flush() { await act(async () => { for (let n = 0; n < 12; n++) await Promise.resolve(); }); }
 beforeEach(() => {
-  vi.clearAllMocks(); b.nodes.clear(); b.sessionEvents.clear(); b.terminationEvents.clear(); b.appEvents.clear();
+  sessionRouteContinuation.clear(); b.rootRouting = false; b.pathname = '/client/job-details'; b.params = { jobId: JOB };
+  vi.clearAllMocks(); b.deleteJob.mockResolvedValue({ data: [{ id: JOB }], error: null }); b.nodes.clear(); b.sessionEvents.clear(); b.terminationEvents.clear(); b.appEvents.clear(); b.invalidations.clear();
   vi.spyOn(console, 'error').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {});
   b.focus = true; b.active = 'active'; b.listReply = b.signReply = b.bookingReply = b.jobsReply = null;
   let revision = 1;
@@ -92,9 +137,130 @@ async function mount(jobId: any = JOB) {
   return { render, route: async (next: any) => { id = next; await render(); }, suspend: async () => { blocked = true; await render(); }, resume: async () => { blocked = false; pending.resolve(undefined); await render(); } };
 }
 describe('actual owner-provider / detail / private-photo composition', () => {
+  it('keeps the exact Job and expanded map sheet after root account-pending unmount and same-session re-entry', async () => {
+    // Use the actual RootLayout guards, root dispatcher, route continuation and
+    // detail component. The router/native boundary mounts only the active route.
+    const doc: any = { nodeType: 9, activeElement: null, documentElement: {}, addEventListener() {}, removeEventListener() {} };
+    const win = { document: doc, HTMLIFrameElement: class {}, event: undefined }; doc.defaultView = win;
+    vi.stubGlobal('document', doc); vi.stubGlobal('window', win); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const name: string = 'react-dom/client'; const renderer = await import(/* @vite-ignore */ name);
+    const root = renderer.createRoot({ nodeType: 1, tagName: 'DIV', ownerDocument: doc, firstChild: null, lastChild: null,
+      addEventListener() {}, removeEventListener() {}, appendChild() {}, removeChild() {}, insertBefore() {} }); roots.push(root);
+    b.rootRouting = true;
+    function MountedRoot() {
+      const [, rerender] = useState(0);
+      useLayoutEffect(() => {
+        b.navigate = (href: any) => {
+          b.pathname = typeof href === 'string' ? href : href.pathname;
+          b.params = typeof href === 'string' ? {} : href.params;
+          rerender(value => value + 1);
+        };
+      }, []);
+      return createElement(RootLayout);
+    }
+    const render = async () => { await act(async () => root.render(createElement(MountedRoot))); await flush(); };
+    await render();
+    expect(nodes('BookingSheet')).toHaveLength(1);
+    await act(async () => nodes('BookingSheet')[0].onPositionChange('expanded'));
+    expect(nodes('BookingSheet')[0].initialPosition).toBe('expanded');
+    // Same owner and live lifetime; a refreshed session still requires fresh
+    // account authority. Pending must actually unmount the protected route.
+    b.account = { ...b.account, status: 'pending', account: null };
+    b.session = { ...b.session, session: { user: { id: CLIENT } } };
+    await act(async () => b.session.advance()); await render();
+    expect(nodes('StateScreen')[0].message).toContain('Checking your account');
+    expect(nodes('BookingSheet')).toHaveLength(0);
+    expect(nodes('FindingWorkerCarousel')).toHaveLength(0);
+    expect(text()).not.toContain('Real provider description');
+    // A new native Stack starts at index; its real Redirect restores the saved
+    // exact Job only after the fresh account/consent result is resolved.
+    b.pathname = '/'; b.params = {};
+    b.account = { ...b.account, status: 'resolved', account: { id: CLIENT, role: 'client', is_active: true } };
+    await render();
+    expect(b.pathname).toBe('/client/job-details'); expect(b.params).toEqual({ jobId: JOB });
+    expect(nodes('BookingSheet')).toHaveLength(1);
+    expect(nodes('BookingSheet')[0].initialPosition).toBe('expanded');
+    expect(text()).toContain('Real provider description');
+  });
+  it('keeps the map sheet during a pending booking read without claiming an open waiting state', async () => {
+    b.bookingReply = deferred().promise;
+    await mount(); expect(nodes('BookingSheet')).toHaveLength(1);
+    expect(nodes('FindingWorkerCarousel')).toHaveLength(0);
+    expect(text()).toContain('Checking job and booking status');
+  });
+  it('rereads on acceptance invalidation, settles the carousel, and shows the real booking in place at the same detent', async () => {
+    await mount(); expect(nodes('FindingWorkerCarousel')).toHaveLength(1);
+    await act(async () => nodes('BookingSheet')[0].onPositionChange('expanded'));
+    const pending = deferred(); b.bookingReply = pending.promise;
+    b.jobs = b.jobs.map(job => ({ ...job, status: 'assigned' }));
+    const listener = [...b.invalidations][0];
+    expect(listener.topic).toBe('user:' + CLIENT + ':notifications');
+    await act(async () => listener.onInvalidate()); await flush();
+    expect(nodes('FindingWorkerCarousel')).toHaveLength(0);
+    expect(nodes('BookingSheet')).toHaveLength(1);
+    await act(async () => pending.resolve({ data: [{ booking_id: 'real-booking', job_id: JOB, booking_status: 'confirmed', job_title: 'job', worker_user_id: 'worker-a' }], error: null }));
+    await flush();
+    expect(nodes('BookingDetails')[0]).toMatchObject({ bookingId: 'real-booking', role: 'client', initialSheetPosition: 'expanded' });
+    expect(nodes('FindingWorkerCarousel')).toHaveLength(0); expect(b.push).not.toHaveBeenCalled();
+  });
+  it('recovers fresh booking details after an active event while already active', async () => {
+    await mount(); expect(nodes('FindingWorkerCarousel')).toHaveLength(1);
+    await act(async () => nodes('BookingSheet')[0].onPositionChange('expanded'));
+    b.bookingReply = Promise.resolve({ data: [{ booking_id: 'accepted-while-active', job_id: JOB, booking_status: 'confirmed', job_title: 'job', worker_user_id: 'worker-a' }], error: null });
+    // Android onHostResume can report active without a preceding JS state change.
+    await act(async () => { for (const fn of b.appEvents) fn('active'); }); await flush();
+    expect(nodes('BookingDetails')[0]).toMatchObject({ bookingId: 'accepted-while-active', initialSheetPosition: 'expanded' });
+    expect(text()).not.toContain('Checking job and booking status');
+    expect(nodes('FindingWorkerCarousel')).toHaveLength(0);
+  });
+  it('restarts a canceled read after batched background and active events without reviving its pending reply', async () => {
+    const oldBooking = deferred(), oldPhotos = deferred();
+    b.bookingReply = oldBooking.promise; b.listReply = oldPhotos.promise;
+    await mount(); expect(text()).toContain('Checking job and booking status');
+    await act(async () => {
+      b.active = 'background'; for (const fn of b.appEvents) fn('background');
+      b.bookingReply = Promise.resolve({ data: [{ booking_id: 'fresh-after-resume', job_id: JOB, booking_status: 'confirmed', job_title: 'job', worker_user_id: 'worker-a' }], error: null });
+      b.listReply = Promise.resolve({ data: [], error: null });
+      b.active = 'active'; for (const fn of b.appEvents) fn('active');
+    }); await flush();
+    expect(nodes('BookingDetails')[0]).toMatchObject({ bookingId: 'fresh-after-resume' });
+    await act(async () => {
+      oldBooking.resolve({ data: [{ booking_id: 'stale-before-background', job_id: JOB, booking_status: 'confirmed', job_title: 'old', worker_user_id: 'worker-a' }], error: null });
+      oldPhotos.resolve({ data: [{ name: '1' }], error: null });
+    }); await flush();
+    expect(nodes('BookingDetails')[0]).toMatchObject({ bookingId: 'fresh-after-resume' });
+    expect(nodes('Image')).toHaveLength(0); expect(b.sign).not.toHaveBeenCalled();
+  });
+  it('shows a notification transport failure and recovers through Refresh job with fresh booking context', async () => {
+    await mount(); expect(nodes('FindingWorkerCarousel')).toHaveLength(1);
+    await act(async () => nodes('BookingSheet')[0].onPositionChange('expanded'));
+    await act(async () => [...b.invalidations][0].onUnavailable()); await flush();
+    expect(nodes('FindingWorkerCarousel')).toHaveLength(0);
+    expect(text()).toContain('Could not refresh job status. Please retry.');
+    expect(button('Cancel')).toBeUndefined(); expect(button('View or edit location')).toBeUndefined();
+    b.jobs = b.jobs.map(job => ({ ...job, status: 'matched' }));
+    b.bookingReply = Promise.resolve({ data: [{ booking_id: 'confirmed-after-transport-error', job_id: JOB, booking_status: 'confirmed', job_title: 'job', worker_user_id: 'worker-a' }], error: null });
+    await act(async () => button('Refresh job').onPress()); await flush();
+    expect(nodes('BookingDetails')[0]).toMatchObject({ bookingId: 'confirmed-after-transport-error', initialSheetPosition: 'expanded' });
+    expect(text()).not.toContain('Could not refresh');
+  });
+  it('a failed acceptance reread hides waiting and offers refresh without inventing a Booking ID', async () => {
+    await mount(); b.bookingReply = Promise.resolve({ data: null, error: { code: '42501' } });
+    await act(async () => [...b.invalidations][0].onInvalidate()); await flush();
+    expect(nodes('FindingWorkerCarousel')).toHaveLength(0); expect(nodes('BookingDetails')).toHaveLength(0);
+    expect(nodes('BookingSheet')).toHaveLength(1); expect(button('Refresh job')).toBeDefined();
+    expect(text()).toContain('Booking context is unavailable'); expect(text()).not.toContain('Booking ID');
+  });
+  it('late notification callbacks after blur do not start fresh authority reads', async () => {
+    const h = await mount(), listener = [...b.invalidations][0];
+    b.focus = false; await h.render(); const calls = b.rpc.mock.calls.length;
+    await act(async () => listener.onInvalidate()); await flush();
+    expect(b.rpc).toHaveBeenCalledTimes(calls); expect(b.invalidations.size).toBe(0);
+    expect(nodes('BookingDetails')).toHaveLength(0);
+  });
   it('renders provider description and only resolved open/no-booking waiting context', async () => {
     await mount(); expect(text()).toContain('Real provider description\nUnicode ñ'); expect(text()).toContain('Waiting for acceptance');
-    expect(text()).toContain('1,500'); expect(text()).toContain('Schedule'); expect(text()).toContain('Skills'); expect(text()).toContain('None');
+    expect(text()).toContain('1,500'); expect(text()).toContain('Date & time'); expect(text()).toContain('Hang tight! Your job is open to eligible workers.'); expect(text()).toContain('Waiting for a worker'); expect(text()).not.toContain('Booking ID'); expect(text()).not.toMatch(/being connected|assigned to you|selected/i); expect(text()).toContain('Job ID'); expect(nodes('FindingWorkerCarousel')).toHaveLength(1); expect(nodes('FindingJobMap')).toHaveLength(1); expect(nodes('BookingSheet')).toHaveLength(1); expect(nodes('ScrollView')).toHaveLength(0); expect(text()).toContain('Skills'); expect(text()).toContain('None');
     expect(b.rpc).toHaveBeenCalledWith('list_my_client_bookings'); expect(b.list).toHaveBeenCalledWith(CLIENT + '/' + JOB, expect.any(Object));
     expect(text()).toContain('No job photos'); expect(button('View or edit location')).toBeDefined();
   });
@@ -111,8 +277,9 @@ describe('actual owner-provider / detail / private-photo composition', () => {
   });
   it('links only actual booking ID and does not duplicate counterparty data', async () => {
     b.bookingReply = Promise.resolve({ data: [{ booking_id: 'booking-a', job_id: JOB, booking_status: 'confirmed', job_title: 'job', worker_user_id: 'worker-a', worker_full_name: 'Private person', worker_phone: 'private-phone' }], error: null });
-    await mount(); expect(text()).toContain('Assigned'); expect(text()).not.toContain('Private person');
-    button('Booking details').onPress(); expect(b.push).toHaveBeenCalledWith({ pathname: '/client/booking-details', params: { bookingId: 'booking-a' } });
+    await mount(); expect(text()).not.toContain('Private person');
+    expect(nodes('BookingDetails')[0]).toMatchObject({ role: 'client', bookingId: 'booking-a', initialSheetPosition: 'collapsed' });
+    expect(b.push).not.toHaveBeenCalled(); expect(nodes('FindingWorkerCarousel')).toHaveLength(0);
   });
   it.each(['blur', 'background', 'session', 'termination', 'pending-account', 'route', 'suspense'])('irreversibly invalidates pending listing on %s then permits a new lifetime', async kind => {
     const pending = deferred(); b.listReply = pending.promise; const h = await mount(); expect(b.list).toHaveBeenCalledTimes(1);
@@ -235,5 +402,64 @@ describe('actual owner-provider / detail / private-photo composition', () => {
         expect(style.opacity ?? 1).toBe(1); expect(child.allowFontScaling).not.toBe(false);
       }
     }
+  });
+});
+
+
+describe('open Job cancellation', () => {
+  it('confirms before withdrawing only the supplied owning Client open Job', async () => {
+    await mount();
+    await act(async () => button('Cancel').onPress());
+    expect(b.deleteJob).not.toHaveBeenCalled();
+    const actions = b.alert.mock.calls.at(-1)![2];
+    expect(actions[0]).toMatchObject({ text: 'Keep job', style: 'cancel' });
+    expect(actions[1]).toMatchObject({ text: 'Cancel', style: 'destructive' });
+    await act(async () => actions[1].onPress()); await flush();
+    expect(b.deleteJob).toHaveBeenCalledWith('job_postings', [['id', JOB], ['client_id', CLIENT], ['status', 'open']]);
+    expect(b.replace).toHaveBeenCalledWith('/client');
+  });
+  it('settles waiting during a zero-row cancellation recheck and shows the accepted booking in place', async () => {
+    b.deleteJob.mockResolvedValue({ data: [], error: null }); await mount();
+    await act(async () => nodes('BookingSheet')[0].onPositionChange('expanded'));
+    const freshJobs = deferred(); b.jobsReply = freshJobs.promise;
+    await act(async () => button('Cancel').onPress());
+    await act(async () => b.alert.mock.calls.at(-1)![2][1].onPress()); await flush();
+    expect(b.replace).not.toHaveBeenCalled();
+    expect(nodes('FindingWorkerCarousel')).toHaveLength(0);
+    expect(button('Cancel')).toBeUndefined();
+    b.bookingReply = Promise.resolve({ data: [{ booking_id: 'accepted-booking', job_id: JOB, booking_status: 'confirmed', job_title: 'job', worker_user_id: 'worker-a' }], error: null });
+    await act(async () => freshJobs.resolve({ data: b.jobs.map(job => ({ ...job, status: 'matched' })), error: null })); await flush();
+    expect(nodes('BookingDetails')[0]).toMatchObject({ bookingId: 'accepted-booking', initialSheetPosition: 'expanded' });
+    expect(nodes('FindingWorkerCarousel')).toHaveLength(0); expect(b.replace).not.toHaveBeenCalled();
+  });
+  it('does not animate waiting when a cancellation-conflict reread fails', async () => {
+    b.deleteJob.mockResolvedValue({ data: [], error: null }); await mount();
+    b.jobsReply = Promise.resolve({ data: null, error: { code: '503' } });
+    await act(async () => button('Cancel').onPress());
+    await act(async () => b.alert.mock.calls.at(-1)![2][1].onPress()); await flush();
+    expect(nodes('FindingWorkerCarousel')).toHaveLength(0); expect(button('Cancel')).toBeUndefined();
+    expect(button('Refresh job')).toBeDefined(); expect(text()).toContain('Could not refresh');
+    expect(b.replace).not.toHaveBeenCalled();
+  });
+  it('does not announce success or navigate when deletion fails', async () => {
+    b.deleteJob.mockResolvedValue({ data: null, error: { message: 'private-server-detail' } });
+    await mount();
+    await act(async () => button('Cancel').onPress());
+    await act(async () => b.alert.mock.calls.at(-1)![2][1].onPress()); await flush();
+    expect(text()).toContain('Could not confirm cancellation');
+    expect(text()).not.toContain('private-server-detail');
+    expect(b.replace).not.toHaveBeenCalled();
+  });
+  it('rejects a confirmation retained after leaving the screen', async () => {
+    const h = await mount();
+    await act(async () => button('Cancel').onPress());
+    const confirm = b.alert.mock.calls.at(-1)![2][1].onPress;
+    b.focus = false; await h.render();
+    await act(async () => confirm()); await flush();
+    expect(b.deleteJob).not.toHaveBeenCalled();
+  });
+  it('does not show cancellation without resolved open/no-booking authority', async () => {
+    b.bookingReply = new Promise(() => {}); await mount();
+    expect(button('Cancel')).toBeUndefined();
   });
 });

@@ -1,4 +1,5 @@
-import { Stack, type Href } from 'expo-router';
+import { Stack, useGlobalSearchParams, usePathname, type Href } from 'expo-router';
+import { useLayoutEffect } from 'react';
 import { TamaguiProvider } from 'tamagui';
 
 import { tamaguiConfig } from '../../tamagui.config';
@@ -11,6 +12,7 @@ import { SessionReconnectingScreen } from '@/components/session-reconnecting-scr
 import { StateScreen } from '@/components/state-screen';
 import { isRecoverySurfaceActive } from '@/lib/auth-recovery';
 import { isPhoneOtpEnabled } from '@/lib/phone-verification';
+import { sessionRouteContinuation } from '@/lib/session-route-continuation';
 import { canEnterWorkerApp } from '@/lib/worker-onboarding';
 import {
   AccountProvider,
@@ -131,7 +133,15 @@ export const ACCESS_ROUTE: Partial<Record<AccessState, Href>> = {
 
 function RootNavigator() {
   const sessionValue = useSession();
-  const access = deriveAccessState(sessionValue, useAccount());
+  const accountValue = useAccount();
+  const access = deriveAccessState(sessionValue, accountValue);
+  const pathname = usePathname();
+  const params = useGlobalSearchParams();
+  const ownerId = sessionValue.session?.user.id ?? null;
+  useLayoutEffect(() => {
+    sessionRouteContinuation.observe({ access, ownerId, lifetime: sessionValue.sessionLifetime, pathname, params });
+  }, [access, ownerId, sessionValue.sessionLifetime, pathname, params]);
+  useLayoutEffect(() => () => sessionRouteContinuation.clear(), []);
 
   // Inline-only states: no route tree.
   if (access === 'session-restoring') {

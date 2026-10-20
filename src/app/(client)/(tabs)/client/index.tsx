@@ -17,6 +17,7 @@ import { firstNameFromFullName } from '@/lib/initials';
 import { useAccount } from '@/providers/account-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
 import { useClientPostJobDraft } from '@/providers/client-post-job-draft-provider';
+import { postingRecoveryNotice } from '@/lib/client-post-job-navigation';
 import { useSession } from '@/providers/session-provider';
 
 
@@ -36,7 +37,7 @@ function ClientHomeContent() {
   const clientId = account?.id;
   const router = useRouter();
   const { isLoading, loadError, jobs, refresh: refreshJobs } = useClientJobs();
-  const { isOwnerCurrent, takePendingCreatedJob } = useClientPostJobDraft();
+  const { isOwnerCurrent, takePendingCreatedJob, draft: postDraft } = useClientPostJobDraft();
   const [bookings, setBookings] = useState<ClientBooking[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const bookingFocus = useRef<ClientHomeBookingFocus | null>(null);
@@ -56,14 +57,19 @@ function ClientHomeContent() {
     });
     bookingFocus.current = focus;
     const pendingJobId = takePendingCreatedJob();
-    if (pendingJobId) focus.waitForJob(pendingJobId);
-    else focus.refresh();
+    if (pendingJobId && isOwnerCurrent()) {
+      // A deferred posting receipt resumes the same job map. Home no longer
+      // owns a hidden acceptance wait that can navigate to a booking later.
+      const postingWarning = postingRecoveryNotice({ postSuccess: postDraft.postSuccess, postError: postDraft.postError });
+      router.push({ pathname: '/client/job-details', params: { jobId: pendingJobId, ...(postingWarning ? { postingWarning } : {}) } } as unknown as Href);
+    }
+    focus.refresh();
     // Tabs remain mounted on blur; this cancels the consumed wait permanently.
     return () => {
       focus.cancel();
       if (bookingFocus.current === focus) bookingFocus.current = null;
     };
-  }, [clientId, isOwnerCurrent, takePendingCreatedJob, router, setBookings]));
+  }, [clientId, isOwnerCurrent, takePendingCreatedJob, router, setBookings, postDraft.postSuccess, postDraft.postError]));
 
   // Only requests still waiting for a worker; finished and matched jobs stay in My jobs.
   const openJobs = jobs.filter(job => job.status === 'open');

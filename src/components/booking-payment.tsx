@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AppSymbol as SymbolView } from '@/components/app-symbol';
-import { Image, Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
 
 import { AppNotice } from '@/components/app-notice';
 import { AppButton } from '@/components/app-button';
@@ -63,6 +63,15 @@ import {
  *
  * Rendered only where the screen has already established
  * `booking_status = 'completed'`; every server call re-checks that too.
+ *
+ * ROLE-CORRECT PRESENTATION (2026-10-20 demo UI)
+ * ----------------------------------------------
+ * The Worker is the one collecting, so the Worker sees the collection tile
+ * (amount and method). The Client is the one paying, so the Client is never
+ * shown a QR image as if presenting it for collection: in TEST MODE the
+ * Client pays on the PayMongo test page. The QR payload is still fetched by
+ * the same Client-only initiation (only the Client may mint it) and is simply
+ * not rendered. No server call, gate or state transition changed.
  */
 
 /** Carries no URL and no provider text; only its existence matters. */
@@ -81,12 +90,18 @@ export default function BookingPayment({
   payment,
   jobPaymentMethod,
   onChanged,
+  amount = null,
+  embedded = false,
 }: {
   role: PaymentRole;
   bookingId: string;
   payment: BookingPaymentState | undefined;
   jobPaymentMethod: JobPaymentMethod | null;
   onChanged: () => Promise<void>;
+  /** Formatted job amount for the Worker's collection tile. */
+  amount?: string | null;
+  /** Inside a row that already names the payment: no heading of its own. */
+  embedded?: boolean;
 }) {
   const ui = useUiTheme();
   const { colors } = ui;
@@ -107,6 +122,7 @@ export default function BookingPayment({
   const entry = clientPaymentEntry(payment, jobPaymentMethod);
   const agreedLabel =
     jobPaymentMethod !== null ? formatJobPaymentLabel(jobPaymentMethod) : null;
+  const workerCollectsQr = payment?.payment_method === 'qrph' || (payment?.payment_method == null && jobPaymentMethod === 'qrph');
 
   /**
    * `isBusy` is the single in-flight guard for the whole card, so a double tap
@@ -213,10 +229,10 @@ export default function BookingPayment({
   if (role === 'client') {
     return (
       <View style={styles.section}>
-        <View style={styles.paymentHeading}>
+        {embedded ? null : <View style={styles.paymentHeading}>
           <SymbolView name={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} size={22} tintColor={colors.accent} />
           <Text style={styles.heading}>{COPY.heading}</Text>
-        </View>
+        </View>}
 
         {entry === 'legacy-choice' ? (
           <>
@@ -238,7 +254,7 @@ export default function BookingPayment({
           </>
         ) : entry === 'cash' ? (
           <>
-            <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? formatJobPaymentLabel('cod'))}</Text>
+            {embedded ? null : <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? formatJobPaymentLabel('cod'))}</Text>}
             <AppButton
               label={isBusy ? COPY.selecting : COPY.continueCash}
               onPress={() => run(() => selectCod(bookingId), selectErrorCopy, {
@@ -250,7 +266,7 @@ export default function BookingPayment({
           </>
         ) : entry === 'qrph' ? (
           <>
-            <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? formatJobPaymentLabel('qrph'))}</Text>
+            {embedded ? null : <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? formatJobPaymentLabel('qrph'))}</Text>}
             <AppButton
               label={isBusy ? COPY.starting : COPY.startQrphPayment}
               onPress={startQrph}
@@ -260,7 +276,7 @@ export default function BookingPayment({
         ) : (
           <>
             {methodLabel ? (
-              <Text style={styles.line}>{COPY.methodLine(methodLabel)}</Text>
+              embedded ? null : <Text style={styles.line}>{COPY.methodLine(methodLabel)}</Text>
             ) : (
               <Text style={styles.line}>{COPY.notSelected}</Text>
             )}
@@ -288,33 +304,21 @@ export default function BookingPayment({
                 </View>
 
                 <Text style={styles.line}>{COPY.awaitingQrphClient}</Text>
+                <Text style={styles.line}>{COPY.clientPaysQrph}</Text>
 
-                {qr !== null && qr.qr_image !== null ? (
-                  <>
-                    <View style={styles.qrPlate}>
-                      <Image
-                        style={styles.qr}
-                        source={{ uri: qr.qr_image }}
-                        resizeMode="contain"
-                        accessibilityLabel="QR Ph payment code"
-                      />
-                    </View>
-                    {qr.test_url !== null ? (
-                      <AppButton
-                        variant="ghost"
-                        label={COPY.openTestPage}
-                        // The URL is passed straight to the handler and is
-                        // never rendered, logged or stored.
-                        onPress={() => openTestPage(qr.test_url as string)}
-                        disabled={isBusy}
-                      />
-                    ) : null}
-                  </>
+                {qr !== null && qr.test_url !== null ? (
+                  <AppButton
+                    label={COPY.openTestPage}
+                    // The URL is passed straight to the handler and is
+                    // never rendered, logged or stored.
+                    onPress={() => openTestPage(qr.test_url as string)}
+                    disabled={isBusy}
+                  />
                 ) : null}
 
                 <AppButton
                   variant="secondary"
-                  label={isBusy ? COPY.refreshingQr : COPY.showQr}
+                  label={isBusy ? COPY.refreshingQr : COPY.loadPaymentPage}
                   onPress={refreshQr}
                   disabled={isBusy}
                 />
@@ -339,23 +343,36 @@ export default function BookingPayment({
   /* ---------------- Worker ---------------- */
   return (
     <View style={styles.section}>
-      <View style={styles.paymentHeading}>
+      {embedded ? null : <View style={styles.paymentHeading}>
         <SymbolView name={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} size={22} tintColor={colors.accent} />
         <Text style={styles.heading}>{COPY.heading}</Text>
+      </View>}
+
+      {/* The collector's view: what to collect and how, before any status line. */}
+      <View style={styles.collectTile}>
+        <View style={styles.collectIcon}>
+          <SymbolView name={workerCollectsQr ? { android: 'qr_code_2', ios: 'qrcode' } : { android: 'payments', ios: 'banknote' }}
+            size={26} tintColor={colors.accent} />
+        </View>
+        <View style={styles.collectCopy}>
+          <Text style={styles.collectLabel}>{COPY.collectHeading}</Text>
+          {amount && !embedded ? <Text style={styles.collectAmount}>{amount}</Text> : null}
+          <Text style={styles.line}>{workerCollectsQr ? COPY.collectQrph : COPY.collectCash}</Text>
+        </View>
       </View>
 
       {entry === 'cash' ? (
         <>
-          <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? formatJobPaymentLabel('cod'))}</Text>
-          <Text style={styles.line}>{COPY.waitingClientCash}</Text>
+          {embedded ? null : <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? formatJobPaymentLabel('cod'))}</Text>}
+          {embedded ? null : <Text style={styles.line}>{COPY.waitingClientCash}</Text>}
         </>
       ) : entry === 'qrph' ? (
         <>
-          <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? formatJobPaymentLabel('qrph'))}</Text>
-          <Text style={styles.line}>{COPY.waitingClientQrph}</Text>
+          {embedded ? null : <Text style={styles.line}>{COPY.methodLine(agreedLabel ?? formatJobPaymentLabel('qrph'))}</Text>}
+          {embedded ? null : <Text style={styles.line}>{COPY.waitingClientQrph}</Text>}
         </>
       ) : methodLabel ? (
-        <Text style={styles.line}>{COPY.methodLine(methodLabel)}</Text>
+        embedded ? null : <Text style={styles.line}>{COPY.methodLine(methodLabel)}</Text>
       ) : (
         // Stated rather than left blank, so the absence of a confirm control is
         // explained: the Client has not chosen a method yet.
@@ -414,21 +431,26 @@ const styles = StyleSheet.create({
   qrIsland: {
     gap: spacing.md,
   },
-  qrPlate: {
-    backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
+  collectTile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.accentSubtle,
     borderRadius: radius.control,
     borderCurve: 'continuous',
-    padding: spacing.md,
-    alignSelf: 'center',
-    overflow: 'hidden',
   },
-  qr: {
-    width: 248,
-    height: 248,
-    borderRadius: radius.sm,
+  collectIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.surfaceRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  collectCopy: { flex: 1, minWidth: 0, gap: spacing.xxs },
+  collectLabel: { ...type.caption, fontWeight: '700', color: colors.accent },
+  collectAmount: { ...type.sectionTitle, fontVariant: ['tabular-nums'], color: colors.textPrimary },
   testBanner: {
     backgroundColor: colors.warningTint,
     borderRadius: radius.control,

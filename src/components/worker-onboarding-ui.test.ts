@@ -82,6 +82,7 @@ function routingModule() {
       isRecoverySurfaceActive: (status: string) => status === 'active',
     },
     '@/lib/phone-verification': { isPhoneOtpEnabled: () => false },
+    '@/lib/session-route-continuation': { sessionRouteContinuation: {} },
     '@/lib/worker-onboarding': { canEnterWorkerApp },
     '@/providers/account-provider': { AccountProvider: 'AccountProvider', useAccount: vi.fn() },
     '@/providers/session-provider': { SessionProvider: 'SessionProvider', useSession: vi.fn() },

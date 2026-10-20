@@ -88,12 +88,12 @@ export function framedMarkers(markers: MapMarker[], viewKey: string): FramedMark
 /** Widest a marker chip may grow (pt); its text wraps to at most two lines. */
 export const MARKER_LABEL_MAX_WIDTH = 160;
 const LABEL_LINE_HEIGHT = 20;
-/** Chip padding + border + dot below it, in pt (unscaled). */
-const MARKER_CHROME = 28;
+/** Chip padding + border + 48 pt destination pin and its 2 pt gap (unscaled). */
+const MARKER_CHROME = 62;
 
 /**
  * Camera padding that keeps every chip inside the map frame. Markers are
- * anchored at the bottom of their dot and the chip is centred above it, so the
+ * anchored at the bottom of their pin and the chip is centred above it, so the
  * sides need half the widest chip and the top needs two scaled text lines.
  */
 export function markerPadding(fontScale: number) {

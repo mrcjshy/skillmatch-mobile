@@ -221,7 +221,6 @@ export default function BookingLifecycle({
 
       {showCancellation ? (
         <View style={styles.cancellation}>
-          {role === 'client' ? <Text style={styles.modalBody}>Either party may cancel.</Text> : null}
           <AppButton variant="destructive" label={busyAction === 'cancel' ? COPY.cancelling : COPY.cancel}
             onPress={openCancelModal} loading={busyAction === 'cancel'} disabled={isBusy} />
         </View>

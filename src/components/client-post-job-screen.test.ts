@@ -13,6 +13,7 @@ import * as schedule from '../lib/job-posting-schedule';
 import * as wizard from '../lib/post-job-wizard';
 import * as skillSelection from '../lib/post-job-skill-selection';
 import * as submission from '../lib/client-post-job-submission';
+import * as postNavigation from '../lib/client-post-job-navigation';
 import * as canonicalLocation from '../lib/canonical-job-location';
 import { SANTA_ANA_PATEROS_INTERIOR_TEST_PIN } from '../lib/santa-ana-service-area';
 import { supabase } from '../lib/supabase';
@@ -29,7 +30,7 @@ function harness(existing?: ReturnType<typeof createClientPostJobDraftOwner>, su
   let prevention: { enabled: boolean; callback: (value: any) => void };
   const jobs = { isLoading: false, loadError: null as string | null,
     skills: [{ id: 'primary', skill_name: 'Plumbing' }, { id: 'extra', skill_name: 'Electrical' }], refresh: vi.fn(async () => {}) };
-  const navigation = { dispatch: vi.fn() }, recent = vi.fn(async (..._args: any[]) => {});
+  const navigation = { dispatch: vi.fn() }, router = { replace: vi.fn() }, recent = vi.fn(async (..._args: any[]) => {});
   const session = { sessionLifetime: { ownerId: owner.ownerId, isCurrent: () => true }, sessionRevision: 0, isSessionRevisionCurrent: () => true };
   const native: Props = { AppState: { currentState: 'active' }, StyleSheet: { create: (value: any) => value }, Platform: { OS: 'android', select: (value: Props) => value.android ?? value.default } };
   for (const name of ['KeyboardAvoidingView', 'Modal', 'Pressable', 'ScrollView', 'Text', 'TextInput', 'View']) native[name] = name;
@@ -46,12 +47,13 @@ function harness(existing?: ReturnType<typeof createClientPostJobDraftOwner>, su
     react: { useState: (initial: any) => { const i = cursor++; if (!(i in state)) state[i] = typeof initial === 'function' ? initial() : initial;
       return [state[i], (next: any) => { state[i] = typeof next === 'function' ? next(state[i]) : next; }]; }, useCallback: (fn: any) => fn, useLayoutEffect: (fn: any) => fn() },
     'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' }, 'react-native': native,
-    'expo-router': { useNavigation: () => navigation, useFocusEffect: (fn: any) => { if (!cleanup) cleanup = fn(); } },
+    'expo-router': { useNavigation: () => navigation, useRouter: () => router, useFocusEffect: (fn: any) => { if (!cleanup) cleanup = fn(); } },
     'expo-router/react-navigation': { useHeaderHeight: () => 80, useIsFocused: () => focused, usePreventRemove: (enabled: boolean, callback: any) => { prevention = { enabled, callback }; } },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24, bottom: 16 }) },
     '@/constants/theme': theme, '@/lib/date-time': dateTime, '@/lib/job-location': location, '@/lib/job-payment': payment,
     '@/lib/job-posting-schedule': schedule, '@/lib/job-skill-suggestions': { ...suggestions, JOB_SKILL_SUGGESTIONS_ENABLED: suggestionsEnabled }, '@/lib/post-job-wizard': wizard, '@/lib/post-job-skill-selection': skillSelection,
     '@/lib/client-post-job-submission': submission, '@/lib/recent-locations': { saveRecentLocation: recent },
+    '@/lib/client-post-job-navigation': postNavigation,
     '@/lib/canonical-job-location': canonicalLocation,
     '@/providers/session-provider': { useSession: () => session },
     '@/components/job-skill-suggestions-panel': { JobSkillSuggestionsPanel: 'JobSkillSuggestionsPanel' },
@@ -67,7 +69,7 @@ function harness(existing?: ReturnType<typeof createClientPostJobDraftOwner>, su
   const find = (label: string) => all(render(), node => typeof node.props?.onPress === 'function' && (node.props.accessibilityLabel === label || node.props.label === label))[0];
   const control = (type: string) => all(render(), node => node.type === type)[0];
   const press = (label: string) => { const node = find(label); expect(node, label).toBeDefined(); return node.props.onPress(); };
-  return { owner, jobs, render, find, control, press, recent, navigation, theme, session,
+  return { owner, jobs, render, find, control, press, recent, navigation, router, theme, session,
     back: (type = 'GO_BACK') => { render(); const action = { type, payload: { count: 1 } }; if (prevention.enabled) prevention.callback({ data: { action } }); return { action, prevented: prevention.enabled }; },
     blur: () => { focused = false; cleanup?.(); render(); }, focus: () => { focused = true; render(); }, unmount: () => cleanup?.(),
     load, modules };
@@ -300,13 +302,32 @@ it('retains final posting readiness protection and disables the form while posti
   h.jobs.loadError = null; h.owner.beginPost(); expect(h.find('Post job').props.disabled).toBe(true);
   expect(h.find('Previous step').props.disabled).toBe(true);
 });
-it('final Post uses real orchestration and remains here with step-one success after settlement', async () => {
+it('final Post uses real orchestration and replaces the wizard with the confirmed Job map', async () => {
   const h = harness(); h.owner.updateDraft({ ...valid, wizardStep: 4 });
   h.find('Post job').props.onPress(); h.find('Post job').props.onPress();
   for (let i = 0; i < 30; i++) await Promise.resolve();
   expect(supabase.rpc).toHaveBeenCalledTimes(1); expect(h.owner.draft.wizardStep).toBe(1);
   expect(all(h.render(), node => node.type === 'Text').map(node => node.props.children)).toContain('Job posted. 1 of 1 photos uploaded. Waiting for a worker to accept.');
-  expect(h.navigation.dispatch).not.toHaveBeenCalled(); expect(h.owner.takePendingCreatedJob()).toBe('22222222-2222-4222-8222-222222222222');
+  expect(h.navigation.dispatch).not.toHaveBeenCalled(); expect(h.owner.takePendingCreatedJob()).toBeNull();
+  expect(h.router.replace).toHaveBeenCalledExactlyOnceWith({ pathname: '/client/job-details', params: { jobId: '22222222-2222-4222-8222-222222222222' } });
+});
+it('never opens tracking for an unknown creation outcome', async () => {
+  const h = harness(); h.owner.updateDraft({ ...valid, jobPhotos: [], wizardStep: 4 });
+  vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: null, error: null } as never);
+  h.find('Post job').props.onPress(); for (let i = 0; i < 30; i++) await Promise.resolve();
+  expect(h.router.replace).not.toHaveBeenCalled(); expect(h.owner.takePendingCreatedJob()).toBeNull();
+  expect(h.owner.draft.postError).toContain('could not be confirmed');
+});
+it('a posting response after leaving retains its receipt without late navigation', async () => {
+  let resolve!: (value: any) => void;
+  const pending = new Promise(done => { resolve = done; });
+  vi.mocked(supabase.rpc).mockReturnValueOnce(pending as never);
+  const h = harness(); h.owner.updateDraft({ ...valid, jobPhotos: [], wizardStep: 4 });
+  h.find('Post job').props.onPress(); h.blur();
+  resolve({ data: '22222222-2222-4222-8222-222222222222', error: null });
+  for (let i = 0; i < 30; i++) await Promise.resolve();
+  expect(h.router.replace).not.toHaveBeenCalled();
+  expect(h.owner.takePendingCreatedJob()).toBe('22222222-2222-4222-8222-222222222222');
 });
 it('keeps the posted confirmation until a confirmed location starts the next draft, then removes words and mascot through details', async () => {
   const h = harness(); h.owner.updateDraft({ ...valid, jobPhotos: [], wizardStep: 4 });

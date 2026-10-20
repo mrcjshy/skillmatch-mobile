@@ -1,4 +1,4 @@
-import { type Href, Stack, useFocusEffect, useRouter } from 'expo-router';
+import { type Href, Stack, useFocusEffect, useGlobalSearchParams, usePathname, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AppState,
@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/app-button';
+import { CardDivider, FactLine, IdentifierBlock, PaymentRow, SupportEntry } from '@/components/booking-card-parts';
 import { AppIconButton } from '@/components/app-icon-button';
 import { BookingLocationMap, type LocationPanel } from '@/components/booking-location-map';
 import { BookingSheet } from '@/components/booking-sheet';
@@ -22,7 +23,6 @@ import { InlineStatus } from '@/components/inline-status';
 import { JobPhotoGallery } from '@/components/job-photo-gallery';
 import { WorkerAssignedJobLocation, nativeJobMapsLoaded, openWorkerMapsUrl } from '@/components/job-location-map';
 import RateWorker from '@/components/rate-worker';
-import { FactRow } from '@/components/fact-row';
 import { SectionHeader } from '@/components/section-header';
 import { SurfaceGroup } from '@/components/surface-group';
 import { StarRatingDisplay } from '@/components/star-rating-display';
@@ -53,6 +53,7 @@ import { isLifecycleActionableStatus } from '@/lib/booking-lifecycle';
 import { formatDetailDateTime } from '@/lib/date-time';
 import {
   fetchJobPaymentMethod,
+  formatJobPaymentLabel,
   type JobPaymentMethod,
 } from '@/lib/job-payment';
 import { listJobPhotos, type SignedJobPhoto } from '@/lib/job-photos';
@@ -91,9 +92,11 @@ import {
 } from '@/lib/realtime';
 import { bookingDialUrl } from '@/lib/booking-call';
 import { createDetailsAppStateHandler } from '@/lib/booking-details-app-state';
-import { mapInsetsForPanel } from '@/lib/booking-sheet';
+import { mapInsetsForPanel, type SheetPosition } from '@/lib/booking-sheet';
+import { sessionRouteContinuation } from '@/lib/session-route-continuation';
 import { systemPromptPending } from '@/lib/system-prompt';
 import { useAccount } from '@/providers/account-provider';
+import { useSession } from '@/providers/session-provider';
 
 
 
@@ -120,11 +123,17 @@ type DetailState = {
     | { status: 'error' };
 };
 
-export default function BookingDetails({ role, bookingId }: { role: BookingRole; bookingId: string | null }) {
+export default function BookingDetails({ role, bookingId, initialSheetPosition, onSheetPositionChange, postingWarning }: {
+  role: BookingRole; bookingId: string | null;
+  initialSheetPosition?: SheetPosition; onSheetPositionChange?: (position: SheetPosition) => void;
+  postingWarning?: string;
+}) {
   const defaultUi = useUiTheme();
 
   const router = useRouter();
   const { account } = useAccount();
+  const { sessionLifetime } = useSession();
+  const pathname = usePathname(), params = useGlobalSearchParams();
   const [detail, setDetail] = useState<DetailState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -134,6 +143,20 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const [pinsSession, setPinsSession] = useState(0);
   // Map-first layout: the collapsed panel height frames markers in the visible map above it.
   const [panelHeight, setPanelHeight] = useState(0);
+  // The map/sheet subtree is deliberately remounted on focus refresh to clear protected data.
+  // Keep only its non-sensitive detent here, so returning from Chat does not collapse it.
+  const sheetOwner = `${role}:${bookingId}`;
+  const [retainedSheet, setRetainedSheet] = useState(() => ({ owner: sheetOwner,
+    position: initialSheetPosition ?? sessionRouteContinuation.sheetPosition({ access: role, ownerId: account?.id ?? null,
+      lifetime: sessionLifetime, pathname, params }) ?? 'collapsed' }));
+  const sheetPosition = retainedSheet.owner === sheetOwner ? retainedSheet.position : initialSheetPosition ?? 'collapsed';
+  const rememberSheetPosition = useCallback((position: SheetPosition) => {
+    setRetainedSheet(previous => previous.owner === sheetOwner && previous.position === position
+      ? previous : { owner: sheetOwner, position });
+    sessionRouteContinuation.rememberSheetPosition({ access: role, ownerId: account?.id ?? null,
+      lifetime: sessionLifetime, pathname, params }, position);
+    onSheetPositionChange?.(position);
+  }, [sheetOwner, onSheetPositionChange, role, account?.id, sessionLifetime, pathname, params]);
   const safeArea = useSafeAreaInsets();
   const loadGate = useRef(createLoadGenerationTracker());
   const hasLoaded = useRef(false);
@@ -569,32 +592,45 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     </>
   );
 
-  // A confirmed booking opens map-first: full-screen map, floating Back, and the booking in a draggable panel.
-  const mapFirst = booking.booking_status === 'confirmed' && account?.is_active === true && account.role === role;
   const openVideo = () => router.push({ pathname: role === 'worker' ? '/worker/video' : '/client/video', params: { bookingId: booking.booking_id } } as Href);
 
-  // 1-2. Status and the reference people quote when they call for help.
+  // 1-2. Status (the map-first panel header already shows it).
   const statusBlock = (
     <View style={styles.referenceHeader}>
       <AppChip label={formatBookingStatus(booking.booking_status)} variant={bookingStatusVariant(booking.booking_status)} />
-      <View style={styles.referenceCopy}>
-        <Text style={styles.note}>Booking reference</Text>
-        <Text selectable style={styles.reference}>{booking.booking_id}</Text>
-      </View>
     </View>
   );
 
-  // 3-4. The job: what, when, how much.
+  // 3-4. One booking card, as in the reference: the service and the Booking ID people quote for help, the time,
+  // where, and the payment row (Cash / QR and the amount) with this role's payment step under it.
+  // A confirmed booking opens map-first: full-screen map, floating Back, and the booking in a draggable panel.
+  const mapFirst = booking.booking_status === 'confirmed' && account?.is_active === true && account.role === role;
+  const paymentShown = showPayment || paymentUnavailable;
+  const methodLabel = jobPaymentMethod !== null ? formatJobPaymentLabel(jobPaymentMethod) : 'Cash / QR';
+  const paysByQr = jobPaymentMethod === 'qrph' || payment?.payment_method === 'qrph';
   const summaryBlock = (
-    <View style={styles.summary}>
-      <View style={styles.titleRow}>
+    <View style={styles.card}>
+      {postingWarning ? <InlineStatus variant="error" message={postingWarning} /> : null}
+      {/* The map panel's header already names the job (with its status); the card does not repeat it there. */}
+      {mapFirst ? null : <View style={styles.titleRow}>
         <ServiceMark subject={booking.job_title} synchronousGlyph />
         <Text accessibilityRole="header" style={styles.jobTitle}>{booking.job_title}</Text>
+      </View>}
+      <IdentifierBlock label="Booking ID" value={booking.booking_id} copyable={role === 'client'} />
+      <FactLine label="Date & time" value={schedule ?? 'Not scheduled'} />
+      {/* Area only: the exact address appears once, in the location section's own surface. */}
+      <View style={styles.routeRow}>
+        <View style={styles.routeDot}><View style={styles.routeDotCore} /></View>
+        <Text selectable style={[styles.routeTitle, styles.routeCopy]}>{formatLocation(null, booking.job_barangay, booking.job_city)}</Text>
       </View>
-      <SurfaceGroup>
-        <FactRow icon={{ android: 'schedule', ios: 'clock' }} label="Schedule" value={schedule} strong />
-        <FactRow icon={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} label="Job budget" value={budget} strong inline />
-      </SurfaceGroup>
+      <CardDivider />
+      <PaymentRow qr={paysByQr} method={methodLabel} caption={role === 'worker' ? 'Payment you collect' : 'Payment you make'} amount={budget ?? 'Not set'} />
+      {paymentShown ? <View style={styles.paymentBody}>
+        {showPayment ? jobPaymentReady ? <BookingPayment role={role} bookingId={booking.booking_id} payment={payment}
+          jobPaymentMethod={jobPaymentMethod} onChanged={load} amount={budget} embedded />
+          : <Text style={styles.note}>Could not load the agreed payment method.</Text> : null}
+        {paymentUnavailable ? <Text style={styles.note}>Could not load the authoritative payment state. Payment and lifecycle actions are unavailable.</Text> : null}
+      </View> : null}
     </View>
   );
 
@@ -616,7 +652,6 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
             <View style={styles.identityCopy}>
               <Text style={styles.note}>{role === 'worker' ? 'Your client' : 'Your worker'}</Text>
               <Text style={styles.participantName}>{participantName}</Text>
-              <Text selectable style={styles.value}>{counterpartyPhone ?? 'Phone not provided'}</Text>
               {role === 'client' && isClientBooking(booking) ? <>
                 <Text style={styles.note}>{formatVerification(booking.worker_is_verified)}</Text>
                 <StarRatingDisplay average={booking.worker_rating_avg} count={booking.worker_rating_count} />
@@ -662,7 +697,7 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     <View style={[styles.section, suppressProtected && { minHeight: locationHeight.current }]}
       onLayout={event => { if (!suppressProtected) locationHeight.current = event.nativeEvent.layout.height; }}>
       {suppressProtected ? <InlineStatus variant="loading" message="Checking job location" /> : <>
-      {sharing ? <View style={styles.section}><SectionHeader title={role === 'worker' ? 'Your live location' : 'Worker location'} />{sharing}</View> : null}
+      {sharing ? <View style={styles.section}>{role === 'worker' ? null : <SectionHeader title="Worker location" />}{sharing}</View> : null}
       {/* The address surface titles itself when it shows the exact address. */}
       {!locationHasAddress ? <><SectionHeader title="Job location" /><Text selectable style={styles.body}>{location}</Text></> : null}
       {protectedReleased && exactLocation.status === 'error' ? <Text style={styles.note}>{JOB_LOCATION_COPY.workerLocationGeneric}</Text>
@@ -678,14 +713,8 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
     </View>
   );
 
-  // 7. The immediate step: payment first, then (Client) completion.
+  // 7. The immediate step: (Client) completion. The payment step is in the booking card above.
   const paymentAndLifecycle = <>
-    {showPayment || paymentUnavailable ? <View style={styles.panel}>
-      {showPayment ? jobPaymentReady ? <BookingPayment role={role} bookingId={booking.booking_id} payment={payment}
-        jobPaymentMethod={jobPaymentMethod} onChanged={load} />
-        : <Text style={styles.note}>Could not load the agreed payment method.</Text> : null}
-      {paymentUnavailable ? <Text style={styles.note}>Could not load the authoritative payment state. Payment and lifecycle actions are unavailable.</Text> : null}
-    </View> : null}
     {!lifecycleAtBottom && showLifecycle ? (
       <BookingLifecycle
         role={role}
@@ -723,19 +752,17 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
       </SurfaceGroup>
     </View>
 
-    {showReport ? (
-      <View style={styles.supportSection}>
-        <SectionHeader title="Help and reporting" />
-        {reportMessage}
-      </View>
-    ) : null}
+    <View style={styles.supportSection}>
+      <SectionHeader title="Help and reporting" />
+      <SupportEntry onPress={() => router.push((role === 'worker' ? '/worker/help' : '/client/help') as Href)} />
+      {showReport ? reportMessage : null}
+    </View>
 
     {/* 10. Cancellation is last: consequential, quiet, and away from the forward action. */}
     {lifecycleAtBottom && (showLifecycle || (suppressProtected && controlsHeight.current > 0)) ? <View
       style={[styles.destructiveArea, suppressProtected && { minHeight: controlsHeight.current }]}
       onLayout={event => { if (!suppressProtected) controlsHeight.current = event.nativeEvent.layout.height; }}>
       {suppressProtected ? <InlineStatus variant="loading" message="Checking booking controls" /> : <>
-      <Text style={styles.note}>Booking controls</Text>
       <BookingLifecycle role={role} bookingId={booking.booking_id} showCompletion={actionPresentation.showCompletion}
         showCancellation={actionPresentation.showCancellation} onChanged={load} />
       </>}
@@ -768,15 +795,14 @@ export default function BookingDetails({ role, bookingId }: { role: BookingRole;
   const headerBottom = safeArea.top + ui.spacing.sm + ui.size.iconButton + ui.spacing.sm;
   const panel = (sharing: LocationPanel) => (
     <BookingSheet topReserve={headerBottom} onCollapsedHeight={setPanelHeight} refreshControl={refreshControl}
+      initialPosition={sheetPosition} onPositionChange={rememberSheetPosition}
       header={<>
         <View style={styles.sheetTitleRow}>
           <AppChip label={formatBookingStatus(booking.booking_status)} variant={bookingStatusVariant(booking.booking_status)} />
           <Text accessibilityRole="header" numberOfLines={2} style={styles.sheetTitle}>{booking.job_title}</Text>
         </View>
-        <Text numberOfLines={2} style={styles.note}>{[schedule, budget].filter(Boolean).join(' · ')}</Text>
         {sharing.primary}
       </>}>
-      {statusBlock}
       {summaryBlock}
       {participantBlock}
       {locationBlock(sharing.secondary)}
@@ -855,10 +881,22 @@ function createStyles(ui: UiTheme) {
       gap: spacing.md,
     },
     referenceHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.md },
-    referenceCopy: { flexShrink: 1, gap: spacing.xxs },
-    reference: { ...type.helper, fontVariant: ['tabular-nums'], color: colors.textPrimary, maxWidth: '100%' },
-    summary: { gap: spacing.lg },
     titleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    card: {
+      gap: spacing.md,
+      padding: spacing.lg,
+      backgroundColor: colors.surface,
+      borderRadius: radius.card,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.hairline,
+      borderCurve: 'continuous',
+    },
+    routeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingTop: spacing.xs },
+    routeDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.textPrimary, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+    routeDotCore: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.surface },
+    routeCopy: { flex: 1, minWidth: 0, gap: spacing.xxs },
+    routeTitle: { ...type.bodyEmphasis, color: colors.textPrimary },
+    paymentBody: { gap: spacing.md },
     jobTitle: { ...type.screenTitle, color: colors.textPrimary, flex: 1, flexShrink: 1 },
     panel: {
       gap: spacing.lg,

@@ -126,9 +126,9 @@ describe('label clipping at the map edges', () => {
   });
 
   it('leaves room above the top marker for two lines of label text, growing with the font scale', () => {
-    // Two 20 pt lines + 8 pt chip padding + 4 pt border + 16 pt dot.
-    expect(markerPadding(1).top).toBeGreaterThanOrEqual(2 * 20 + 28);
-    expect(markerPadding(1.3).top).toBeGreaterThanOrEqual(2 * 20 * 1.3 + 28);
+    // Two 20 pt lines + 12 pt chip padding/border + 48 pt pointed pin + 2 pt gap.
+    expect(markerPadding(1).top).toBeGreaterThanOrEqual(2 * 20 + 62);
+    expect(markerPadding(1.3).top).toBeGreaterThanOrEqual(2 * 20 * 1.3 + 62);
     expect(markerPadding(1.3).top).toBeGreaterThan(markerPadding(1).top);
     expect(markerPadding(Number.NaN)).toEqual(markerPadding(1));
   });

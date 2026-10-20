@@ -249,6 +249,13 @@ export const COPY = {
   selectQrph: QRPH_TEST_LABEL,
   starting: 'Starting…',
   showQr: 'Show or refresh QR',
+  /** Client (payer): re-fetch the test payment page; the QR is never rendered for the payer. */
+  loadPaymentPage: 'Load payment page',
+  clientPaysQrph: 'You pay the worker from your phone on the PayMongo test payment page. This screen updates once the payment is confirmed.',
+  /** Worker (collector) tile. */
+  collectHeading: 'Collect payment',
+  collectCash: 'When the client pays you in cash, confirm it here. Nothing to collect until then.',
+  collectQrph: 'The client pays by QR Ph (TEST) on their phone. It confirms here automatically.',
   refreshingQr: 'Refreshing…',
   openTestPage: 'Open PayMongo test payment',
   refreshStatus: 'Refresh payment status',
@@ -261,7 +268,7 @@ export const COPY = {
   stillPending: 'Payment is still pending.',
   testModeTitle: 'Test mode',
   testModeBody:
-    'Do not scan this QR with GCash, Maya, or a banking app. Use the PayMongo test payment page for the demo.',
+    'Do not pay with GCash, Maya, or a banking app. Use the PayMongo test payment page for the demo.',
   /** Collapsed provider-side conflict; asserts nothing about the cause. */
   qrphConflict: 'This booking cannot use QR Ph right now.',
   providerUnavailable: 'Payment provider is temporarily unavailable.',

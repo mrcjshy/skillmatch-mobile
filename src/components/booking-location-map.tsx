@@ -4,6 +4,7 @@ import type { CameraRef, MapRef } from '@maplibre/maplibre-react-native';
 import { AppButton } from '@/components/app-button';
 import { MapPinLabel } from '@/components/map-pin-label';
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
+import { ShareLocationFab, type ShareFabMode } from '@/components/share-location-fab';
 import { useLocationSharing } from '@/hooks/use-location-sharing';
 import { useBookingPins } from '@/hooks/use-booking-pins';
 import { JOB_MAP_STYLE, jobMapRuntime } from '@/lib/native-job-map';
@@ -53,18 +54,24 @@ function WorkerBookingMap({ bookingId, accountId, destination, insets, renderPan
     <Text accessibilityLiveRegion="polite" style={styles.status}>{sharingStatusCopy(sharing.state)}</Text>
     {sharing.state.cleanupPending ? <><Text style={styles.text}>Server Stop for a previous session is unconfirmed. {sharing.state.cleanupExpired ? 'The retry window expired; this is not confirmation of server Stop.' : 'Pending Stop survives leaving this screen while this app stays running.'} Your last position may remain visible until its server expiry.</Text>{sharing.state.cleanupCanRetry ? <AppButton label="Retry Stop" onPress={sharing.retryStop} /> : null}</> : null}
     {pins.view.status === 'denied' ? <Text style={styles.text}>This booking no longer authorizes location sharing.</Text> : null}
-    {surface.ready && !sharing.shareId && pins.view.status !== 'denied' ? <AppButton label="Share my location" disabled={sharing.state.status === 'requesting' || sharing.state.cleanupBlocksStart} onPress={sharing.start} /> : null}
-    {sharing.shareId || sharing.state.status === 'requesting' ? <AppButton label="Stop sharing on this device" onPress={sharing.stop} /> : null}
   </>;
+  // The floating circle starts sharing when off and stops this device's session when live/requesting.
+  const stopping = Boolean(sharing.shareId) || sharing.state.status === 'requesting';
+  const canShare = surface.ready && !sharing.shareId && pins.view.status !== 'denied';
+  const fabMode: ShareFabMode | null = stopping ? (sharing.shareId ? 'live' : 'busy')
+    : canShare ? (sharing.state.cleanupBlocksStart ? 'blocked' : 'ready') : null;
   const secondary = <>
-    <Text style={styles.help}>Sharing is your choice: tap Share to show your live position to this booking’s Client. It pauses when you leave this screen or the app. No route or movement history is stored; your last position can stay visible to the Client for up to 10 minutes unless you stop.</Text>
     {pins.view.myShare === 'active_on_other_device' ? <Text style={styles.text}>You are sharing on another device.</Text> : null}
     {sharing.state.cleanupExpired && sharing.state.cleanupBlocksStart ? <Text style={styles.text}>A previous Stop-all remains unconfirmed. Use Stop sharing on all devices again to confirm it before starting a new session here.</Text> : null}
-    <AppButton label="Stop sharing on all devices" variant="secondary" onPress={() => Alert.alert('Stop on all devices?', 'This stops your location sharing for this booking on every device.', [{ text: 'Keep sharing', style: 'cancel' }, { text: 'Stop all', style: 'destructive', onPress: sharing.stopAll }])} />
+    {/* RF04 Stop-all: shown only when another device shares or a previous Stop-all is unconfirmed (owner, UI-V3). */}
+    {pins.view.myShare === 'active_on_other_device' || sharing.state.cleanupBlocksStart ? <AppButton label="Stop sharing on all devices" variant="secondary" onPress={() => Alert.alert('Stop on all devices?', 'This stops your location sharing for this booking on every device.', [{ text: 'Keep sharing', style: 'cancel' }, { text: 'Stop all', style: 'destructive', onPress: sharing.stopAll }])} /> : null}
     {sharing.state.status === 'denied_settings' ? <AppButton label="Open permission settings" onPress={() => void Linking.openSettings()} /> : null}
   </>;
   return <>
     <InlineMap surface={surface} markers={markers} destination={destination} insets={insets} />
+    {/* Under the panel in paint order: an expanded panel covers it, a collapsed one leaves it on the map. */}
+    {fabMode ? <ShareLocationFab mode={fabMode} bottom={insets.bottom + ui.spacing.lg}
+      onPress={stopping ? sharing.stop : sharing.start} /> : null}
     {renderPanel({ primary, secondary })}
   </>;
 }
@@ -91,9 +98,27 @@ function ClientBookingMap({ bookingId, accountId, destination, insets, renderPan
 
 type MapSurface = ReturnType<typeof useMapSurface>;
 function useMapSurface() {
-  const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const available = Boolean(jobMapRuntime) && !failed;
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  // A tile/style request can remain unresolved without a native failure event.
+  // Bound only the initial render; panning and ordinary rerenders do not restart it.
+  useEffect(() => {
+    if (!jobMapRuntime || status !== 'loading') return;
+    const timer = setTimeout(() => {
+      if (mounted.current) setStatus(previous => previous === 'loading' ? 'failed' : previous);
+    }, 20_000);
+    return () => clearTimeout(timer);
+  }, [status]);
+  const setLoaded = () => {
+    if (mounted.current) setStatus(previous => previous === 'loading' ? 'loaded' : previous);
+  };
+  const setFailed = () => { if (mounted.current) setStatus('failed'); };
+  const loaded = status === 'loaded';
+  const available = Boolean(jobMapRuntime) && status !== 'failed';
   return { available, loaded, ready: available && loaded, setLoaded, setFailed };
 }
 
@@ -138,10 +163,10 @@ function InlineMap({ surface, markers, destination, insets }: { surface: MapSurf
   if (!surface.available || !Map || !Camera || !Marker) {
     return <View style={[StyleSheet.absoluteFill, styles.unavailable, { paddingTop: insets.top }]}><Text style={styles.text}>Map unavailable in this installation.</Text></View>;
   }
-  return <MapBoundary onFailure={() => surface.setFailed(true)}><View style={[StyleSheet.absoluteFill, styles.canvas]}><Map ref={map} style={styles.map} mapStyle={JOB_MAP_STYLE} androidView="texture"
+  return <MapBoundary onFailure={() => surface.setFailed()}><View style={[StyleSheet.absoluteFill, styles.canvas]}><Map ref={map} style={styles.map} mapStyle={JOB_MAP_STYLE} androidView="texture"
     accessibilityLabel={mapAccessibilityLabel(markers)}
     onRegionDidChange={() => setCameraRevision(value => value + 1)}
-    onDidFinishRenderingMapFully={() => surface.setLoaded(true)} onDidFailLoadingMap={() => surface.setFailed(true)}>
+    onDidFinishRenderingMapFully={() => surface.setLoaded()} onDidFailLoadingMap={() => surface.setFailed()}>
     <Camera ref={camera} initialViewState={'center' in initial ? { center: initial.center, zoom: initial.zoom } : { center: FALLBACK_CENTER, zoom: 15 }} />
     {groups.map(ids => {
       const members = ids.map(id => markers[Number(id)]).filter(Boolean);

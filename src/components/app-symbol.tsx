@@ -10,7 +10,7 @@ const glyphs: Record<string, string> = {
   account_balance_wallet: '\ue850', add: '\ue145', arrow_forward: '\ue5c8', calendar_month: '\uebcc',
   calendar_today: '\ue935', call: '\ue0b0', cancel: '\ue5c9', carpenter: '\uf1f8',
   chat_bubble_outline: '\ue0cb', check: '\ue5ca', check_circle: '\ue86c', chevron_right: '\ue5cc',
-  cleaning_services: '\uf0ff', close: '\ue5cd', description: '\ue873', done: '\ue876',
+  cleaning_services: '\uf0ff', close: '\ue5cd', content_copy: '\ue14d', description: '\ue873', done: '\ue876',
   edit: '\ue3c9', electrical_services: '\uf102', expand_less: '\ue5ce', expand_more: '\ue5cf',
   flag: '\ue153', format_paint: '\ue243', handyman: '\uf10b', home: '\ue88a',
   info: '\ue88e', list_alt: '\ue0ee', location_on: '\ue0c8', logout: '\ue9ba',

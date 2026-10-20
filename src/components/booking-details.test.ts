@@ -10,7 +10,8 @@ type Props = Record<string, any>;
 const flat = (s: any): Props => Array.isArray(s) ? Object.assign({}, ...s.filter(Boolean).map(flat)) : s || {};
 let state: any[] = [], cursor = 0;
 const disclosureStates = new Map<string, any[]>();
-const native = { ...Object.fromEntries(['KeyboardAvoidingView','View','Text','ScrollView','RefreshControl','Pressable','Image','ActivityIndicator','Modal','TextInput'].map(n => [n,n])), Platform: { OS: 'android', select: (v: Props) => v.android ?? v.default }, StyleSheet: { create: (s: Props) => s, hairlineWidth: 1 }, AppState: { currentState: 'active' }, Alert: { alert() {} }, Linking: { openURL() { throw Error('No live mutations'); } },
+const copiedIds: string[] = [];
+const native = { Clipboard: { setString: (value: string) => copiedIds.push(value) }, ...Object.fromEntries(['KeyboardAvoidingView','View','Text','ScrollView','RefreshControl','Pressable','Image','ActivityIndicator','Modal','TextInput'].map(n => [n,n])), Platform: { OS: 'android', select: (v: Props) => v.android ?? v.default }, StyleSheet: { create: (s: Props) => s, hairlineWidth: 1 }, AppState: { currentState: 'active' }, Alert: { alert() {} }, Linking: { openURL() { throw Error('No live mutations'); } },
   // The map-first panel animates with core Animated/PanResponder: recorded, never run.
   Animated: { View: 'Animated.View', Value: class { constructor(public value: number) {} setValue(value: number) { this.value = value; } interpolate() { return 0; } }, timing: () => ({ start() {}, stop() {} }) },
   Easing: { bezier: () => () => 0 }, PanResponder: { create: (handlers: Props) => ({ panHandlers: { handlers } }) } };
@@ -45,12 +46,16 @@ function load(file: string): Props {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
     if (name === 'react') return { createContext: (value: any) => ({ value }), useContext: (context: any) => context.value, useState: (initial: any) => { const i=cursor++; if (!(i in state)) state[i]=typeof initial === 'function' ? initial() : initial; const captured=state; return [state[i], (next: any) => { captured[i]=typeof next === 'function' ? next(captured[i]) : next; }]; }, useRef: (value: any) => ({ current: value }), useCallback: (fn: any) => fn, useMemo: (fn: any) => fn(), useEffect() {}, useLayoutEffect() {} };
     if (name === 'tamagui') return { XStack: 'View', YStack: 'View' };
-    if (name === 'expo-router') return { Stack: { Screen: 'StackScreen' }, useRouter: () => ({ push: (route: any) => pushCalls.push(route), canGoBack: () => true, back: () => pushCalls.push('back') }), useFocusEffect() {}, useLocalSearchParams: () => ({}) };
+    if (name === 'expo-router') return { Stack: { Screen: 'StackScreen' }, useRouter: () => ({ push: (route: any) => pushCalls.push(route), canGoBack: () => true, back: () => pushCalls.push('back') }), useFocusEffect() {}, useLocalSearchParams: () => ({}),
+      usePathname: () => '/client/booking-details', useGlobalSearchParams: () => ({ bookingId: ID }) };
     if (name === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 24, bottom: 16, left: 0, right: 0 }) };
     if (name === '@/hooks/use-reduced-motion') return { useReducedMotion: () => false };
+    // UI-V2: press feedback is native motion; the card parts render through an inert MotionView here.
+    if (name === '@/components/motion') return { MotionView: 'MotionView', usePressScale: () => ({ style: undefined, onPressIn() {}, onPressOut() {} }) };
     if (name === '@/global.css') return {};
     if (name === 'expo-router/react-navigation') return { useHeaderHeight: () => 56 };
     if (name === '@/providers/account-provider') return { useAccount: () => ({ account: { id: accountId, ...accountExtra } }) };
+    if (name === '@/providers/session-provider') return { useSession: () => ({ sessionLifetime: null }) };
     if (name.endsWith('/supabase')) return { supabase: new Proxy({}, { get() { throw Error('No provider/database access permitted'); } }) };
     if (name.endsWith('/realtime')) return { subscribeInvalidation() {}, bookingMessagesTopic: () => '', userNotificationsTopic: () => '' };
     if (name.endsWith('/job-location-map')) return { nativeJobMapsLoaded: () => false, WorkerAssignedJobLocation: 'WorkerAssignedJobLocation' };
@@ -83,7 +88,7 @@ it('uses one layout, one theme and no disclosures for every role and status: not
     const tree = detailTree(role, status), copy = visibleText(tree);
     expect(all(tree, 'RefinementThemeProvider')).toHaveLength(1);
     expect(flat(all(tree, 'ScrollView')[0].props.style).backgroundColor).toBe(theme.colors.canvas);
-    expect(copy).toContain('Booking reference'); expect(copy).toContain(ID);
+    expect(copy).toContain('Booking ID'); expect(copy).toContain(ID);
     expect(copy).toContain('About the job'); expect(copy).toContain(booking(role).job_description);
     expect(copy).toContain('Booking record');
     // The only disclosure that may remain is the Client's quiet Cancellation, owned by the lifecycle component.
@@ -92,28 +97,37 @@ it('uses one layout, one theme and no disclosures for every role and status: not
   }
 });
 
-it('orders the Worker screen: status and reference, job, client, location, payment step, about, record, help, then cancellation last', () => {
+it('orders the Worker screen: booking card (ID, time, payment to collect), client, location, about, record, support, then cancellation last', () => {
   const tree = detailTree('worker', 'confirmed', { payment: { id: 'payment-a', payment_method: 'cod', payment_status: 'pending' } }), copy = visibleText(tree);
-  const order = ['Booking reference', 'Client details', 'Job location', 'Payment', 'About the job', 'Booking record', 'Help and reporting', 'Cancel booking'].map(label => copy.indexOf(label));
+  const order = ['Booking ID', 'Date & time', 'Payment you collect', 'Collect payment', 'Client details', 'Job location', 'About the job', 'Booking record', 'Help and reporting', 'Chat and FAQs', 'Cancel booking'].map(label => copy.indexOf(label));
   expect(order.every(index => index >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((x, y) => x - y));
   const title = all(tree, 'Text').find(x => text(x) === booking('worker').job_title);
   expect(flat(title.props.style)).toMatchObject({ fontSize: theme.type.screenTitle.fontSize, color: theme.colors.textPrimary });
-  for (const label of ['Schedule', 'Job budget']) {
+  // UI-V2 card hierarchy: quiet captions, strong values; the full Booking ID is its own wrapping line.
+  for (const label of ['Booking ID', 'Date & time']) {
     const labelNode = all(tree, 'Text').find(x => text(x) === label); expect(labelNode).toBeTruthy();
     expect(flat(labelNode.props.style).color).toBe(theme.colors.textSecondary);
   }
+  const idNode = all(tree, 'Text').find(x => text(x) === ID);
+  expect(flat(idNode.props.style).color).toBe(theme.colors.textPrimary); expect(idNode.props.numberOfLines).toBeUndefined();
+  // The method is stated once (payment row), not again by the embedded payment step.
+  expect(copy.match(/Payment method: /g) ?? []).toHaveLength(0);
   const budget = all(tree, 'Text').find(x => text(x).includes('987,654,321.75'));
   expect(flat(budget.props.style)).toMatchObject({ fontWeight: '700', fontSize: theme.type.money.fontSize }); expect(budget.props.numberOfLines).toBeUndefined();
-  for (const value of [name, '09171234567', 'EXACT PRIVATE ADDRESS', booking('worker').job_description, ID]) expect(copy).toContain(value);
+  for (const value of [name, 'EXACT PRIVATE ADDRESS', booking('worker').job_description, ID]) expect(copy).toContain(value);
+  expect(copy).not.toContain('09171234567');
+  expect(all(tree, 'Pressable').some(node => node.props.accessibilityLabel === 'Call booking counterpart')).toBe(true);
 });
 
-it('keeps the Client layout complete and in the same reading order, with the worker facts beside the person', () => {
+it('keeps the Client layout complete: booking card with the payment they make, then the worker, location, lifecycle, record and support', () => {
   const tree = detailTree('client', 'confirmed', { payment: { id: 'p', payment_method: 'cod', payment_status: 'pending' } }), copy = visibleText(tree);
-  const order = ['Booking reference', 'Worker details', 'Job location', 'Payment', 'Cancel booking', 'About the job', 'Booking record', 'Help and reporting'].map(label => copy.indexOf(label));
+  const order = ['Booking ID', 'Payment you make', 'Worker details', 'Job location', 'Cancel booking', 'About the job', 'Booking record', 'Help and reporting', 'Chat and FAQs'].map(label => copy.indexOf(label));
   expect(order.every(index => index >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((x, y) => x - y));
-  for (const value of [name, '09171234567', 'Worker barangay', 'Plumbing • Carpentry', 'Open chat', '987,654,321.75']) expect(copy).toContain(value);
+  for (const value of [name, 'Worker barangay', 'Plumbing • Carpentry', 'Open chat', '987,654,321.75']) expect(copy).toContain(value);
+  expect(copy).not.toContain('09171234567');
+  expect(all(tree, 'Pressable').some(node => node.props.accessibilityLabel === 'Call booking counterpart')).toBe(true);
   for (const label of all(tree, 'Text')) { expect(label.props.numberOfLines).toBeUndefined(); expect(flat(label.props.style).height).toBeUndefined(); }
 });
 
@@ -133,7 +147,7 @@ it('offers cancellation to either party directly while completion remains Client
     const tree = render(Lifecycle, { role, bookingId: ID, showCompletion: true, showCancellation: true, onChanged: async () => {} });
     expect(visibleText(tree)).toContain('Cancel booking');
     expect(visibleText(tree).includes('Mark as completed')).toBe(role === 'client');
-    expect(visibleText(tree).includes('Either party may cancel.')).toBe(role === 'client');
+    expect(visibleText(tree)).not.toContain('Either party may cancel.'); // UI-V3: removed by owner direction
     expect(all(tree, 'Collapsible')).toHaveLength(0);
   }
   const busy = render(Lifecycle, { role: 'client', bookingId: ID, showCompletion: true, showCancellation: true, onChanged: async () => {} }, ['complete', null, false, null, '']);
@@ -398,6 +412,23 @@ const headerOf = (panel: any) => all(panel, 'View').find(x => x.props.handlers?.
 const bodyOf = (panel: any) => all(panel, 'View').find(x => x.props.handlers?.onMoveShouldSetPanResponderCapture);
 const toggleOf = (panel: any) => all(panel, 'Pressable').find(x => ['Show booking details', 'Show map'].includes(x.props.accessibilityLabel));
 
+it('retains the expanded detent when focus refresh remounts the protected map and its sheet', () => {
+  const Sheet = load('src/components/booking-sheet.tsx').BookingSheet;
+  const seeds = [detail('client', 'confirmed', { exactLocation: pinLocation }), false, false, null, null, false, 0, 0];
+  accountExtra = { is_active: true, role: 'client' }; unrendered.add('BookingSheet');
+  try {
+    let tree = render(Details, { role: 'client', bookingId: ID }, seeds);
+    all(panelOf(tree), Sheet)[0].props.onPositionChange?.('expanded');
+    // Blur/refresh suppresses protected fields and replaces the map/sheet subtree.
+    seeds[5] = true;
+    tree = render(Details, { role: 'client', bookingId: ID }, seeds);
+    expect(all(tree, Sheet)[0].props.initialPosition).toBe('expanded');
+    seeds[5] = false;
+    tree = render(Details, { role: 'client', bookingId: ID }, seeds);
+    expect(all(panelOf(tree), Sheet)[0].props.initialPosition).toBe('expanded');
+  } finally { accountExtra = {}; unrendered.delete('BookingSheet'); }
+});
+
 it('a confirmed booking opens map-first: one full-screen map, a floating Back and no stack header or page scroll', () => {
   for (const role of ['worker', 'client']) {
     pushCalls.length = 0;
@@ -426,7 +457,9 @@ it('the collapsed panel shows status, title, schedule and the location controls;
   const tree = mapFirstTree('worker', { exactLocation: pinLocation, payment: { id: 'p', payment_method: 'cod', payment_status: 'pending' } });
   let panel = panelOf(tree);
   const header = visibleText(headerOf(panel));
-  for (const value of ['Confirmed', booking('worker').job_title, '987,654,321.75', 'PRIMARY CONTROLS']) expect(header).toContain(value);
+  for (const value of ['Confirmed', booking('worker').job_title, 'PRIMARY CONTROLS']) expect(header).toContain(value);
+  // UI-V3: no schedule · budget line in the header; the card below states both once.
+  expect(header).not.toContain('987,654,321.75');
   let body = bodyOf(panel);
   expect(body.props.importantForAccessibility).toBe('no-hide-descendants');
   expect(body.props.accessibilityElementsHidden).toBe(true);
@@ -435,7 +468,9 @@ it('the collapsed panel shows status, title, schedule and the location controls;
   // Expanded content: description, location, schedule/budget, counterpart and contacts, chat, video, location details,
   // payment and the lifecycle controls, in the existing reading order.
   const copy = text(body);
-  const order = ['Booking reference', 'Schedule', 'Client details', 'Open chat', 'Video call', 'Your live location', 'SECONDARY DETAILS', 'Payment', 'About the job', 'Booking record', 'Cancel booking'].map(label => copy.indexOf(label));
+  // UI-V3: the Worker's sharing details render untitled (no "Your live location" heading).
+  expect(copy).not.toContain('Your live location');
+  const order = ['Booking ID', 'Date & time', 'Payment you collect', 'Client details', 'Open chat', 'Video call', 'SECONDARY DETAILS', 'About the job', 'Booking record', 'Chat and FAQs', 'Cancel booking'].map(label => copy.indexOf(label));
   expect(order.every(index => index >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((x, y) => x - y));
   // The address and Open in Maps remain; no second map is drawn inside the panel.
@@ -495,4 +530,15 @@ it('the Client map-first panel names the Worker location and keeps contact, chat
   const body = text(bodyOf(panelOf(tree)));
   for (const value of ['Worker details', 'Open chat', 'Video call', 'Worker location', 'SECONDARY DETAILS']) expect(body).toContain(value);
   expect(body).not.toContain('Your live location');
+});
+
+
+it('copies the full Booking ID only from the Client booking action', () => {
+  copiedIds.length = 0;
+  const client = detailTree('client');
+  const copy = all(client, 'Pressable').find(node => node.props.accessibilityLabel === 'Copy Booking ID');
+  expect(copy).toBeDefined();
+  copy.props.onPress();
+  expect(copiedIds).toEqual([ID]);
+  expect(all(detailTree('worker'), 'Pressable').some(node => node.props.accessibilityLabel === 'Copy Booking ID')).toBe(false);
 });

@@ -4,6 +4,7 @@ import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { createClientPostJobDraftOwner } from '@/providers/client-post-job-draft-provider';
 import { createClientHomeBookingFocus } from './client-home-booking-focus';
+import { postingRecoveryNotice } from './client-post-job-navigation';
 import type { BroadcastChannelLike, BroadcastClientLike } from './realtime';
 vi.mock('./supabase', () => ({ supabase: {} }));
 type Props = Record<string, unknown>;
@@ -53,6 +54,7 @@ function setup(options: { owner?: ReturnType<typeof createClientPostJobDraftOwne
     '@/providers/session-provider': { useSession: () => ({ session: { user: { id: 'client-a' } }, sessionRevision: 1 }) },
     '@/providers/client-jobs-provider': { useClientJobs: () => ({ jobs: options.jobs ?? [], skills: [], isLoading: options.loading ?? false, loadError: options.error ?? null, refresh: noop }) },
     '@/providers/client-post-job-draft-provider': { useClientPostJobDraft: () => owner },
+    '@/lib/client-post-job-navigation': { postingRecoveryNotice },
     '@/lib/booking-records': { loadClientBookings: loadBookings },
     '@/lib/client-home-booking-focus': { createClientHomeBookingFocus: (args: Parameters<typeof createClientHomeBookingFocus>[0]) => createClientHomeBookingFocus({ ...args, client }) },
     '@/lib/home-greeting': { homeGreeting: () => 'Good morning' }, '@/lib/initials': { firstNameFromFullName: () => 'Alex' },
@@ -165,29 +167,30 @@ describe('real Home focus and memory-only draft handoff', () => {
     expect(readBookings).not.toHaveBeenCalled(); expect(s.client.channel).not.toHaveBeenCalled(); expect(owner.takePendingCreatedJob()).toBeNull();
     authorized = true; s.render(); s.focus(); await settleMicrotasks();
     expect(s.push).toHaveBeenCalledTimes(1); expect(readBookings).toHaveBeenCalledTimes(1); expect(owner.takePendingCreatedJob()).toBeNull();
-    s.blur(); s.focus(); await settleMicrotasks(); expect(s.push).toHaveBeenCalledTimes(1); expect(s.client.channel).toHaveBeenCalledTimes(1);
+    s.blur(); s.focus(); await settleMicrotasks(); expect(s.push).toHaveBeenCalledTimes(1); expect(s.client.channel).not.toHaveBeenCalled();
   });
-  it('consumes only the latest pending created job and pushes accepted Booking Details once on the next focus', async () => {
+  it('consumes only the latest receipt and opens the job map once, without a Home acceptance wait', async () => {
     const owner = createClientPostJobDraftOwner('client-a');
     settleCreated(owner, 'older-job'); settleCreated(owner, 'job-a');
     const s = setup({ owner, readBookings: vi.fn(async (): Promise<FocusRow[]> => [{ job_id: 'job-a', booking_id: 'booking-a', booking_status: 'confirmed' }]) });
     s.render(); expect(s.client.channel).not.toHaveBeenCalled(); s.focus();
     expect(owner.takePendingCreatedJob()).toBeNull();
     await settleMicrotasks();
-    expect(s.client.channel).toHaveBeenCalledExactlyOnceWith('user:client-a:notifications', { config: { private: true } });
-    expect(s.push).toHaveBeenCalledExactlyOnceWith({ pathname: '/client/booking-details', params: { bookingId: 'booking-a' } });
+    expect(s.client.channel).not.toHaveBeenCalled();
+    expect(s.push).toHaveBeenCalledExactlyOnceWith({ pathname: '/client/job-details', params: { jobId: 'job-a' } });
     s.emit(); await settleMicrotasks(); expect(s.push).toHaveBeenCalledTimes(1);
-    s.blur(); s.focus(); await settleMicrotasks(); expect(s.client.channel).toHaveBeenCalledTimes(1);
+    s.blur(); s.focus(); await settleMicrotasks(); expect(s.client.channel).not.toHaveBeenCalled();
   });
-  it('blur cancels an in-flight consumed wait and later focus never rearms it', async () => {
+  it('an in-flight Home booking read never adds navigation after the direct job-map handoff', async () => {
     let resolve!: (value: FocusRow[]) => void;
     const pending = new Promise<FocusRow[]>(done => { resolve = done; });
     const owner = createClientPostJobDraftOwner('client-a'); settleCreated(owner, 'job-a');
     const readBookings = vi.fn(() => pending);
     const s = setup({ owner, readBookings }); s.render(); s.focus(); s.blur();
     resolve([{ job_id: 'job-a', booking_id: 'booking-a', booking_status: 'confirmed' }]); await settleMicrotasks();
-    expect(s.push).not.toHaveBeenCalled(); expect(s.client.removeChannel).toHaveBeenCalledTimes(1);
-    s.focus(); await settleMicrotasks(); expect(s.client.channel).toHaveBeenCalledTimes(1); expect(s.push).not.toHaveBeenCalled();
+    expect(s.push).toHaveBeenCalledExactlyOnceWith({ pathname: '/client/job-details', params: { jobId: 'job-a' } });
+    expect(s.client.removeChannel).not.toHaveBeenCalled();
+    s.focus(); await settleMicrotasks(); expect(s.client.channel).not.toHaveBeenCalled(); expect(s.push).toHaveBeenCalledTimes(1);
   });
   it('unauthorized Home never consumes a pending job or starts a read/channel', () => {
     let authorized = true; const owner = createClientPostJobDraftOwner('client-a', undefined, () => authorized);

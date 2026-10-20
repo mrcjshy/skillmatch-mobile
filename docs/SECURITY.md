@@ -111,3 +111,10 @@ panel/screen tests plus focused unchanged draft/submission/protected-location
 regressions. Full repository gates and bounded synthetic native proof are
 separate coordinator evidence. No hosted business mutation, hosted deployment,
 hosted migration apply, real provider call or billing change occurred here.
+
+
+## UI-V3 QA candidate: navigation continuation after token refresh (2026-10-20)
+
+This isolated candidate retains an in-memory own-role pathname, opaque route IDs and an optional collapsed/expanded map-sheet position while an ordinary same-session token refresh rechecks account authority. The sheet preference is valid only for that exact role, pathname and sanitized UUID parameters within the same user and still-current SessionLifetime; route changes clear it, and pending callbacks cannot replace it. The root still removes every operational route tree while Auth/account restoration is pending. No account, consent, verification, active flag, protected projection, credential or previous authorization is carried by the continuation. Fresh resolved access must match the same user, still-current SessionLifetime and role before the root index can use the saved destination. Sign-out, new login, expired lifetime, changed user/role, recovery, blocked state, consent/identity gates or account failure discard it. Notification/call intents keep priority. All destination screens re-read their existing participant authority; server/RLS rules do not change.
+
+This addresses the natively reproduced Chat-to-Home reset without weakening the fail-closed root guards or changing SessionProvider/AccountProvider. Source checks cover rejection cases; native retest and final acceptance remain recorded separately in the UI-V3 state-QA evidence. This is candidate work, not a released security closeout.

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
-import { Animated, Easing, PanResponder, ScrollView, StyleSheet, View, type RefreshControlProps } from 'react-native';
+import { Animated, Easing, PanResponder, Pressable, ScrollView, StyleSheet, View, type RefreshControlProps } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppIconButton } from '@/components/app-icon-button';
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import { MotionTokens } from '@/constants/motion';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
@@ -18,6 +17,11 @@ type BookingSheetProps = {
   /** Reports the visible collapsed height so the map can frame markers above it. */
   onCollapsedHeight?: (height: number) => void;
   refreshControl?: ReactElement<RefreshControlProps>;
+  /** Screen-reader name of the panel (UI-V3: the open job's panel is not a booking yet). */
+  panelName?: string;
+  /** Retain the sheet detent when the open Job becomes a confirmed Booking. */
+  initialPosition?: SheetPosition;
+  onPositionChange?: (position: SheetPosition) => void;
 };
 
 const { duration, easing } = MotionTokens;
@@ -27,23 +31,25 @@ const { duration, easing } = MotionTokens;
  * Animated: no gesture-handler or new native code). Only the handle/header area
  * starts a drag, so panning the map never moves the panel and a tap on a header
  * button stays a tap. When expanded, pulling down from the top of the content
- * returns to the map. The expand/collapse button is the accessible equivalent.
+ * returns to the map. There is no visible arrow: swiping is the interaction, and
+ * the handle itself is the accessible equivalent (a button that toggles the panel).
  */
-export function BookingSheet({ header, children, topReserve, onCollapsedHeight, refreshControl }: BookingSheetProps) {
+export function BookingSheet({ header, children, topReserve, onCollapsedHeight, refreshControl, panelName = 'Booking details panel', initialPosition = 'collapsed', onPositionChange }: BookingSheetProps) {
   const ui = useUiTheme();
   const styles = createStyles(ui);
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
   const [containerHeight, setContainerHeight] = useState(0);
   const [headerHeight, setHeaderHeight] = useState(0);
-  const [position, setPosition] = useState<SheetPosition>('collapsed');
+  const [position, setPosition] = useState<SheetPosition>(initialPosition);
+  useEffect(() => { onPositionChange?.(position); }, [position, onPositionChange]);
   const collapsedHeight = headerHeight + insets.bottom;
   const { sheetHeight, collapsedOffset } = sheetGeometry({ containerHeight, topReserve, collapsedHeight });
   const [offset] = useState(() => new Animated.Value(0));
-  const current = useRef({ position, collapsedOffset, dragStart: 0 });
+  const current = useRef({ position, collapsedOffset, dragStart: 0, reduced });
   const scrollTop = useRef(0);
   // eslint-disable-next-line react-hooks/refs -- the gesture reads the latest geometry only while it runs.
-  current.current = { ...current.current, position, collapsedOffset };
+  current.current = { ...current.current, position, collapsedOffset, reduced };
 
   useEffect(() => { if (headerHeight > 0) onCollapsedHeight?.(collapsedHeight); }, [collapsedHeight, headerHeight, onCollapsedHeight]);
   const placed = useRef(false);
@@ -65,7 +71,7 @@ export function BookingSheet({ header, children, topReserve, onCollapsedHeight, 
     const next = snapPanel({ from: current.current.position, dy, vy, collapsedOffset: current.current.collapsedOffset });
     // Same position: the effect will not re-run, so settle back explicitly.
     if (next === current.current.position) {
-      Animated.timing(offset, { toValue: next === 'expanded' ? 0 : current.current.collapsedOffset, duration: reduced ? 0 : duration.standard,
+      Animated.timing(offset, { toValue: next === 'expanded' ? 0 : current.current.collapsedOffset, duration: current.current.reduced ? 0 : duration.standard,
         useNativeDriver: true }).start();
     }
     setPosition(next);
@@ -101,16 +107,15 @@ export function BookingSheet({ header, children, topReserve, onCollapsedHeight, 
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.scrim, { opacity: scrim }]} />
       {/* Hidden until measured, so it never flashes open before the collapsed position is known. */}
       <Animated.View style={[styles.sheet, { height: sheetHeight, opacity: containerHeight > 0 && headerHeight > 0 ? 1 : 0, transform: [{ translateY: offset }] }]}
-        accessibilityLabel={expanded ? 'Booking details panel, expanded' : 'Booking details panel, collapsed'}>
+        accessibilityLabel={`${panelName}, ${expanded ? 'expanded' : 'collapsed'}`}>
         <View {...headerGesture.panHandlers} onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)} style={styles.headerArea}>
-          <View style={styles.handleRow}>
-            <View accessible={false} importantForAccessibility="no-hide-descendants" style={styles.handle} />
-          </View>
-          <View style={styles.headerRow}>
-            <View style={styles.headerContent}>{header}</View>
-            <AppIconButton variant="tonal" icon={{ android: expanded ? 'expand_more' : 'expand_less', ios: expanded ? 'chevron.down' : 'chevron.up' }}
-              accessibilityLabel={expanded ? 'Show map' : 'Show booking details'} onPress={() => setPosition(expanded ? 'collapsed' : 'expanded')} />
-          </View>
+          {/* The handle doubles as the screen-reader (and tap) toggle, so removing the arrow loses no access. */}
+          <Pressable accessibilityRole="button" accessibilityLabel={expanded ? 'Show map' : 'Show booking details'}
+            accessibilityHint="Swipe up or down on the panel to expand or collapse it" hitSlop={{ top: 8, bottom: 8 }}
+            onPress={() => setPosition(expanded ? 'collapsed' : 'expanded')} style={styles.handleRow}>
+            <View style={styles.handle} />
+          </Pressable>
+          <View style={styles.headerContent}>{header}</View>
         </View>
         {/* Keep booking state mounted; the bottom inset shows only the sheet background when collapsed. */}
         <View {...bodyGesture.panHandlers} style={[styles.body, { opacity: expanded ? 1 : 0 }]}
@@ -137,10 +142,10 @@ function createStyles(ui: UiTheme) {
       ...elevation.sheet,
     },
     headerArea: { paddingHorizontal: spacing.gutter, paddingBottom: spacing.md },
-    handleRow: { alignItems: 'center', paddingTop: spacing.sm, paddingBottom: spacing.sm },
-    handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.hairline },
-    headerRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-    headerContent: { flex: 1, minWidth: 0, gap: spacing.sm },
+    // 36dp tall plus 8dp hit slop above and below: a 52dp touch target for the toggle.
+    handleRow: { height: 36, alignItems: 'center', justifyContent: 'center' },
+    handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: colors.hairline },
+    headerContent: { minWidth: 0, gap: spacing.sm },
     body: { flex: 1 },
     bodyContent: { paddingHorizontal: spacing.gutter, gap: spacing.xl, paddingTop: spacing.sm },
   });
