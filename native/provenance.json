@@ -1,0 +1,493 @@
+{
+  "status": "BLOCKED_WIP_NATIVE_MATRIX_INCOMPLETE_OPEN_RUNTIME_DEFECTS",
+  "coreCandidateSourceFiles": 480,
+  "coreCandidateSourceManifestSha256": "e604fb070ecf44d839be42404291fc17a5a34843e4ac3626d1b655c61aa0b5f1",
+  "preparedSourceFiles": 417,
+  "applicationId": "com.mrcjshy.skillmatch.uiv3qa",
+  "label": "SkillMatch UI-V3 QA",
+  "scheme": "skillmatchuiv3qa",
+  "sourceTreeSha256": "6cbd912317a2550b73b5070518c5ebf70e10b957834ad94862a05062aa5ff72c",
+  "packageLockSha256": "968c6a463864d6516ccdbea4f2309063794d2875df5a37ee1ac20ec9e43f6d9e",
+  "nativeVersion": "4.26.2",
+  "sharedNativeSha256": "1c94acaeff477b7e9009b5c6009e8dd5445a4c393a4a2949b749da276a91a3db",
+  "privateNativeSha256": "546319a62c60ca8a20cd16562927c6dcbb2b406e7904acfdad6c2897cbc9795f",
+  "architectureChanged": false,
+  "dependenciesUpgraded": false,
+  "firebaseConfigured": false,
+  "upstreamReference": "https://github.com/software-mansion/react-native-screens/pull/4498",
+  "originalApplicationPreserved": true,
+  "originalEasCredentialsUsed": false,
+  "targetAbi": "x86_64",
+  "buildType": "debug",
+  "pushVerification": "BLOCKED: QA package has no approved Firebase package/certificate registration",
+  "directPostingVerdict": "PASS within three consecutive marked native posts on baseline src6cbd9123 / bundlea218abb9: one open Job each, no Booking before acceptance, direct waiting map and usable sheet, zero observed native posting exceptions. A later scoped native post also passed on the disclosed continuation-map epoch. These results are not all-state acceptance.",
+  "releaseAcceptance": false,
+  "privateEvidenceExcluded": [
+    "signing keys/passwords/private JSON",
+    "raw build/device/auth logs",
+    "APK and generated native/dependency trees",
+    "fixture/account/session data",
+    "private test overlays/proxies/hooks/drivers/caches",
+    "raw account/fixture/session/permission snapshots",
+    "raw screenshots and motion clips"
+  ],
+  "diagnosticMetroPort": 8086,
+  "originalCandidateMetroPort": 8084,
+  "generatedManifestCheck": {
+    "qaApplicationIdVerified": true,
+    "qaProviderAuthorities": 8,
+    "providerExported": false,
+    "sharedUid": false,
+    "explicitQaPackageRequiredForGenericExpoLauncher": true
+  },
+  "buildExecutions": 3,
+  "buildExitCode": 0,
+  "retainedToolingFailures": [
+    "Windows Ninja path-length limit in original private cache location",
+    "Six generated Ninja dependency files retained 2423 old cache paths after non-destructive shorter-cache copy; retained and renamed only those generated files before successful resumption"
+  ],
+  "nativeFixStacked": false,
+  "apk": {
+    "applicationId": "com.mrcjshy.skillmatch.uiv3qa",
+    "label": "SkillMatch UI-V3 QA",
+    "sha256": "ce692f2dba8f9c1f351f7a236d2f62cded47bfce0501c1641c25430bfc95c5f4",
+    "bytes": 123865344,
+    "signingCertificateSha256": "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c",
+    "abis": [
+      "x86_64"
+    ],
+    "manifestVerified": true,
+    "applicationSchemes": [
+      "exp+skillmatch-mobile-uiv3qa",
+      "skillmatchuiv3qa"
+    ],
+    "providerAuthorities": 8,
+    "providersExported": false,
+    "sharedUid": false,
+    "firebaseCompiledResourcesPresent": false
+  },
+  "installationScope": "Same separate QA APK installed side by side for Client and Worker; original packages/sessions retained.",
+  "nativeGuardRuntimeVerdict": "PASS within the three marked fresh native posting journeys; not all-state acceptance",
+  "runtimeSummary": "The three baseline native posts and later no-overlay R2 real acceptance/in-place confirmation passed within their recorded scopes; baseline startup and acceptance failures remain retained. Later map, permission, display, cancellation, Admin and adverse Auth results retain their own overlay/source identities. The current plain a344 candidate bundle is measured after restoring private overlays. SDK-managed refresh failed during CDP role identification before any explicit SDK refresh, so waiting/confirmed/Chat refresh proof is BLOCKED. Original Worker inspector fatal and nonfatal Reanimated/Surface warnings remain OPEN and unattributed. Three final-plain QA Home observations per role, ordinary original saved-role readbacks and latest QA identity/Home readbacks passed. The final read-only capture and separately appended LF-normalized original-package semantic comparison passed within their measured scope;69 warnings and the retained original fatal remain OPEN. This is not clean-runtime or release acceptance.",
+  "startup": {
+    "status": "FAIL",
+    "phase": "before normal sign-in",
+    "error": "Unsupported top level event type topInsetsChange",
+    "attribution": "Duplicate physical native-runtime JavaScript modules in the isolated diagnostic Metro graph; corrected only in the diagnostic server recipe.",
+    "diagnosticPostsAttempted": 0,
+    "failureRetained": true,
+    "currentRetest": "Normal Client and Worker sign-in passed after diagnostic-only singleton resolver correction",
+    "currentStatus": "PASS within normal sign-in and targeted post/Worker acceptance observations"
+  },
+  "workerQaInstallation": "PASS: same inspected APK installed without replacing the original; normal Worker sign-in passed",
+  "qaBundle": {
+    "status": "VERIFIED",
+    "epoch": "continuation-plain-final",
+    "observedUtc": "2026-10-20T15:39:55.632375+00:00",
+    "metroPort": 8086,
+    "sourceOverlay": null,
+    "sourceTreeSha256": "a344b10aebfa32f99b057181a88227179b74b88fdad2ebc99d864907867b1b4f",
+    "bundleSha256": "3455a96e27af00fc8907018304c48d2feb0069aafab75a0161cb4d58cc963311",
+    "bundleBytes": 15039339,
+    "matchesPlainCandidate": true,
+    "httpStatus": 200,
+    "nativeApkRebuilt": false,
+    "scope": "Actual complete no-overlay bundle measurement; does not reassign prior overlay test results to this epoch"
+  },
+  "buildPreparedSourceTreeSha256": "6cbd912317a2550b73b5070518c5ebf70e10b957834ad94862a05062aa5ff72c",
+  "currentCandidateSrcFiles": 417,
+  "currentCandidateSrcTreeSha256": "a344b10aebfa32f99b057181a88227179b74b88fdad2ebc99d864907867b1b4f",
+  "workerNativeAcceptanceVerdict": "PASS on baseline marked post; one actual confirmed booking",
+  "clientInPlaceConfirmationVerdict": "PASS on no-overlay R2 src3f7dc89e/bundle28e913df after real Worker acceptance: same Client process and expanded sheet bounds, real Booking ID/copy and Worker, waiting carousel absent. Baseline FAIL remains retained; exact old failure event sequence is not established.",
+  "sourceChecks": {
+    "testFiles": 150,
+    "testsPassed": 2731,
+    "testSuite": "PASS",
+    "focusedContinuityTests": 102,
+    "typescript": "PASS",
+    "changedPathLint": "PASS",
+    "changedSinceR2": [
+      "docs/SECURITY.md",
+      "src/components/booking-details.test.ts",
+      "src/components/booking-details.tsx",
+      "src/components/client-job-details.test.ts",
+      "src/components/client-job-details.tsx",
+      "src/lib/session-route-continuation.test.ts",
+      "src/lib/session-route-continuation.ts"
+    ],
+    "sourceSecurityDocumentationSynchronized": true,
+    "authAccountRootGatingChanged": false,
+    "naturalTokenRefreshDetentNativeProof": "BLOCKED: managed SDK host failed with CDP_OPEN_FAILED during role identification before explicit SDK refresh; no waiting/confirmed/Chat refresh result inferred"
+  },
+  "targetedPostingGate": {
+    "status": "PASS",
+    "attempts": 3,
+    "backendJobsPerAttempt": [
+      1,
+      1,
+      1
+    ],
+    "bookingsBeforeAcceptancePerAttempt": [
+      0,
+      0,
+      0
+    ],
+    "nativePostingExceptions": [
+      0,
+      0,
+      0
+    ],
+    "fullMotionFrameCoverage": [
+      803,
+      813,
+      782
+    ],
+    "uniformRegionFlagsRetained": [
+      0,
+      1,
+      1
+    ],
+    "visualAdjudication": "03/04 native-push underlay regions were uniform but visible header/sheet controls remained. No entirely blank frame observed. Map tile outage is separate.",
+    "baselineBundleSha256": "a218abb917c363af1962d8eb15a5fc098a09c1488e8c33749bc7a2877d80d36a"
+  },
+  "remainingCoverage": [
+    "BLOCKED: real SDK-triggered waiting/confirmed detent and Chat refresh proof after managed host CDP_OPEN_FAILED before explicit refresh",
+    "OPEN: original Worker inspector fatal and69 bounded unexplained Reanimated/Surface warning blocks; no V3 introduction or clean-runtime conclusion",
+    "NOT RUN or unproven: inactive/verification-pending accounts, legal consent, account switching and shared-account global Sign out",
+    "FAIL retained: current complete sharing/Stop case; payment/completion/rating remain NOT RUN in this diagnostic epoch beyond observed pending-payment presentation",
+    "BLOCKED: provider/QR Ph and QA Firebase/FCM require separate approved access/package registration",
+    "NOT RUN / not release-ready: physical-device or release APK; diagnostic ABI remains x86_64"
+  ],
+  "clientSheetRefreshContinuityVerdict": "FAIL observed before R3 at ordinary refresh; actual root pending-unmount/dispatcher-remount RED/GREEN and102 focused tests PASS after source fix. Latest native SDK-refresh proof is BLOCKED by CDP_OPEN_FAILED before explicit refresh. No unsupported-Hermes conclusion or native detent PASS is inferred.",
+  "currentJavaScriptSourceSynchronization": {
+    "fromSrcTreeSha256": "3f7dc89edf426d19acacde81b67fe080aa2a9204be8bf2390f6f937bbbda31b4",
+    "toSrcTreeSha256": "a344b10aebfa32f99b057181a88227179b74b88fdad2ebc99d864907867b1b4f",
+    "runtimePathsCopied": 6,
+    "documentationOnlyPath": "docs/SECURITY.md",
+    "nativeApkRebuilt": false,
+    "copyRecipe": "native/sync-continuation-source.py"
+  },
+  "currentRuntimeEpoch": {
+    "status": "VERIFIED",
+    "epoch": "continuation-plain-final",
+    "observedUtc": "2026-10-20T15:39:55.632375+00:00",
+    "metroPort": 8086,
+    "sourceOverlay": null,
+    "sourceTreeSha256": "a344b10aebfa32f99b057181a88227179b74b88fdad2ebc99d864907867b1b4f",
+    "bundleSha256": "3455a96e27af00fc8907018304c48d2feb0069aafab75a0161cb4d58cc963311",
+    "bundleBytes": 15039339,
+    "matchesPlainCandidate": true,
+    "httpStatus": 200,
+    "nativeApkRebuilt": false,
+    "scope": "Actual complete no-overlay bundle measurement; does not reassign prior overlay test results to this epoch"
+  },
+  "lastRecordedPlainCandidateEpoch": {
+    "status": "VERIFIED",
+    "epoch": "continuation-plain-final",
+    "observedUtc": "2026-10-20T15:39:55.632375+00:00",
+    "metroPort": 8086,
+    "sourceOverlay": null,
+    "sourceTreeSha256": "a344b10aebfa32f99b057181a88227179b74b88fdad2ebc99d864907867b1b4f",
+    "bundleSha256": "3455a96e27af00fc8907018304c48d2feb0069aafab75a0161cb4d58cc963311",
+    "bundleBytes": 15039339,
+    "matchesPlainCandidate": true,
+    "httpStatus": 200,
+    "nativeApkRebuilt": false,
+    "scope": "Actual complete no-overlay bundle measurement; does not reassign prior overlay test results to this epoch"
+  },
+  "plainR3CandidateBundle": {
+    "status": "VERIFIED",
+    "epoch": "continuation-plain-final",
+    "observedUtc": "2026-10-20T15:39:55.632375+00:00",
+    "metroPort": 8086,
+    "sourceOverlay": null,
+    "sourceTreeSha256": "a344b10aebfa32f99b057181a88227179b74b88fdad2ebc99d864907867b1b4f",
+    "bundleSha256": "3455a96e27af00fc8907018304c48d2feb0069aafab75a0161cb4d58cc963311",
+    "bundleBytes": 15039339,
+    "matchesPlainCandidate": true,
+    "httpStatus": 200,
+    "nativeApkRebuilt": false,
+    "scope": "Actual complete no-overlay bundle measurement; does not reassign prior overlay test results to this epoch"
+  },
+  "nativeStateUpdates": {
+    "workerPermissionDenialRecovery": {
+      "status": "PASS within four observed cases",
+      "sourceOverlay": "map",
+      "sourceTreeSha256": "69a318d841740a478adfd3eb6e8a790e12a1d359665954c2482325053fda03d7",
+      "bundleSha256": "a7c40e50b2d0e62f8d8d1c12a6269e6c646731c9778bb448413abc92d7b82ba6",
+      "exactOsExpoOriginalRestorationVerified": true
+    },
+    "motionFrames": {
+      "status": "PASS within separately reviewed native normal/reduced frames",
+      "sourceOverlay": "map",
+      "sourceTreeSha256": "69a318d841740a478adfd3eb6e8a790e12a1d359665954c2482325053fda03d7",
+      "reducedMotionFramesByteIdentical": 3,
+      "reducedMotionObservationSeconds": 10.277,
+      "wholeLongAutomationAttempt": "TIMEOUT retained; individual subsequent checks do not convert it to a full-case pass"
+    },
+    "reducedResume": {
+      "status": "PASS within130percent/reduced partial/full drags, accessible taps and background/resume retaining exact Job/expanded sheet",
+      "sourceOverlay": "map",
+      "sourceTreeSha256": "195fffa2be5a6edee2171b898d86773ecc9794c79e3d4267b9f6844864f24cbe",
+      "bundleSha256": "468acda2c95b695f693cd008635712e0556d5118e11774fd856eef06f017301e",
+      "exactDisplaySettingsRestored": true,
+      "naturalTokenRefreshProof": false
+    },
+    "map503Recovery": {
+      "status": "PASS within strict Client cold02 and Worker cold03 QA-relay fallback and normal route-remount recovery",
+      "sourceOverlay": "map",
+      "sourceTreeSha256": "195fffa2be5a6edee2171b898d86773ecc9794c79e3d4267b9f6844864f24cbe",
+      "bundleSha256": "468acda2c95b695f693cd008635712e0556d5118e11774fd856eef06f017301e",
+      "exactQaCacheAndStopMarkerRestorationVerified": true,
+      "limits": "Real geography was visible after normal route re-entry with fresh successful relay resources. No direct-provider/AVD-DNS recovery or product Retry control is implied. Earlier cached/cold01 BLOCKED and Worker02 developer-guide FAIL remain retained."
+    },
+    "clientConfirmedFont130Resume": {
+      "status": "PASS within observed confirmed130percent controls, copy, sheet and background/resume",
+      "sourceOverlay": "map",
+      "sourceTreeSha256": "195fffa2be5a6edee2171b898d86773ecc9794c79e3d4267b9f6844864f24cbe",
+      "bundleSha256": "468acda2c95b695f693cd008635712e0556d5118e11774fd856eef06f017301e",
+      "exactDisplaySettingsRestored": true,
+      "preciseConfirmedAnimationTimingVerified": false
+    },
+    "withdrawalAndAcceptance": {
+      "nativeCancel": "PASS for fresh marked continuation-map job",
+      "overlappingHttpOutcomes": "PASS for both observed outcomes; simultaneous SQL lock execution not proven",
+      "continuousOrderedNativeOutcomes": "PASS for both observed cancellation/acceptance orders using persistent controllers",
+      "priorSplitControllerAttempt": "FAIL retained: context reactivation/new VIEW confounded Alert release; no cancellation product patch or weakened guard",
+      "sourceOverlay": "map",
+      "sourceTreeSha256": "195fffa2be5a6edee2171b898d86773ecc9794c79e3d4267b9f6844864f24cbe",
+      "bundleSha256": "468acda2c95b695f693cd008635712e0556d5118e11774fd856eef06f017301e",
+      "limits": "Ordered native results do not establish simultaneous native loser RPC instrumentation or SQL-lock timing"
+    },
+    "adverseAuth": {
+      "status": "PASS within three observed native transport-fault/recovery cases",
+      "sourceOverlay": "auth",
+      "sourceTreeSha256": "74e40873dfd4f64b7ef86b17d656cd658161b85423e7df5a1540ce4a11d76b5e",
+      "bundleSha256": "09d7913482477af357e3253f4f53cc32dc27980c820e141a2aeb825c9408df5c",
+      "storedSessionAuthOutageRecovery": "PASS: natural prelaunch request failure, protected tree absent, UI Retry with actual Auth/account200 restored exact Client",
+      "accountRequestPending": "PASS: real account GET delayed, native AX and PNG captured while pending with protected labels absent, actual200 restored Client",
+      "accountReadErrorRecovery": "PASS: real account GET socket drop, bootstrap error/protected tree absent, UI Retry with actual200 restored Client",
+      "excludedConclusions": [
+        "Verification-pending or inactive accounts",
+        "Legal-consent gates",
+        "Account switching",
+        "Shared-account global Sign out",
+        "Explicit SDK refresh or Chat continuation"
+      ],
+      "historicalHarnessFailuresRetained": true,
+      "faultOverlaysAndOwnedProxyRestored": true
+    },
+    "adminReadOnlySmoke": {
+      "status": "PASS within actual Admin identity, directory searches/details, Reports and resume",
+      "sourceOverlay": "map",
+      "sourceTreeSha256": "195fffa2be5a6edee2171b898d86773ecc9794c79e3d4267b9f6844864f24cbe",
+      "bundleSha256": "468acda2c95b695f693cd008635712e0556d5118e11774fd856eef06f017301e",
+      "normalWorkerAuthenticationRestored": true,
+      "historicalGuideAndSelectorHarnessFailuresRetained": true
+    },
+    "sdkRefreshContinuity": {
+      "status": "BLOCKED",
+      "attemptStatus": "FAIL",
+      "error": "CDP_OPEN_FAILED",
+      "failedPhase": "Role identification before any explicit SDK refresh",
+      "attemptUtc": "2026-10-20T15:38:17Z",
+      "waitingDetentProof": "BLOCKED",
+      "confirmedDetentProof": "BLOCKED",
+      "chatContinuationProof": "BLOCKED",
+      "additionalAttempts": false,
+      "unsupportedHermesClaimed": false,
+      "privateHookLifetimeEndedAndRestored": true
+    },
+    "sharingStopCurrentDiagnostic": {
+      "status": "FAIL",
+      "scope": "Current full case failed at final profile check; observed substeps and restoration remain retained under separate review",
+      "fullCurrentPassClaimed": false
+    },
+    "finalHomeRepeats": {
+      "status": "PASS",
+      "observationsPerRole": 3,
+      "roles": [
+        "Client",
+        "Worker"
+      ],
+      "applicationId": "com.mrcjshy.skillmatch.uiv3qa",
+      "sourceOverlay": null,
+      "sourceTreeSha256": "a344b10aebfa32f99b057181a88227179b74b88fdad2ebc99d864907867b1b4f",
+      "bundleSha256": "3455a96e27af00fc8907018304c48d2feb0069aafab75a0161cb4d58cc963311",
+      "scope": "Cold/no-input QA Home observations; bounded non-reproduction does not close historical Worker Home crash or unexpected navigation concerns"
+    },
+    "finalOriginalSavedRoleVerification": {
+      "status": "PASS",
+      "applicationId": "com.mrcjshy.skillmatch",
+      "clientObservedUtc": "2026-10-20T15:47:12Z",
+      "workerObservedUtc": "2026-10-20T15:54:17Z",
+      "scope": "Ordinary original saved-role identity/Home readback, without login/logout/reset/credential or debugger operations",
+      "qaSourceIdentityAssignedToOriginalApps": false,
+      "retainedOriginalRuntimeFatalResolved": false
+    },
+    "finalRuntimeAudit": {
+      "status": "REVIEW_REQUIRED_OPEN_FOLLOW_UPS_REMAIN",
+      "captureStatus": "PASS_18_READ_ONLY_COMMANDS",
+      "capturedCommandCount": 18,
+      "captureStartedUtc": "2026-10-20T16:00:59.464619Z",
+      "captureFinishedUtc": "2026-10-20T16:01:05.212620Z",
+      "auditCutoffUtc": "2026-10-20T16:01:10.602719Z",
+      "originalPackageSemanticComparison": "PASS_ROOT_VERIFIED_LF_NORMALIZED_OFFLINE",
+      "offlineComparisonRegressionChecksPassed": 6,
+      "initialComparisonFailureRetained": "CRLF versionName parser mismatch; same captured bytes compared offline after normalization; no ADB recapture or app mutation for parser repair",
+      "retainedUniqueReanimatedHeaders": 69,
+      "newlyObservedUniqueReanimatedHeaders": 0,
+      "retainedUniqueFatalStarts": 2,
+      "fatalScope": "Historical automation fatal and original Worker inspector fatal remain retained; no blanket crash-freedom inference",
+      "unknownWarningErrorSignatures": "REVIEW_REQUIRED; no silence, harmlessness or clean-runtime conclusion inferred",
+      "cleanRuntimeClaimed": false,
+      "logsCleared": false,
+      "finalSampledQaLogs": {
+        "scope": "Exact pre-sampled QA PID rolling logs only; no post-sample PID/liveness proof",
+        "perDeviceFatalStarts": [
+          0,
+          0
+        ],
+        "perDeviceReactNativeJsCandidateStarts": [
+          0,
+          0
+        ],
+        "perDeviceReanimatedHeaders": [
+          0,
+          0
+        ],
+        "perDeviceMapLibre503Headers": [
+          0,
+          0
+        ],
+        "perDeviceDevLoadingBadTokenExceptionHeaders": [
+          2,
+          2
+        ],
+        "openFollowUps": "Nonfatal DevLoading popup failures, recurring RN window-focus soft exceptions and other Android warnings remain REVIEW_REQUIRED; not all-runtime clean"
+      },
+      "retainedCrossEpochErrorCandidates": {
+        "reactNativeJsCandidateStarts": 7,
+        "mapLibre503Headers": 102,
+        "scope": "Retained multi-epoch inputs; historical controlled fault evidence does not classify all unmatched records. Unknowns remain REVIEW_REQUIRED."
+      }
+    },
+    "finalQaIdentityHome": {
+      "status": "PASS",
+      "applicationId": "com.mrcjshy.skillmatch.uiv3qa",
+      "clientObservedUtc": "2026-10-20T15:48:22Z",
+      "workerObservedUtc": "2026-10-20T15:55:59Z",
+      "sourceOverlay": null,
+      "sourceTreeSha256": "a344b10aebfa32f99b057181a88227179b74b88fdad2ebc99d864907867b1b4f",
+      "bundleSha256": "3455a96e27af00fc8907018304c48d2feb0069aafab75a0161cb4d58cc963311"
+    },
+    "finalOwnerHomeViews": {
+      "status": "PASS_WITHIN_VIEWED_HOME_SCOPE",
+      "clientObservedUtc": "2026-10-20T15:59:28Z",
+      "workerObservedUtc": "2026-10-20T16:00:24Z",
+      "scope": "Both actual native QA Homes reviewed with unobstructed Bell after supported QA-only Tools preference hide; controllers released",
+      "appSourceOrRuntimeOverlayChanged": false,
+      "originalPackagePreferenceChanged": false,
+      "ownerVisualAcceptanceClaimed": false
+    }
+  },
+  "metadataCutoffUtc": "2026-10-20T16:04:17.649344Z",
+  "nativeMatrixComplete": false,
+  "cleanRuntimeClaimed": false,
+  "additionalNativeApkBuilt": false,
+  "diagnosticPurpose": "One isolated x86_64 development-client diagnostic; not a physical-phone or release APK",
+  "runtimeEpochHistory": [
+    {
+      "epoch": "native-post-baseline",
+      "sourceOverlay": null,
+      "sourceTreeSha256": "6cbd912317a2550b73b5070518c5ebf70e10b957834ad94862a05062aa5ff72c",
+      "bundleSha256": "a218abb917c363af1962d8eb15a5fc098a09c1488e8c33749bc7a2877d80d36a",
+      "bundleBytes": 15035832,
+      "scope": "Three-post gate PASS"
+    },
+    {
+      "sourceTreeSha256": "3f7dc89edf426d19acacde81b67fe080aa2a9204be8bf2390f6f937bbbda31b4",
+      "bundleSha256": "28e913df8dee71f2ae5ed061a851033716b2277c21fa89d9fc6d2d165d17403d",
+      "bundleBytes": 15036109,
+      "epoch": "js-lifecycle-motion"
+    },
+    {
+      "metroPort": 8086,
+      "epoch": "continuation-map",
+      "sourceOverlay": "map",
+      "sourceTreeSha256": "195fffa2be5a6edee2171b898d86773ecc9794c79e3d4267b9f6844864f24cbe",
+      "bundleSha256": "468acda2c95b695f693cd008635712e0556d5118e11774fd856eef06f017301e",
+      "bundleBytes": 15039387,
+      "matchesPlainCandidate": false
+    },
+    {
+      "epoch": "continuation-auth",
+      "sourceOverlay": "auth",
+      "sourceTreeSha256": "74e40873dfd4f64b7ef86b17d656cd658161b85423e7df5a1540ce4a11d76b5e",
+      "bundleSha256": "09d7913482477af357e3253f4f53cc32dc27980c820e141a2aeb825c9408df5c",
+      "matchesPlainCandidate": false,
+      "scope": "Private transport-fault epoch for three scoped native Auth cases; overlay excluded from publication"
+    }
+  ],
+  "plainCurrentCandidateBundle": {
+    "status": "VERIFIED",
+    "epoch": "continuation-plain-final",
+    "observedUtc": "2026-10-20T15:39:55.632375+00:00",
+    "metroPort": 8086,
+    "sourceOverlay": null,
+    "sourceTreeSha256": "a344b10aebfa32f99b057181a88227179b74b88fdad2ebc99d864907867b1b4f",
+    "bundleSha256": "3455a96e27af00fc8907018304c48d2feb0069aafab75a0161cb4d58cc963311",
+    "bundleBytes": 15039339,
+    "matchesPlainCandidate": true,
+    "httpStatus": 200,
+    "nativeApkRebuilt": false,
+    "scope": "Actual complete no-overlay bundle measurement; does not reassign prior overlay test results to this epoch"
+  },
+  "reanimatedWarningFollowup": {
+    "status": "OPEN_UNATTRIBUTED_NONFATAL",
+    "boundedUniqueWarningBlocks": 69,
+    "auditCutoffUtc": "2026-10-20T14:26:42.328713Z",
+    "installedReanimatedVersion": "4.5.1",
+    "installedWorkletsVersion": "0.10.1",
+    "reactNativeVersion": "0.86.2",
+    "upstreamReference": "https://github.com/software-mansion/react-native-reanimated/pull/10435",
+    "upstreamMergedDate": "2026-09-28",
+    "assessment": "Matching stale-view reflection pathway is plausible; originating application view and local ANR impact remain unproven. This does not establish introduction by V3. No Reanimated patch, logging suppression, dependency upgrade or additional native build applied."
+  },
+  "originalWorkerInspectorFatal": {
+    "status": "OPEN_UNATTRIBUTED",
+    "applicationId": "com.mrcjshy.skillmatch",
+    "observedUtc": "2026-10-20T14:32:56.115Z",
+    "failure": "NullPointerException in CxxInspectorPackagerConnection WebSocketDelegate",
+    "assessment": "Newly observed original-package fatal, distinct from the QA posting ScreenStack failure, historical Worker SIGSEGV and UiAutomationService failure. Cause and any V3 relationship remain unresolved. Storage/session preservation is separate from runtime crash freedom.",
+    "postBufferComparison": "No additional fatal in subsequent bounded buffer comparison; does not resolve retained original fatal",
+    "finalRuntimeCloseout": "OPEN_UNATTRIBUTED: retained by final audit; ordinary original saved-role PASS does not resolve this fatal"
+  },
+  "originalPreservationCloseout": {
+    "status": "PASS_WITHIN_RECORDED_SCOPE_WITH_OPEN_RUNTIME_DEFECT",
+    "finalReadOnlyPackageComparison": "PASS: original APK base-only sets and hashes, UIDs, versions, install/update timestamps and complete runtime permission grants/sorted flags match preinstall and earlier comparison baselines",
+    "usageAuditTimestampsComparedOrRewound": false,
+    "offlineComparisonRepair": "Initial CRLF parser failure preserved; LF-normalized comparison uses the same successful read-only capture",
+    "ordinarySavedRoleHomeReadbacks": "PASS for Client and Worker without login/logout/reset/credential or debugger operations",
+    "privateStorageOrTokensCopied": false,
+    "originalPackagesUninstalledClearedOverwrittenOrResigned": false,
+    "privateSessionContentsIndependentlyRead": false,
+    "runtimeCrashFreedomClaimed": false
+  },
+  "retainedFailurePolicy": "Historical native, startup, harness, cached-map, acceptance and timeout failures remain local evidence; a later bounded pass does not erase them or become combined-candidate proof",
+  "publicationBoundary": {
+    "workInProgress": true,
+    "commitPushAuthorized": false,
+    "mainIntegrationAuthorized": false,
+    "backendOrHostedPublicationIncluded": false,
+    "correctedF2AddendumF3Included": false,
+    "ownerVisualAcceptanceClaimed": false
+  },
+  "toolAvailability": {
+    "actualDriver": "Pinned locally installed TesterArmy SDK",
+    "argentExposed": false,
+    "nativeBloomExposed": false,
+    "testerArmyMcpExposed": false,
+    "unsupportedToolRunClaimed": false
+  }
+}
