@@ -268,7 +268,7 @@ describe('Worker onboarding provider refresh races', () => {
       user_id: 'worker-user',
       terms_version: '2026-09-v1',
       terms_accepted_at: '2026-09-25T00:00:00Z',
-      privacy_version: '2026-09-v1',
+      privacy_version: '2026-10-v1',
       privacy_acknowledged_at: '2026-09-25T00:00:00Z',
     };
     boundary.identityRow = rawIdentity('pending');

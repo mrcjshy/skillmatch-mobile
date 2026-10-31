@@ -55,9 +55,9 @@ function harness() {
   }, exported);
   return {
     values, listeners, cancel,
-    render(stale = false) {
+    render(stale = false, paused = false) {
       cursor = 0;
-      const styles = exported.useDestinationPinMotion(stale);
+      const styles = exported.useDestinationPinMotion(stale, paused);
       pending.splice(0).forEach(run => run());
       return styles;
     },
@@ -69,6 +69,13 @@ function harness() {
 }
 
 describe('destination pin animation lifecycle', () => {
+  it('rests while the expanded sheet covers the map, and turns again once it is uncovered', () => {
+    const covered = harness(); covered.render(false, true);
+    expect(covered.values[0].current).toBe(0);
+    const uncovered = harness(); uncovered.render(false, false);
+    expect(uncovered.values[0].current).toMatchObject({ kind: 'repeat' });
+  });
+
   it('turns the whole pin continuously through 360 degrees at constant speed', () => {
     const h = harness(); const style = h.render();
     expect(style.transform).toEqual([{ perspective: 500 }, { rotateY: '0deg' }]);

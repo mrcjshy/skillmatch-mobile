@@ -1,8 +1,14 @@
 import type { CatalogSkill } from './skill-catalog';
 import { validateAiImageInput, type AiImageInput } from './ai-image-input';
 
-// Held until the hosted AI path and product/privacy decisions are reconciled.
-export const JOB_SKILL_SUGGESTIONS_ENABLED = false;
+// Defense demo build: the server gates provider access (Privacy 2026-10-v1
+// consent, demo-account allowlist, hosted flags); otherwise the manual flow shows.
+export const JOB_SKILL_SUGGESTIONS_ENABLED = true;
+
+/** Fixed request-only context for a photo with no written description. It is data,
+ * not an instruction, and is never written to the draft or a posted Job. */
+export const PHOTO_ONLY_REQUEST_CONTEXT = '(No written description provided.)';
+export const PHOTO_ONLY_SUGGESTIONS_ENABLED = true;
 
 export type JobSkillSuggestion = { skill_id: string; explanation: string; confidence?: number };
 export type JobSkillSuggestionsResponse = {
@@ -270,11 +276,39 @@ function exactKeys(value: Record<string, unknown>, required: string[], optional:
     keys.every((key) => required.includes(key) || optional.includes(key));
 }
 
+/** Suggest may start from a written description, or from a selected photo alone. */
+export function canRequestJobSkillSuggestions(description: unknown, hasSelectedPhoto: boolean): boolean {
+  if (buildJobSkillSuggestionsRequest(description) !== null) return true;
+  return PHOTO_ONLY_SUGGESTIONS_ENABLED && hasSelectedPhoto && typeof description === 'string' && description.trim() === '';
+}
+
+/** Model text is display-only; contact-like fragments from photo text are never shown. */
+export function displaySuggestionExplanation(explanation: string): string {
+  return explanation
+    .replace(/\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b/g, '…')
+    .replace(/\b(?:https?:\/\/|www\.)\S+/gi, '…')
+    .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|ph|io|co)(?:\/\S*)?\b/gi, '…')
+    .replace(/\+?\d[\d\s().-]{5,}\d/g, '…');
+}
+
+export type SkillSelection = { primarySkillId: string | null; additionalSkillIds: readonly string[] };
+/** Applying replaces the selection; confirm whenever an existing skill would change or clear. */
+export function applyNeedsConfirmation(current: SkillSelection, ids: readonly string[]): boolean {
+  const existing = current.primarySkillId === null ? [...current.additionalSkillIds] : [current.primarySkillId, ...current.additionalSkillIds];
+  if (existing.length === 0) return false;
+  return existing.length !== ids.length || existing.some((id, index) => ids[index] !== id);
+}
+
 export function buildJobSkillSuggestionsRequest(
   description: unknown,
   image?: unknown
 ): JobSkillSuggestionsRequest | null {
-  if (typeof description !== 'string' || description.trim() === '') return null;
+  if (typeof description !== 'string') return null;
+  if (description.trim() === '') {
+    if (!PHOTO_ONLY_SUGGESTIONS_ENABLED || image === undefined) return null;
+    const normalized = validateAiImageInput(image);
+    return normalized === null ? null : { mode: 'job_skill_suggestions', description: PHOTO_ONLY_REQUEST_CONTEXT, image: normalized };
+  }
   let codepoints = 0;
   let bytes = 0;
   for (const char of description) {

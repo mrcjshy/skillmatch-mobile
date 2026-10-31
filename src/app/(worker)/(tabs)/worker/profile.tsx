@@ -364,7 +364,7 @@ function WorkerProfileContent() {
       </View>
 
       {isLoading ? (
-        <InlineStatus variant="loading" message="Loading your profile…" />
+        <InlineStatus variant="loading" skeleton="detail" message="Loading your profile…" />
       ) : loadError ? (
         <InlineStatus variant="error" message={loadError} />
       ) : (
@@ -393,7 +393,7 @@ function WorkerProfileContent() {
           ) : null}
 
           <View style={styles.section}>
-            <SectionHeader title="Portfolio" subtitle="Keep your work examples up to date." />
+            <SectionHeader title="Portfolio" />
             <SurfaceGroup inset={spacing.lg}>
               <NavRow
                 label="View portfolio"
@@ -401,6 +401,13 @@ function WorkerProfileContent() {
                 icon={{ android: 'photo_library', ios: 'photo.on.rectangle' }}
                 disabled={busy}
                 onPress={() => router.push(PORTFOLIO_PATH as Href)}
+              />
+              <NavRow
+                label="Resume"
+                hint="Printable PDF from your profile"
+                icon={{ android: 'description', ios: 'doc.text' }}
+                disabled={busy}
+                onPress={() => router.push('/worker/resume' as Href)}
               />
             </SurfaceGroup>
           </View>

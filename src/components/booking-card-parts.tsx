@@ -52,15 +52,12 @@ export function FactLine({ label, value }: { label: string; value: string }) {
 }
 
 /** Method (bold) with whose payment it is, and the amount once, at the right. */
-export function PaymentRow({ qr, method, caption, amount }: { qr: boolean; method: string; caption: string; amount: string }) {
+export function PaymentRow({ qr, method, amount }: { qr: boolean; method: string; amount: string }) {
   return <View style={styles.payment}>
     <View style={styles.payIcon}>
       <AppSymbol name={qr ? { android: 'qr_code_2', ios: 'qrcode' } : { android: 'payments', ios: 'banknote' }} size={22} tintColor={colors.accent} />
     </View>
-    <View style={styles.payCopy}>
-      <Text style={styles.payMethod}>{method}</Text>
-      <Text style={styles.caption}>{caption}</Text>
-    </View>
+    <Text style={[styles.payMethod, styles.payCopy]}>{method}</Text>
     <Text style={styles.amount}>{amount}</Text>
   </View>;
 }

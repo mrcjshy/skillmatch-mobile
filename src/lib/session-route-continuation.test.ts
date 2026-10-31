@@ -24,6 +24,26 @@ describe('navigation intent across a same-session authoritative account recheck'
     memory.rememberSheetPosition(current, 'collapsed');
     expect(memory.sheetPosition(current)).toBe('collapsed');
   });
+  it('keeps the detent when re-entry briefly reports the saved map path without its ID (native natural refresh)', () => {
+    // Exact order logged on the Android QA client at a natural TOKEN_REFRESHED (post-R4 [QA-NR] hook, 18:20:27Z).
+    const memory = createSessionRouteContinuation(), handle = lifetime();
+    const jobId = bookingId, pathname = '/client/job-details';
+    const linked = { access: 'client', pathname, params: { initial: 'true', jobId, path: '/x', pop: 'true', state: 'x' }, ownerId: 'owner', lifetime: handle };
+    memory.observe(linked); memory.rememberSheetPosition(linked, 'expanded');
+    memory.observe({ ...linked, access: 'account-pending' });
+    memory.observe({ ...linked, access: 'account-pending', params: {} });
+    expect(memory.destination('client', 'owner', handle)).toEqual({ pathname, params: { jobId } });
+    // The rebuilt navigator still reports the old path, but without the Job ID, before the Redirect lands.
+    memory.observe({ ...linked, params: {} });
+    memory.observe({ ...linked, pathname: '/', params: {} });
+    const landed = { ...linked, params: { jobId } };
+    expect(memory.sheetPosition(landed)).toBe('expanded');
+    memory.observe(landed); expect(memory.sheetPosition(landed)).toBe('expanded');
+    // A genuinely different own route during re-entry still replaces the intent and its detent.
+    memory.observe({ ...linked, access: 'account-pending' });
+    memory.observe({ ...linked, pathname: '/client/notifications', params: {} });
+    expect(memory.sheetPosition(landed)).toBeUndefined();
+  });
   it('does not let UI-state calls introduce another destination or cross owner, lifetime, role or exact-ID boundaries', () => {
     const memory = createSessionRouteContinuation(), handle = lifetime();
     const current = { access: 'client', pathname: '/client/job-details', params: { jobId: bookingId }, ownerId: 'owner', lifetime: handle };

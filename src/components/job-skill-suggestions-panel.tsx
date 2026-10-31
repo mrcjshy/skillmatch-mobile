@@ -5,7 +5,7 @@ import { InlineStatus } from '@/components/inline-status';
 import { SectionHeader } from '@/components/section-header';
 import { SkillMatchTheme } from '@/constants/theme';
 import { prepareAiImageInput } from '@/lib/ai-image-input';
-import { buildJobSkillSuggestionsRequest, createJobSkillSuggestionsInvoker, createJobSkillSuggestionsRunner, type JobSkillSuggestionsState, type SuggestionOwnerToken } from '@/lib/job-skill-suggestions';
+import { applyNeedsConfirmation, canRequestJobSkillSuggestions, createJobSkillSuggestionsInvoker, createJobSkillSuggestionsRunner, displaySuggestionExplanation, type JobSkillSuggestionsState, type SkillSelection, type SuggestionOwnerToken } from '@/lib/job-skill-suggestions';
 import type { CatalogSkill } from '@/lib/skill-catalog';
 import { supabase } from '@/lib/supabase';
 import type { ClientPostJobDraftContextValue } from '@/providers/client-post-job-draft-provider';
@@ -22,6 +22,7 @@ export function JobSkillSuggestionsPanel(props: Props) {
   const [ui, setUi] = useState<JobSkillSuggestionsState>({ status: 'idle' });
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [reviewedIds, setReviewedIds] = useState<string[]>([]);
+  const [pendingApply, setPendingApply] = useState<null | { token: SuggestionOwnerToken; ids: string[]; before: SkillSelection }>(null);
   const [imageError, setImageError] = useState(false);
   const [control] = useState(() => {
     const record = {
@@ -42,7 +43,8 @@ export function JobSkillSuggestionsPanel(props: Props) {
         captured.photos === live.owner.draft.jobPhotos && captured.catalog === JSON.stringify(live.skills) && captured.external === live.authority.revision;
     };
     const runner = createJobSkillSuggestionsRunner({ invoke: createJobSkillSuggestionsInvoker(supabase.functions), isCurrent: current,
-      getCatalog: () => record.latest.props.skills, publish: state => { setUi(state); if (state.status === 'ready') setReviewedIds(state.response.suggestions.map(item => item.skill_id)); } });
+      // Suggestions start unselected; the Client explicitly chooses what to apply.
+      getCatalog: () => record.latest.props.skills, publish: state => { setUi(state); setPendingApply(null); if (state.status === 'ready') setReviewedIds([]); } });
     const invalidate = () => { record.generation++; record.inputRevision++; record.busy = false; record.capture = null; runner.reset(); setImageError(false); };
     return { record, runner, current, invalidate,
       observe(next: typeof record.latest) { record.latest = next; },
@@ -96,7 +98,7 @@ export function JobSkillSuggestionsPanel(props: Props) {
     if (owner.updateDraft !== props.owner.updateDraft || owner.ownerId !== props.owner.ownerId || s.sessionLifetime !== session.sessionLifetime ||
       props.owner.draft.description !== owner.draft.description) return;
     if (record.busy || !record.mounted || !record.foreground || !focused || owner.isPosting || !owner.isOwnerCurrent() ||
-      !s.sessionLifetime?.isCurrent() || owner.draft.wizardStep !== 2 || buildJobSkillSuggestionsRequest(owner.draft.description) === null) return;
+      !s.sessionLifetime?.isCurrent() || owner.draft.wizardStep !== 2 || !canRequestJobSkillSuggestions(owner.draft.description, record.photoSelection !== null)) return;
     const token: SuggestionOwnerToken = { ownerIdentity: owner.updateDraft, ownerId: owner.ownerId, draftEpoch: owner.draftEpoch,
       sessionLifetime: s.sessionLifetime, sessionRevision: s.sessionRevision ?? 0, inputRevision: record.inputRevision, manualRevision: authority.revision, catalogRevision: 0 };
     control.begin({ token, description: owner.draft.description, photos: owner.draft.jobPhotos, catalog: JSON.stringify(skills), external: authority.revision, generation: record.generation });
@@ -119,9 +121,24 @@ export function JobSkillSuggestionsPanel(props: Props) {
   function apply() {
     const token = renderedCapture?.token;
     if (!token || control.record.capture?.token !== token || !control.current(token)) return;
-    const ids = control.runner.apply(token, reviewedIds);
-    if (!ids || !control.current(token)) return;
-    if (!control.record.latest.props.owner.updateDraft({ primarySkillId: ids[0], additionalSkillIds: ids.slice(1) })) control.invalidate();
+    const { draft } = control.record.latest.props.owner;
+    const before = { primarySkillId: draft.primarySkillId, additionalSkillIds: [...draft.additionalSkillIds] };
+    const ids = [...reviewedIds];
+    if (ids.length < 1 || ids.length > 2) return;
+    // Existing skills are never replaced or cleared without an explicit confirmation.
+    if (applyNeedsConfirmation(before, ids)) { setPendingApply({ token, ids, before }); return; }
+    commit(token, ids, before);
+  }
+  /** Revalidates draft identity, edit state and the confirmed selection immediately before writing. */
+  function commit(token: SuggestionOwnerToken, ids: string[], before: SkillSelection) {
+    setPendingApply(null);
+    if (control.record.capture?.token !== token || !control.current(token)) return;
+    const { draft } = control.record.latest.props.owner;
+    if (draft.primarySkillId !== before.primarySkillId || draft.additionalSkillIds.length !== before.additionalSkillIds.length ||
+      draft.additionalSkillIds.some((id, index) => before.additionalSkillIds[index] !== id)) return;
+    const applied = control.runner.apply(token, ids);
+    if (!applied || !control.current(token)) return;
+    if (!control.record.latest.props.owner.updateDraft({ primarySkillId: applied[0], additionalSkillIds: applied.slice(1) })) control.invalidate();
   }
   const renderedCapture = control.record.capture;
   const renderCurrent = renderedCapture !== null && props.owner.updateDraft === renderedCapture.token.ownerIdentity &&
@@ -131,36 +148,47 @@ export function JobSkillSuggestionsPanel(props: Props) {
     props.authority.revision === renderedCapture.external && props.owner.draft.wizardStep === 2 && !props.owner.isPosting &&
     props.focused && control.record.foreground && props.owner.isOwnerCurrent();
   const currentUi = renderedCapture && renderCurrent && control.current(renderedCapture.token) && props.focused ? ui : { status: 'idle' as const };
-  const disabled = !props.focused || props.owner.isPosting || !props.owner.isOwnerCurrent() || currentUi.status === 'loading' || buildJobSkillSuggestionsRequest(props.owner.draft.description) === null;
   const photoCurrent = selectedPhoto !== null && control.record.selectionOwner?.identity === props.owner.updateDraft &&
     control.record.selectionOwner.lifetime === session.sessionLifetime && control.record.selectionOwner.epoch === props.owner.draftEpoch &&
     props.owner.draft.jobPhotos.some(photo => photoKey(photo) === selectedPhoto);
+  const disabled = !props.focused || props.owner.isPosting || !props.owner.isOwnerCurrent() || currentUi.status === 'loading' || !canRequestJobSkillSuggestions(props.owner.draft.description, photoCurrent);
+  const skillNames = (ids: readonly string[]) => ids.map(id => props.skills.find(skill => skill.id === id)?.skill_name ?? 'Unknown skill').join(' and ');
+  const confirming = pendingApply !== null && currentUi.status === 'ready' && renderedCapture !== null && pendingApply.token === renderedCapture.token;
+  const beforeIds = pendingApply === null ? [] : pendingApply.before.primarySkillId === null ? [...pendingApply.before.additionalSkillIds] : [pendingApply.before.primarySkillId, ...pendingApply.before.additionalSkillIds];
   return <View style={styles.panel} accessibilityLabel="Skill suggestions">
-    <SectionHeader title="Skill suggestions" subtitle="Optional. Review suggestions before choosing your skills." />
-    <Text style={styles.copy}>Suggest skills sends your description and only a photo you select here to the AI service. Leave out names, contact details and exact addresses.</Text>
+    <SectionHeader title="Skill suggestions" subtitle="Optional" />
+    <Text style={styles.copy}>Suggest skills sends your description, if you wrote one, and only a photo you select here to the AI service. Leave out names, contact details and exact addresses.</Text>
+    {props.owner.draft.jobPhotos.length === 0 ? <Text style={styles.copy}>Add a photo above to get suggestions from it.</Text> : null}
     {props.owner.draft.jobPhotos.map((photo, index) => <Pressable key={`${photo.uri}-${index}`} accessibilityRole="radio" accessibilityLabel={`Use photo ${index + 1} for suggestions`} accessibilityState={{ selected: photoCurrent && photoKey(photo) === selectedPhoto, disabled: props.owner.isPosting }} disabled={props.owner.isPosting} onPress={() => selectPhoto(photoKey(photo))}><Text style={styles.copy}>{photoKey(photo) === selectedPhoto && photoCurrent ? 'Selected: ' : ''}Photo {index + 1}</Text></Pressable>)}
     {selectedPhoto !== null ? <AppButton label="Use description only" variant="secondary" onPress={() => selectPhoto(null)} disabled={props.owner.isPosting} /> : null}
     <AppButton label="Suggest skills" variant="secondary" onPress={() => { void suggest(); }} disabled={disabled} loading={currentUi.status === 'loading'} />
-    {currentUi.status === 'loading' ? <InlineStatus variant="loading" message="Suggesting skills…" /> : null}
+    {currentUi.status === 'loading' ? <InlineStatus variant="loading" skeleton="lines" message="Suggesting skills…" /> : null}
     {imageError && renderCurrent ? <InlineStatus variant="error" message="Couldn't prepare this photo. Try again or choose Use description only." /> : null}
     {currentUi.status === 'error' ? <InlineStatus variant="error" message={currentUi.kind === 'rate_limited' ? 'Skill suggestion limit reached. Try again later.' : currentUi.kind === 'authorization' ? 'Skill suggestions are unavailable for this session. Try again after your account is ready.' : "Couldn't suggest skills. Please try again."} /> : null}
     {currentUi.status === 'error' || imageError && renderCurrent ? <AppButton label="Retry" variant="secondary" onPress={() => { void suggest(); }} disabled={disabled} /> : null}
     {currentUi.status === 'empty' ? <Text style={styles.copy}>No skills suggested. Choose your skills manually.</Text> : null}
     {currentUi.status === 'ready' ? <View style={styles.panel}>
+      <Text style={styles.copy}>{currentUi.response.suggestions.length > 1 ? 'More than one skill could fit. Choose one, or pick skills manually below.' : 'Choose the suggestion if it fits, or pick skills manually below.'}</Text>
       {currentUi.response.suggestions.map(item => {
         const label = props.skills.find(skill => skill.id === item.skill_id)?.skill_name;
         const selectedIndex = reviewedIds.indexOf(item.skill_id);
         const selected = selectedIndex !== -1;
         return <Pressable key={item.skill_id} accessibilityRole="checkbox" accessibilityLabel={`Suggestion ${label}`} accessibilityState={{ checked: selected }} onPress={() => {
           if (!renderedCapture || control.record.capture?.token !== renderedCapture.token || !control.current(renderedCapture.token)) return;
+          setPendingApply(null);
           setReviewedIds(previous => previous.includes(item.skill_id) ? previous.filter(id => id !== item.skill_id) : currentUi.response.suggestions.filter(suggestion => suggestion.skill_id === item.skill_id || previous.includes(suggestion.skill_id)).map(suggestion => suggestion.skill_id));
         }}>
           <Text style={styles.name}>{label}</Text>
           <Text style={selected ? styles.selected : styles.copy}>{selected ? `Selected · ${selectedIndex === 0 ? 'Primary' : 'Secondary'}` : 'Not selected'}</Text>
-          <Text style={styles.copy}>{item.explanation}</Text>
+          <Text style={styles.copy}>AI note, may be wrong: {displaySuggestionExplanation(item.explanation)}</Text>
         </Pressable>;
       })}
       <AppButton label="Apply selected skills" onPress={apply} disabled={reviewedIds.length < 1 || reviewedIds.length > 2 || disabled} />
+      {confirming && pendingApply ? <View style={styles.panel} accessibilityLabel="Confirm replacing skills">
+        <Text style={styles.name}>{`Replace ${skillNames(beforeIds)} with ${skillNames(pendingApply.ids)}?`}</Text>
+        <AppButton label="Replace skills" onPress={() => commit(pendingApply.token, pendingApply.ids, pendingApply.before)} disabled={disabled} />
+        <AppButton label="Keep my skills" variant="secondary" onPress={() => setPendingApply(null)} />
+      </View> : null}
     </View> : null}
   </View>;
 }

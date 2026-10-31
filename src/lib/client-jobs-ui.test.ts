@@ -36,6 +36,7 @@ function setup(overrides: Props = {}) {
   const state: unknown[] = []; let cursor = 0; let focus!: () => (() => void) | undefined;
   const jobsState = { isLoading: false, loadError: null, jobs: [sample], refresh: vi.fn(async () => {}), ...overrides };
   let authorized = true; const push = vi.fn(), photo = vi.fn(), booking = vi.fn(), location = vi.fn();
+  const live: { topic: string; events: readonly string[]; onInvalidate: () => void }[] = [];
   const sessionListeners = new Set<() => void>(); const appListeners = new Set<(next: string) => void>(); const effects: (() => unknown)[] = [];
   const native = { ...Object.fromEntries(['Text','View','ScrollView','FlatList','RefreshControl','Pressable','ActivityIndicator'].map(n => [n,n])), StyleSheet: { create: (s: unknown) => s, hairlineWidth: 1 }, Platform: { select: (p: Props) => p.default }, AppState: { currentState: 'active', addEventListener: (_: string, fn: (next: string) => void) => { appListeners.add(fn); return { remove: () => appListeners.delete(fn) }; } } };
   const seams: Record<string, Props> = {
@@ -46,13 +47,15 @@ function setup(overrides: Props = {}) {
     '@/providers/session-provider': { useSession: () => ({ sessionRevision: 1, isSessionRevisionCurrent: () => authorized, subscribeSessionLifecycle: (fn: () => void) => { sessionListeners.add(fn); return () => { sessionListeners.delete(fn); }; } }) },
     '@/providers/client-post-job-draft-provider': { useClientPostJobDraft: () => ({ isOwnerCurrent: () => authorized }) },
     '@/providers/client-jobs-provider': { useClientJobs: () => jobsState }, '@/lib/date-time': { formatCardDateTime }, '@/lib/job-payment': { formatClientPostedPaymentLine },
+    '@/lib/realtime': { NOTIFICATION_INSERTED: 'notification_inserted', userNotificationsTopic: (id: string) => `user:${id}:notifications`,
+      subscribeInvalidation: (o: (typeof live)[number]) => { live.push(o); return () => { live.splice(live.indexOf(o), 1); }; } },
     '@/lib/job-photos': { listJobPhotos: photo }, '@/lib/booking-records': { loadClientBookings: booking }, '@/components/client-job-location': { ClientJobLocation: location },
   };
   seams['@/components/grouped-row'] = load('src/components/grouped-row.ts', seams);
   seams['@/lib/status-presentation'] = load('src/lib/status-presentation.ts', seams);
   const screen = load('src/app/(client)/(tabs)/client/jobs.tsx', seams).default as () => Element;
   const render = () => { cursor = 0; return screen(); };
-  return { render, seams, appListenerCount: () => appListeners.size, mountEffects: () => { effects.forEach(fn => fn()); }, app: (next: string) => { native.AppState.currentState = next; for (const fn of [...appListeners]) fn(next); }, jobsState, push, photo, booking, location, focus: () => focus(), revoke: () => { authorized = false; for (const fn of sessionListeners) fn(); }, restore: () => { authorized = true; } };
+  return { render, seams, live, appListenerCount: () => appListeners.size, mountEffects: () => { effects.forEach(fn => fn()); }, app: (next: string) => { native.AppState.currentState = next; for (const fn of [...appListeners]) fn(next); }, jobsState, push, photo, booking, location, focus: () => focus(), revoke: () => { authorized = false; for (const fn of sessionListeners) fn(); }, restore: () => { authorized = true; } };
 }
 const list = (tree: Element) => all(tree).find(e => e.type === 'FlatList')!;
 const text = (tree: Element) => all(tree).filter(e => e.type === 'Text').map(e => e.props.children);
@@ -93,6 +96,13 @@ describe('My Jobs actual static/offline composition; no native or Argent executi
     const failed = s.render(); expect(list(failed).props.data).toHaveLength(1); expect(all(failed).find(e => e.type === 'InlineStatus')!.props.message).toBe("Couldn't refresh your jobs. Showing the last loaded jobs.");
     const retry = all(failed).find(e => e.type === 'AppButton')!; (retry.props.onPress as () => void)(); await flush();
     expect(all(s.render()).filter(e => e.type === 'InlineStatus')).toHaveLength(0); expect(s.jobsState.refresh).toHaveBeenCalledTimes(2); cleanup?.();
+  });
+  it('re-reads live on the Client notification topic only while focused', async () => {
+    const s = setup(); s.render(); const cleanup = s.focus(); await flush();
+    expect(s.live.map(l => [l.topic, l.events])).toEqual([['user:client-a:notifications', ['notification_inserted']]]);
+    s.live[0].onInvalidate(); await flush();
+    expect(s.jobsState.refresh).toHaveBeenCalledTimes(2);
+    cleanup?.(); expect(s.live).toHaveLength(0);
   });
   it('blur and same-owner reauthorization cannot revive a pending refresh error', async () => {
     let reject!: (reason: Error) => void; const pending = new Promise<void>((_, fail) => { reject = fail; });

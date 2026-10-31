@@ -97,7 +97,7 @@ export default function MyReportDetails({ reportId }: { reportId: string | null 
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <InlineStatus variant="loading" message="Loading report…" />
+        <InlineStatus variant="loading" skeleton="detail" message="Loading report…" />
       </View>
     );
   }

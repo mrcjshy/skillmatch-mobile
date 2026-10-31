@@ -17,13 +17,15 @@ function harness(signOut = vi.fn(async () => ({ error: null as { message: string
 }) {
   const push = vi.fn();
   const state: unknown[] = []; let cursor = 0;
-  const native = { ...Object.fromEntries(['View', 'Text', 'ScrollView', 'Pressable', 'ActivityIndicator'].map(name => [name, name])), StyleSheet: { create: (styles: unknown) => styles }, useWindowDimensions: () => ({ fontScale: 1 }) };
+  const native = { ...Object.fromEntries(['View', 'Text', 'ScrollView', 'Pressable', 'PulseDots'].map(name => [name, name])), StyleSheet: { create: (styles: unknown) => styles }, useWindowDimensions: () => ({ fontScale: 1 }) };
   const jsx = (type: unknown, props: Props): Element => typeof type === 'function' ? type(props) : { type, props };
   const cache: Record<string, Props> = {};
   function load(file: string): Props {
     if (cache[file]) return cache[file];
     const exports: Props = {}; cache[file] = exports;
     const seams: Record<string, unknown> = {
+    '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
+
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },
       react: { useState: (initial: unknown) => { const slot = cursor++; if (!(slot in state)) state[slot] = initial; return [state[slot], (value: unknown) => { state[slot] = value; }]; } },
       'react-native': native, 'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
@@ -66,7 +68,7 @@ function assertReadableTree(value: unknown, pressed: boolean, inheritedBackgroun
   if (node.type === 'Text' && typeof current.color === 'string') {
     expect(opacity).toBe(1); expect(contrast(current.color, background)).toBeGreaterThanOrEqual(4.5);
   }
-  if (node.type === 'ActivityIndicator') expect(contrast(String(node.props.color), background)).toBeGreaterThanOrEqual(3);
+  if (node.type === 'PulseDots') expect(contrast(String(node.props.color), background)).toBeGreaterThanOrEqual(3);
   assertReadableTree(node.props.children, pressed, background, opacity);
 }
 
@@ -109,7 +111,7 @@ describe('Client Profile composed presentation', () => {
     const signOut = vi.fn(async () => { await pending; if (failure === 'thrown') throw new Error('transport'); return { error: { message: 'Session could not be cleared.' } }; });
     const s = harness(signOut); const running = (action(s.render(), 'Sign out').props.onPress as () => Promise<void>)();
     const tree = s.render(); expect(action(tree, 'Sign out').props.accessibilityState).toEqual({ disabled: true, busy: true });
-    expect(nodes(tree).some(node => node.type === 'ActivityIndicator')).toBe(true);
+    expect(nodes(tree).some(node => node.type === 'PulseDots')).toBe(true);
     for (const label of ['Help and FAQ', 'My reports', 'Report an app issue', 'Terms and conditions', 'Privacy policy']) {
       expect(action(tree, label).props.disabled).toBe(true); expect(action(tree, label).props.accessibilityState).toEqual({ disabled: true });
     }

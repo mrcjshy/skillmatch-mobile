@@ -13,7 +13,7 @@ const flatten = (style: any): Props => Array.isArray(style)
 function controls() {
   const native = { Platform: { select: (values: Props) => values.android ?? values.default },
     StyleSheet: { create: (styles: Props) => styles },
-    Pressable: 'Pressable', Text: 'Text', ActivityIndicator: 'ActivityIndicator' };
+    Pressable: 'Pressable', Text: 'Text', PulseDots: 'PulseDots' };
   const jsx = (type: string, props: Props) => ({ type, props });
   const compile = (file: string, modules: Props) => {
     const exports: Props = {};
@@ -30,6 +30,8 @@ function controls() {
   const theme = compile('src/constants/theme.ts', { 'react-native': native, '@/global.css': {} });
   const { AppButton } = compile('src/components/app-button.tsx', {
     'react-native': native, 'react/jsx-runtime': { jsx, jsxs: jsx }, '@/constants/theme': theme,
+    '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
+
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },
   });
   return { theme, render: (props: Props): Element => AppButton(props) };
@@ -83,7 +85,7 @@ describe('AppButton blocked presentation', () => {
       const button = controls().render({ label: 'Continue', variant, loading: true });
       expect(flatten(button.props.style({ pressed: true })).opacity).toBeUndefined();
       expect(flatten(button.props.style({ pressed: false })).backgroundColor).toBe(variant === 'ghost' ? 'transparent' : '#EFEEEA');
-      expect(button.props.children.type).toBe('ActivityIndicator');
+      expect(button.props.children.type).toBe('PulseDots');
       expect(button.props.children.props.color).toBe(variant === 'destructive' ? '#B3261E' : '#1C3AA6');
     });
   }

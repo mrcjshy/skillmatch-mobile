@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { buildJobSkillSuggestionsRequest, parseJobSkillSuggestionsResponse, jobSkillSuggestionLabels,
   createJobSkillSuggestionsInvoker, JobSkillSuggestionsError, createJobSkillSuggestionsRunner,
-  type SuggestionOwnerToken, type JobSkillSuggestionsState } from './job-skill-suggestions';
+  type SuggestionOwnerToken, type JobSkillSuggestionsState, PHOTO_ONLY_REQUEST_CONTEXT, canRequestJobSkillSuggestions,
+  applyNeedsConfirmation, displaySuggestionExplanation, JOB_SKILL_SUGGESTIONS_ENABLED } from './job-skill-suggestions';
 
 const U1 = '00000000-0000-4000-8000-000000000001';
 const U2 = '00000000-0000-4000-8000-000000000002';
@@ -547,14 +548,60 @@ describe('strict current-catalog classification response', () => {
 });
 
 describe('reconciliation hold', () => {
-  it('blocks description requests before any transport call by default', async () => {
+  it('is switched on in the demo build', () => {
+    expect(JOB_SKILL_SUGGESTIONS_ENABLED).toBe(true);
+  });
+  it('blocks description requests before any transport call when switched off', async () => {
     const invoke = vi.fn().mockResolvedValue({ data: response, error: null });
-    await expect(createJobSkillSuggestionsInvoker({ invoke })({ mode: 'job_skill_suggestions', description: 'Synthetic repair' })).rejects.toMatchObject({ kind: 'service_error' });
+    await expect(createJobSkillSuggestionsInvoker({ invoke }, false)({ mode: 'job_skill_suggestions', description: 'Synthetic repair' })).rejects.toMatchObject({ kind: 'service_error' });
     expect(invoke).not.toHaveBeenCalled();
   });
-  it('blocks optional image requests before any transport call by default', async () => {
+  it('blocks optional image requests before any transport call when switched off', async () => {
     const invoke = vi.fn().mockResolvedValue({ data: response, error: null });
-    await expect(createJobSkillSuggestionsInvoker({ invoke })({ mode: 'job_skill_suggestions', description: 'Synthetic repair', image: { mime_type: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==' } })).rejects.toMatchObject({ kind: 'service_error' });
+    await expect(createJobSkillSuggestionsInvoker({ invoke }, false)({ mode: 'job_skill_suggestions', description: 'Synthetic repair', image: { mime_type: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==' } })).rejects.toMatchObject({ kind: 'service_error' });
     expect(invoke).not.toHaveBeenCalled();
+  });
+});
+
+describe('photo-only request context', () => {
+  const image = { mime_type: 'image/png' as const, data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==' };
+  it('uses the fixed context only for a blank description with a valid image', () => {
+    expect(buildJobSkillSuggestionsRequest('', image)).toEqual({ mode: 'job_skill_suggestions', description: PHOTO_ONLY_REQUEST_CONTEXT, image });
+    expect(buildJobSkillSuggestionsRequest('   ', image)?.description).toBe(PHOTO_ONLY_REQUEST_CONTEXT);
+    expect(buildJobSkillSuggestionsRequest('')).toBeNull();
+    expect(buildJobSkillSuggestionsRequest('', { mime_type: 'image/png', data: 'bm90LWEtcG5n' })).toBeNull();
+    expect(buildJobSkillSuggestionsRequest('Leaking pipe', image)).toEqual({ mode: 'job_skill_suggestions', description: 'Leaking pipe', image });
+    expect(PHOTO_ONLY_REQUEST_CONTEXT).toBe('(No written description provided.)');
+  });
+  it('enables Suggest for a description, or for a selected photo with a blank description', () => {
+    expect(canRequestJobSkillSuggestions('Leaking pipe', false)).toBe(true);
+    expect(canRequestJobSkillSuggestions('', true)).toBe(true);
+    expect(canRequestJobSkillSuggestions('', false)).toBe(false);
+    expect(canRequestJobSkillSuggestions('x'.repeat(2001), true)).toBe(false);
+    expect(canRequestJobSkillSuggestions(null, true)).toBe(false);
+  });
+  it('the invoker sends a photo-only request once, with the context as the description', async () => {
+    const invoke = vi.fn(async () => ({ data: response, error: null }));
+    const request = buildJobSkillSuggestionsRequest('', image)!;
+    await createJobSkillSuggestionsInvoker({ invoke }, true)(request);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith('skillmatch-ai', { body: { mode: 'job_skill_suggestions', description: PHOTO_ONLY_REQUEST_CONTEXT, image } });
+  });
+});
+
+describe('apply confirmation and display rules', () => {
+  it('confirms only when an existing skill would change or clear', () => {
+    expect(applyNeedsConfirmation({ primarySkillId: null, additionalSkillIds: [] }, [U1])).toBe(false);
+    expect(applyNeedsConfirmation({ primarySkillId: U1, additionalSkillIds: [] }, [U1])).toBe(false);
+    expect(applyNeedsConfirmation({ primarySkillId: U1, additionalSkillIds: [U2] }, [U1, U2])).toBe(false);
+    expect(applyNeedsConfirmation({ primarySkillId: U2, additionalSkillIds: [] }, [U1])).toBe(true);
+    expect(applyNeedsConfirmation({ primarySkillId: U1, additionalSkillIds: [U2] }, [U1])).toBe(true);
+    expect(applyNeedsConfirmation({ primarySkillId: U1, additionalSkillIds: [U2] }, [U2, U1])).toBe(true);
+  });
+  it('removes contact-like fragments from model explanations', () => {
+    expect(displaySuggestionExplanation('Leaking pipe under the sink.')).toBe('Leaking pipe under the sink.');
+    for (const text of ['Call 0917 123 4567', 'Call +63 917-123-4567', 'Visit https://example.com/x', 'See www.example.com', 'Mail a@b.co', 'Go to example.ph'])
+      expect(displaySuggestionExplanation(text)).toContain('…');
+    expect(displaySuggestionExplanation('Call 0917 123 4567')).not.toMatch(/\d{4}/);
   });
 });

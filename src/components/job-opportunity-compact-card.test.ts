@@ -73,14 +73,24 @@ const title = 'Pagkukumpuni ng bubong at paglalagay ng ligtas na kable para sa t
 const description = '  Kailangan ng masusing serbisyo sa pagkukumpuni ng malaking tahanan, paglilinis ng bubong at pagsusuri ng mga linya ng kuryente para sa kaligtasan ng buong pamilya. '.repeat(3);
 const skill = 'Pagkukumpuni ng bubong at masusing elektrikal na serbisyo';
 const opportunity = { job_id:'job-opportunity-1', title, description, barangay:'Barangay San Isidro Labrador na may mahabang pangalan', city:'Santa Ana Pampanga', budget:987654321.75, scheduled_at:timestamp, skill_points:50, location_points:30, rating_points:12.5, total_points:92.5, payment_method:'cod' };
-it('compacts opportunity padding while retaining the full scalable summary and touch target', () => {
-  const row = JobOpportunityCompactCard({ opportunity, compact: true, onPress() {} });
+it('keeps opportunity padding and the full scalable summary, with a short description a Worker can judge the job by', () => {
+  const row = JobOpportunityCompactCard({ opportunity, onPress() {} });
   expect(flat(row.props.style({ pressed: false }))).toMatchObject({ paddingVertical: 12, paddingHorizontal: 12, minHeight: 56 });
   expect(text(row)).toContain(title); expect(text(row)).toContain('Match Score: 92.5/100');
-  for (const label of all(row, 'Text')) {
+  const preview = compactOpportunityFields(opportunity).descriptionPreview;
+  const summary = all(row, 'Text').find((label: any) => text(label) === preview);
+  expect(summary.props.numberOfLines).toBe(3); expect(summary.props.ellipsizeMode).toBe('tail');
+  for (const label of all(row, 'Text').filter((node: any) => node !== summary)) {
     expect(label.props.numberOfLines).toBeUndefined();
     expect(label.props.allowFontScaling).not.toBe(false);
   }
+});
+
+it('reads the work first: the description sits directly under the title, as one flowing preview', () => {
+  const copy = text(JobOpportunityCompactCard({ opportunity: { ...opportunity, description: 'Leaking pipe\n\n  under the sink.' }, primarySkillName: skill, onPress() {} }));
+  expect(copy).toContain('Leaking pipe under the sink.');
+  const order = [title, 'Leaking pipe', skill, 'Barangay San Isidro'].map((value: string) => copy.indexOf(value));
+  expect(order.every((i: number) => i >= 0)).toBe(true); expect(order).toEqual([...order].sort((a, b) => a - b));
 });
 
 it('preserves full formatter output and callback in a wrapping row that reads title, skill, area, schedule, budget, match', () => {
@@ -91,11 +101,11 @@ it('preserves full formatter output and callback in a wrapping row that reads ti
   expect(tree.props.accessibilityLabel).toBe(title + ', Match Score: 92.5/100. View job opportunity details');
   const fields=compactOpportunityFields(opportunity,skill);
   expect(fields.schedule).toBeTruthy(); expect(fields.descriptionPreview).toBe(previewOpportunityDescription(description));
-  for (const value of [title, skill, description.trim(), fields.schedule, 'Barangay San Isidro Labrador na may mahabang pangalan, Santa Ana Pampanga', '₱987,654,321.75', 'Match Score: 92.5/100']) expect(text(tree)).toContain(value);
+  for (const value of [title, skill, fields.descriptionPreview, fields.schedule, 'Barangay San Isidro Labrador na may mahabang pangalan, Santa Ana Pampanga', '₱987,654,321.75', 'Match Score: 92.5/100']) expect(text(tree)).toContain(value);
   const copy = text(tree);
   const order = [title, skill, 'Barangay San Isidro', fields.schedule, '₱987,654,321.75', 'Match Score: 92.5/100'].map((value: string) => copy.indexOf(value));
   expect(order).toEqual([...order].sort((a, b) => a - b)); expect(order.every((i: number) => i >= 0)).toBe(true);
-  for(const label of all(tree,'Text')) { expect(label.props.numberOfLines).toBeUndefined(); expect(label.props.ellipsizeMode).toBeUndefined(); expect(flat(label.props.style).height).toBeUndefined(); }
+  for(const label of all(tree,'Text').filter((x:any)=>text(x)!==fields.descriptionPreview)) { expect(label.props.numberOfLines).toBeUndefined(); expect(label.props.ellipsizeMode).toBeUndefined(); expect(flat(label.props.style).height).toBeUndefined(); }
   const row = flat(tree.props.style({ pressed: false }));
   expect(row).toMatchObject({ flexDirection: 'row', maxWidth: '100%' }); expect(row.minHeight).toBeGreaterThanOrEqual(56);
   expect(all(tree,'View').some(x => flat(x.props.style).flex === 1 && flat(x.props.style).minWidth === 0)).toBe(true);
@@ -126,12 +136,12 @@ it('preserves server order and separate missing optional-data cases without inve
   const blank=JobOpportunityCompactCard({opportunity:{...opportunity,description:'   '},primarySkillName:'   ',onPress(){}}); expect(text(blank)).not.toContain(description.trim());
 });
 
-it('lists every Home opportunity as a compact row on Home itself, with no overlay and no truncated preview', () => {
+it('lists every Home opportunity as a row on Home itself, with no overlay', () => {
     const source = readFileSync('src/app/(worker)/(tabs)/worker/index.tsx', 'utf8');
     expect(source).not.toContain('FindWorkOverlay');
     expect(source).not.toMatch(/<Modal/);
     const sortSheet = source.slice(source.indexOf('<AppSheet'), source.indexOf('</AppSheet>'));
     expect(sortSheet).not.toMatch(/JobOpportunityCompactCard|FlatList/);
     expect(source).not.toContain('opportunities.slice');
-    expect(source).toMatch(/<JobOpportunityCompactCard\s+compact/);
+    expect(source).toMatch(/<JobOpportunityCompactCard\s+opportunity=/);
   });

@@ -66,9 +66,8 @@ import {
  *
  * ROLE-CORRECT PRESENTATION (2026-10-20 demo UI)
  * ----------------------------------------------
- * The Worker is the one collecting, so the Worker sees the collection tile
- * (amount and method). The Client is the one paying, so the Client is never
- * shown a QR image as if presenting it for collection: in TEST MODE the
+ * The Worker is the one collecting and the Client is the one paying, so the
+ * Client is never shown a QR image as if presenting it for collection: in TEST MODE the
  * Client pays on the PayMongo test page. The QR payload is still fetched by
  * the same Client-only initiation (only the Client may mint it) and is simply
  * not rendered. No server call, gate or state transition changed.
@@ -90,7 +89,6 @@ export default function BookingPayment({
   payment,
   jobPaymentMethod,
   onChanged,
-  amount = null,
   embedded = false,
 }: {
   role: PaymentRole;
@@ -98,8 +96,6 @@ export default function BookingPayment({
   payment: BookingPaymentState | undefined;
   jobPaymentMethod: JobPaymentMethod | null;
   onChanged: () => Promise<void>;
-  /** Formatted job amount for the Worker's collection tile. */
-  amount?: string | null;
   /** Inside a row that already names the payment: no heading of its own. */
   embedded?: boolean;
 }) {
@@ -122,7 +118,6 @@ export default function BookingPayment({
   const entry = clientPaymentEntry(payment, jobPaymentMethod);
   const agreedLabel =
     jobPaymentMethod !== null ? formatJobPaymentLabel(jobPaymentMethod) : null;
-  const workerCollectsQr = payment?.payment_method === 'qrph' || (payment?.payment_method == null && jobPaymentMethod === 'qrph');
 
   /**
    * `isBusy` is the single in-flight guard for the whole card, so a double tap
@@ -304,7 +299,6 @@ export default function BookingPayment({
                 </View>
 
                 <Text style={styles.line}>{COPY.awaitingQrphClient}</Text>
-                <Text style={styles.line}>{COPY.clientPaysQrph}</Text>
 
                 {qr !== null && qr.test_url !== null ? (
                   <AppButton
@@ -347,19 +341,6 @@ export default function BookingPayment({
         <SymbolView name={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} size={22} tintColor={colors.accent} />
         <Text style={styles.heading}>{COPY.heading}</Text>
       </View>}
-
-      {/* The collector's view: what to collect and how, before any status line. */}
-      <View style={styles.collectTile}>
-        <View style={styles.collectIcon}>
-          <SymbolView name={workerCollectsQr ? { android: 'qr_code_2', ios: 'qrcode' } : { android: 'payments', ios: 'banknote' }}
-            size={26} tintColor={colors.accent} />
-        </View>
-        <View style={styles.collectCopy}>
-          <Text style={styles.collectLabel}>{COPY.collectHeading}</Text>
-          {amount && !embedded ? <Text style={styles.collectAmount}>{amount}</Text> : null}
-          <Text style={styles.line}>{workerCollectsQr ? COPY.collectQrph : COPY.collectCash}</Text>
-        </View>
-      </View>
 
       {entry === 'cash' ? (
         <>
@@ -431,26 +412,6 @@ const styles = StyleSheet.create({
   qrIsland: {
     gap: spacing.md,
   },
-  collectTile: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-    backgroundColor: colors.accentSubtle,
-    borderRadius: radius.control,
-    borderCurve: 'continuous',
-  },
-  collectIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.surfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  collectCopy: { flex: 1, minWidth: 0, gap: spacing.xxs },
-  collectLabel: { ...type.caption, fontWeight: '700', color: colors.accent },
-  collectAmount: { ...type.sectionTitle, fontVariant: ['tabular-nums'], color: colors.textPrimary },
   testBanner: {
     backgroundColor: colors.warningTint,
     borderRadius: radius.control,

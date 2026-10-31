@@ -102,7 +102,7 @@ export default function MyReportsList({ role }: { role: BookingRole }) {
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <InlineStatus variant="loading" message="Loading your reports…" />
+        <InlineStatus variant="loading" skeleton="rows" message="Loading your reports…" />
       </View>
     );
   }

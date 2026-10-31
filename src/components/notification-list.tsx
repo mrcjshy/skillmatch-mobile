@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -10,6 +9,7 @@ import {
 } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
+import { PulseDots } from '@/components/skeleton';
 import { AppDivider } from '@/components/app-divider';
 import { AppNotice } from '@/components/app-notice';
 import { InlineStatus } from '@/components/inline-status';
@@ -309,13 +309,11 @@ export default function NotificationList({
         />
       }
     >
-      <Text style={styles.note}>{COPY.intro}</Text>
-
       {notice ? <AppNotice variant="warning" message={notice.text} /> : null}
 
       {isLoading ? (
         // Rendered instead of, never before, the empty state.
-        <InlineStatus variant="loading" message={COPY.loading} />
+        <InlineStatus variant="loading" skeleton="rows" message={COPY.loading} />
       ) : loadError ? (
         <InlineStatus
           variant="error"
@@ -352,15 +350,9 @@ export default function NotificationList({
                 {created ? <Text style={styles.timestamp}>{created}</Text> : null}
                 {isMarkingThis ? (
                   <View style={styles.markingRow}>
-                    <ActivityIndicator color={colors.accent} />
+                    <PulseDots color={colors.accent} />
                     <Text style={styles.note}>Marking as read…</Text>
                   </View>
-                ) : unread ? (
-                  <Text style={styles.hint}>
-                    {canOpen ? 'Tap to mark as read and open' : 'Tap to mark as read'}
-                  </Text>
-                ) : canOpen ? (
-                  <Text style={styles.hint}>Tap to open</Text>
                 ) : null}
               </>
             );

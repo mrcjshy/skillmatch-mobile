@@ -180,7 +180,7 @@ function validateBootstrapInput(
 type SelectOutcome =
   | { kind: 'row'; row: unknown }
   | { kind: 'missing' }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string; code: string | null };
 
 async function selectOwnAccountRow(userId: string): Promise<SelectOutcome> {
   const { data, error } = await supabase
@@ -189,14 +189,25 @@ async function selectOwnAccountRow(userId: string): Promise<SelectOutcome> {
     .eq('id', userId)
     .maybeSingle();
 
-  if (error) return { kind: 'error', message: error.message };
+  if (error) return { kind: 'error', message: error.message, code: typeof error.code === 'string' ? error.code : null };
   if (data === null) return { kind: 'missing' };
   return { kind: 'row', row: data };
 }
 
 type BootstrapResult =
   | { ok: true; account: AccountRecord }
-  | { ok: false; error: AccountBootstrapError };
+  /** `transient`: the own-row read failed without a definite denial, so one bounded recheck retry may help. */
+  | { ok: false; error: AccountBootstrapError; transient?: boolean };
+
+/**
+ * Any check for a user this provider already confirmed is an authoritative RECHECK: read-only, never provisioning,
+ * until a real sign-out or a user change (not tied to parsing the session marker). It has a 10 s total budget from
+ * the first unconfirmed recheck (overlapping refreshes do not extend it) and at most one transient retry inside it.
+ * Initial bootstrap keeps its existing behaviour and has no such deadline.
+ */
+export const RECHECK_DEADLINE_MS = 10_000;
+/** Authorization refusals: never retried, they take the fail-closed path at once. */
+const DENIAL_CODES = new Set(['42501', 'PGRST301', 'PGRST302', 'PGRST303']);
 
 function fail(code: AccountBootstrapErrorCode, message: string): BootstrapResult {
   return { ok: false, error: { code, message } };
@@ -223,17 +234,23 @@ async function bootstrapAccount(
   userMetadata: unknown,
   authPhone: string | undefined,
   phoneConfirmedAt: string | undefined,
-  isCurrent: () => boolean
+  isCurrent: () => boolean,
+  mode: 'provision' | 'recheck' = 'provision'
 ): Promise<BootstrapResult> {
   // 1. Authoritative own-row SELECT.
   const first = await selectOwnAccountRow(userId);
   if (!isCurrent()) return fail('account_fetch_failed', 'Account validation was superseded.');
   if (first.kind === 'error') {
-    return fail('account_fetch_failed', 'Could not load your account. Please try again.');
+    return { ok: false, error: { code: 'account_fetch_failed', message: 'Could not load your account. Please try again.' },
+      transient: first.code === null || !DENIAL_CODES.has(first.code) };
   }
   if (first.kind === 'row') {
     // Existing row wins. Metadata is not consulted.
     return resolveFromRow(first.row, userId);
+  }
+  // A recheck never provisions: the row this lifetime already resolved is gone, so access fails closed.
+  if (mode === 'recheck') {
+    return fail('authoritative_account_invalid', 'Your account could not be confirmed. Please try again.');
   }
 
   // 2. Row genuinely missing → validate untrusted bootstrap input.
@@ -313,7 +330,13 @@ async function loadWorkerIdentityGate(userId: string): Promise<{
 
 export function AccountProvider({ children }: { children: ReactNode }) {
   const sessionState = useSession();
-  const { session, isSessionLoading, sessionError, sessionRevision = 0, isSessionRevisionCurrent } = sessionState;
+  const { session, isSessionLoading, sessionError, sessionRevision = 0, isSessionRevisionCurrent, identityBoundary = 0 } = sessionState;
+  // The user whose own row this provider last confirmed, within one identity boundary. It only selects read-only
+  // RECHECK mode; it never grants access, role, consent or verification (every check re-reads them). Cleared by a
+  // real sign-out (including one batched with the next sign-in) or a user change.
+  const confirmedUser = useRef<{ id: string; boundary: number } | null>(null);
+  // Absolute recheck deadline, anchored at the first unconfirmed refresh and renewed only by a user Retry.
+  const recheckDeadline = useRef<{ retry: number; at: number } | null>(null);
 
   const [account, setAccount] = useState<AccountRecord | null>(null);
   const [status, setStatus] = useState<AccountStatus>('idle');
@@ -363,6 +386,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     identityGeneration.current += 1;
     // Session not usable → idle. Not an account error.
     if (isSessionLoading || sessionError || !session || !userId) {
+      // Only a real sign-out ends the confirmation history (loading and session errors keep it).
+      if (!isSessionLoading && !sessionError && !session) { confirmedUser.current = null; recheckDeadline.current = null; }
       setAccount(null);
       setAccountError(null);
       setConsent(null);
@@ -386,16 +411,52 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     setWorkerOnboardingState('loading');
     setStatus('pending');
 
-    bootstrapAccount(
-      userId,
-      userEmail,
-      userMetadata,
-      session.user.phone,
-      session.user.phone_confirmed_at,
-      current
-    )
+    // A user this provider already confirmed: a read-only recheck (Option B). A different user, or a sign-out since
+    // that confirmation, starts over (the spent budget goes with it).
+    if (confirmedUser.current !== null && (confirmedUser.current.id !== userId || confirmedUser.current.boundary !== identityBoundary)) {
+      confirmedUser.current = null;
+    }
+    const recheck = confirmedUser.current !== null;
+    if (!recheck) recheckDeadline.current = null;
+    else if (recheckDeadline.current?.retry !== retryToken) recheckDeadline.current = { retry: retryToken, at: Date.now() + RECHECK_DEADLINE_MS };
+    const deadlineAt = recheck ? recheckDeadline.current!.at : null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeOut = () => {
+      if (!current()) return;
+      // Late responses after this point can no longer apply: the run is cancelled, access stays closed.
+      cancelled = true;
+      setAccount(null);
+      setConsent(null);
+      setIdentitySubmission(null);
+      setWorkerIsVerified(false);
+      setWorkerOnboardingState('loading');
+      setAccountError({ code: 'account_fetch_failed', message: 'Checking your account took too long. Please try again.' });
+      setStatus('error');
+    };
+    // The budget is absolute: a response that settles at or after the deadline takes the timeout path, even while
+    // the timer callback is still queued. timeOut() itself keys on current() only, so it can always run.
+    const settled = () => {
+      if (!current()) return false;
+      if (deadlineAt !== null && Date.now() >= deadlineAt) { timeOut(); return false; }
+      return true;
+    };
+    if (deadlineAt !== null) {
+      const remaining = deadlineAt - Date.now();
+      if (remaining <= 0) { timeOut(); return () => { cancelled = true; }; }
+      timer = setTimeout(timeOut, remaining);
+    }
+    const mode = recheck ? 'recheck' : 'provision';
+    const attemptBootstrap = () => bootstrapAccount(userId, userEmail, userMetadata, session.user.phone,
+      session.user.phone_confirmed_at, current, mode);
+
+    attemptBootstrap()
+      .then(async (first) => {
+        // At most one transient retry, and only inside the recheck budget.
+        if (recheck && !first.ok && first.transient && current() && deadlineAt !== null && Date.now() < deadlineAt) return attemptBootstrap();
+        return first;
+      })
       .then(async (result) => {
-        if (!current()) return;
+        if (!settled()) return;
         if (result.ok) {
           // A validated terminal result is irreversible for private Client state,
           // even if a later consent/Worker stage fails or this run is superseded.
@@ -414,7 +475,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
             } catch {
               consentRow = null;
             }
-            if (!current()) return;
+            if (!settled()) return;
             if (!isCurrentLegalConsent(consentRow)) clientDraftTermination.terminate();
             if (result.account.role === 'worker' && isCurrentLegalConsent(consentRow)) {
               const identity = await loadWorkerIdentityGate(result.account.id);
@@ -424,7 +485,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
             }
           }
 
-          if (!current()) return;
+          if (!settled()) return;
+          clearTimeout(timer);
+          confirmedUser.current = { id: userId, boundary: identityBoundary };
+          recheckDeadline.current = null;
           setAccount(result.account);
           setConsent(consentRow);
           setIdentitySubmission(nextIdentity);
@@ -433,6 +497,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           setAccountError(null);
           setStatus('resolved');
         } else {
+          clearTimeout(timer);
           if (result.error.code !== 'account_fetch_failed') clientDraftTermination.terminate();
           setAccount(null);
           setConsent(null);
@@ -444,7 +509,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(() => {
-        if (!current()) return;
+        if (!settled()) return;
+        clearTimeout(timer);
         setAccount(null);
         setConsent(null);
         setIdentitySubmission(null);
@@ -459,12 +525,13 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
     // userEmail/userMetadata derive from the same session object as userId;
     // the run keys on identity + retry so an in-flight run for an older
     // user or attempt is discarded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSessionLoading, sessionError, session, sessionRevision, userId, retryToken]);
+  }, [isSessionLoading, sessionError, session, sessionRevision, userId, retryToken, identityBoundary]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const retryAccountBootstrap = useCallback(() => {

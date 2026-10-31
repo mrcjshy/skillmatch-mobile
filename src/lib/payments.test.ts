@@ -93,19 +93,23 @@ describe('FT-05 payment-before-completion presentation', () => {
   });
 });
 
-describe('Cash and QR Ph TEST MODE labels', () => {
+describe('Cash and QR Ph labels', () => {
   it('labels the two offered methods and marks GCash/Maya as legacy, not offered', () => {
     expect(formatPaymentMethod('cod')).toBe('Cash');
-    expect(formatPaymentMethod('qrph')).toBe('QR Ph — TEST MODE');
+    expect(formatPaymentMethod('qrph')).toBe('QR Ph');
     expect(formatPaymentMethod('gcash')).toMatch(/legacy/i);
     expect(formatPaymentMethod('maya')).toMatch(/legacy/i);
     expect(formatPaymentMethod(null)).toBeNull();
   });
 
-  it('keeps the QR Ph selection and paid copy in TEST MODE wording', () => {
-    expect(COPY.selectQrph).toBe('QR Ph — TEST MODE');
-    expect(COPY.paidQrph).toMatch(/TEST MODE/);
-    expect(COPY.paidQrph).not.toMatch(/cash/i);
+  it('names the method plainly and keeps the test warning on the QR payment step only', () => {
+    expect(COPY.selectQrph).toBe('QR Ph');
+    expect(COPY.paidQrph).toBe('Status: Paid — QR Ph');
+    expect(COPY.collectQrph).not.toMatch(/test/i);
+    expect(COPY.awaitingQrphWorker).toBe('Awaiting QR Ph payment confirmation.');
+    // QR-12: while a QR is pending the payer is still told this is a test and not to pay for real.
+    expect(COPY.testModeTitle).toBe('Test mode');
+    expect(COPY.testModeBody).toMatch(/Do not pay with GCash, Maya, or a banking app/);
   });
 });
 

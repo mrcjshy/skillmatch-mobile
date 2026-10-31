@@ -7,12 +7,13 @@ import { compactOpportunityFields, type JobOpportunity } from '@/lib/job-opportu
 
 /**
  * A job opportunity as one row of a grouped list. Reading order follows what a Worker decides on:
- * the work, the skill it needs, where (area only) and when, then the budget and the match cue.
+ * the work and a short description of it, the skill it needs, where (area only) and when, then the
+ * budget and the match cue. The full description stays on the details screen.
  * There is no card chrome of its own: `position` places the row in its group, so a long list reads as
  * one surface of rows. Only the general area is shown here, never an exact address.
  */
-export function JobOpportunityCompactCard({ opportunity, primarySkillName, compact = false, onPress, position = 'only' }: {
-  opportunity: JobOpportunity; primarySkillName?: string | null; compact?: boolean; onPress: () => void; position?: GroupPosition;
+export function JobOpportunityCompactCard({ opportunity, primarySkillName, onPress, position = 'only' }: {
+  opportunity: JobOpportunity; primarySkillName?: string | null; onPress: () => void; position?: GroupPosition;
 }) {
   const ui = useUiTheme();
   const { colors } = ui;
@@ -26,10 +27,10 @@ export function JobOpportunityCompactCard({ opportunity, primarySkillName, compa
     <ServiceMark subject={fields.primarySkillName || fields.title} />
     <View style={styles.copy}>
       <Text style={styles.title}>{fields.title}</Text>
+      {fields.descriptionPreview ? <Text style={styles.description} numberOfLines={3} ellipsizeMode="tail">{fields.descriptionPreview}</Text> : null}
       {fields.primarySkillName ? <Text style={styles.skill}>{fields.primarySkillName}</Text> : null}
       {fields.area ? <View style={styles.fact}><SymbolView name={{ android: 'location_on', ios: 'mappin' }} size={16} tintColor={colors.textSecondary} /><Text style={styles.meta}>{fields.area}</Text></View> : null}
       {fields.schedule ? <View style={styles.fact}><SymbolView name={{ android: 'schedule', ios: 'clock' }} size={16} tintColor={colors.textSecondary} /><Text style={styles.meta}>{fields.schedule}</Text></View> : null}
-      {!compact && fields.descriptionPreview ? <Text style={styles.description}>{fields.descriptionPreview}</Text> : null}
       <View style={styles.footer}>
         {fields.budget ? <Text style={styles.budget}>{fields.budget}</Text> : null}
         <Text style={styles.match}>{fields.matchLine}</Text>

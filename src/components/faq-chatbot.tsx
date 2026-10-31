@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
-import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useHeaderHeight } from 'expo-router/react-navigation';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/app-button';
+import { KeyboardSpacer } from '@/components/skeleton';
 import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
 import { SkillMatchTheme } from '@/constants/theme';
@@ -50,7 +51,7 @@ type Line =
   | { key: number; from: 'bot'; text: string; entryId: string | null; choices: FaqEntry[]; choicesLabel: string | null };
 
 export default function FaqChatbot() {
-  const headerHeight = useHeaderHeight();
+  const insets = useSafeAreaInsets();
   const [input, setInput] = useState('');
   const [lines, setLines] = useState<Line[]>([
     { key: 0, from: 'bot', text: FAQ_COPY.greeting, entryId: null, choices: [], choicesLabel: null },
@@ -124,14 +125,15 @@ export default function FaqChatbot() {
   const canAsk = input.trim() !== '';
 
   return (
-    // Edge-to-edge Android does not resize the window for the keyboard, so pad on every platform and
-    // subtract the native header; otherwise a docked keyboard covers the question field and Ask.
-    <KeyboardAvoidingView style={styles.screen} behavior="padding" keyboardVerticalOffset={headerHeight}>
+    // Edge-to-edge Android does not resize the window for the keyboard: the spacer below rises with
+    // it, so a docked keyboard never covers the question field and Ask.
+    <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
       <ScrollView
         ref={transcriptRef}
         style={styles.transcript}
         contentContainerStyle={styles.transcriptContent}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {lines.map((line) =>
           line.from === 'user' ? (
@@ -213,7 +215,8 @@ export default function FaqChatbot() {
           style={styles.askButton}
         />
       </View>
-    </KeyboardAvoidingView>
+      <KeyboardSpacer bottomOffset={insets.bottom} />
+    </View>
   );
 }
 

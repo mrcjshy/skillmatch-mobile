@@ -4,8 +4,11 @@ import Animated, {
   Keyframe,
   LinearTransition,
   ReduceMotion,
+  cancelAnimation,
+  useAnimatedKeyboard,
   useAnimatedStyle,
   useSharedValue,
+  withRepeat,
   withTiming,
 } from 'react-native-reanimated';
 
@@ -85,6 +88,59 @@ export function usePressScale(pressedScale: number = scale.pressAction) {
     progress.set(reduced ? 1 : withTiming(to, { duration: duration.micro, easing: curve(easing.standard), reduceMotion: NEVER }));
   };
   return { style, onPressIn: () => settle(pressedScale), onPressOut: () => settle(1) };
+}
+
+/**
+ * A placeholder breathing while its content loads. One shared opacity for a whole placeholder, a
+ * bounded number of breaths, and it ends fully visible: a slow network leaves a still placeholder,
+ * never an endless animation. Under reduced motion it stays still.
+ */
+export function useLoadingPulse() {
+  const reduced = useReducedMotion();
+  const opacity = useSharedValue(1);
+  useEffect(() => {
+    if (reduced) return;
+    const { leg, legs, dim } = MotionTokens.loading;
+    opacity.set(withRepeat(withTiming(dim, { duration: leg, easing: curve(easing.standard), reduceMotion: NEVER }), legs, true, undefined, NEVER));
+    return () => cancelAnimation(opacity);
+  }, [opacity, reduced]);
+  return useAnimatedStyle(() => ({ opacity: opacity.get() }));
+}
+
+/** The strength of one dot as a sweep (0..3) passes it. */
+function dotStrength(sweep: number, dot: number, rest: number) {
+  'worklet';
+  const distance = Math.abs(sweep - dot - 0.5);
+  return Math.max(rest, 1 - distance * (1 - rest));
+}
+
+/** Three dots a wait passes across. Bounded like the placeholder pulse; still under reduced motion. */
+export function useLoadingDots() {
+  const reduced = useReducedMotion();
+  const sweep = useSharedValue(0);
+  const { rest } = MotionTokens.dots;
+  useEffect(() => {
+    if (reduced) return;
+    const { sweep: duration, sweeps } = MotionTokens.dots;
+    sweep.set(withRepeat(withTiming(3, { duration, easing: Easing.linear, reduceMotion: NEVER }), sweeps, false, undefined, NEVER));
+    return () => cancelAnimation(sweep);
+  }, [sweep, reduced]);
+  const first = useAnimatedStyle(() => ({ opacity: dotStrength(sweep.get(), 0, rest) }));
+  const second = useAnimatedStyle(() => ({ opacity: dotStrength(sweep.get(), 1, rest) }));
+  const third = useAnimatedStyle(() => ({ opacity: dotStrength(sweep.get(), 2, rest) }));
+  return [first, second, third] as const;
+}
+
+/**
+ * Follows the on-screen keyboard frame by frame. The app is edge-to-edge, so Android resizes
+ * nothing for the keyboard: a screen leaves this much room at its bottom itself. Both bars are
+ * declared translucent because that is what the window already is; anything else would make the
+ * tracker refit the window.
+ */
+const KEYBOARD_WINDOW = { isStatusBarTranslucentAndroid: true, isNavigationBarTranslucentAndroid: true } as const;
+export function useKeyboardRoom(bottomOffset: number) {
+  const keyboard = useAnimatedKeyboard(KEYBOARD_WINDOW);
+  return useAnimatedStyle(() => ({ height: Math.max(0, keyboard.height.get() - bottomOffset) }));
 }
 
 type RevealState = { key: string; seen: ReadonlySet<string>; fresh: ReadonlyMap<string, number> };

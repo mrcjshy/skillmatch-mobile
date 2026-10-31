@@ -103,7 +103,7 @@ function ClientHomeContent() {
             title="Awaiting workers"
             trailing={!isLoading && !loadError && openJobs.length > 0 ? <Text style={styles.count}>{openJobs.length === 1 ? '1 job' : `${openJobs.length} jobs`}</Text> : undefined}
           />
-          {isLoading ? <InlineStatus variant="loading" message="Loading your jobs…" /> : loadError ? (
+          {isLoading ? <InlineStatus variant="loading" skeleton="jobs" message="Loading your jobs…" /> : loadError ? (
             <InlineStatus variant="error" message={loadError} />
           ) : openJobs.length === 0 ? (
             <InlineStatus variant="empty" message="No jobs are waiting for a worker." />

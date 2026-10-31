@@ -120,6 +120,24 @@ export function onViewportResized(s: ChatScrollState): ChatScrollState {
   return s.reveal === 'animated' ? s : { ...s, reveal: 'animated' };
 }
 
+/**
+ * Refresh continuation (Option B): a fresh read returned the saved anchor message, so the first-history reveal is
+ * withheld and the reader is treated as away until the screen scrolls to the anchor (or the reader moves first).
+ */
+export function onAnchorPending(s: ChatScrollState): ChatScrollState {
+  return { ...s, nearBottom: false, unseen: 0, reveal: 'none', pinning: false };
+}
+
+/** The first message whose box reaches below the top of the viewport, and how far into it the viewport starts. */
+export function chatAnchorAt(
+  rows: readonly { id: string; y: number; height: number }[],
+  offsetY: number,
+): { messageId: string; offset: number } | null {
+  if (!Number.isFinite(offsetY)) return null;
+  const row = rows.find((r) => Number.isFinite(r.y) && Number.isFinite(r.height) && r.y + r.height > offsetY);
+  return row ? { messageId: row.id, offset: Math.max(0, offsetY - row.y) } : null;
+}
+
 /** The screen issued the scroll; until it arrives, its own events are not the reader's. */
 export function onRevealed(s: ChatScrollState): ChatScrollState {
   return s.reveal === 'none' ? s : { ...s, reveal: 'none', pinning: true };

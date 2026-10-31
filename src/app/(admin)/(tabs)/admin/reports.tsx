@@ -162,7 +162,7 @@ function AdminReportsContent() {
       }
     >
       {isLoading ? (
-        <InlineStatus variant="loading" message="Loading reports…" />
+        <InlineStatus variant="loading" skeleton="rows" message="Loading reports…" />
       ) : loadError ? (
         <InlineStatus
           variant="error"

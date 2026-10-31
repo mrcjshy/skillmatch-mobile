@@ -1,7 +1,8 @@
 import { Component, useEffect, useState, type ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { MapPinLabel } from '@/components/map-pin-label';
+import { Skeleton } from '@/components/skeleton';
 import { SkillMatchTheme } from '@/constants/theme';
 import { type JobPin } from '@/lib/job-location';
 
@@ -79,7 +80,7 @@ function JobMap({ pin }: { pin: JobPin }) {
       </Map>
       {!loaded ? (
         <View style={styles.loading} pointerEvents="none">
-          <ActivityIndicator accessibilityLabel="Loading job location map" />
+          <Skeleton shape="fill" label="Loading job location map" />
         </View>
       ) : null}
     </View>

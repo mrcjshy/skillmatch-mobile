@@ -78,7 +78,7 @@ vi.mock('expo-router', () => {
   const Stack = ({ children }: any) => children;
   Stack.Protected = function ProtectedBoundary({ guard, children }: any) { return guard ? children : null; };
   Stack.Screen = function ScreenBoundary({ name }: any) { return name === '(client)' ? createElement(ClientLayout) : name === '(tabs)' ? createElement(DraftObserver) : null; };
-  return { Stack, usePathname: () => '/client', useGlobalSearchParams: () => ({}) };
+  return { Stack, usePathname: () => '/client', useGlobalSearchParams: () => ({}), useRootNavigationState: () => undefined };
 });
 
 function GateObserver({ children }: any) {
@@ -183,7 +183,7 @@ describe('actual-provider refresh continuity regression', () => {
     boundary.account = { id: '11111111-1111-4111-8111-111111111111', email: 'client@example.test', full_name: 'Synthetic Client', phone: '09170000000',
       role: 'client', barangay: 'Santa Ana', city: 'Pateros', is_active: true };
     boundary.consent = { user_id: '11111111-1111-4111-8111-111111111111', terms_version: '2026-09-v1', terms_accepted_at: '2026-09-25T00:00:00Z',
-      privacy_version: '2026-09-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
+      privacy_version: '2026-10-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
     boundary.accountResponses = []; boundary.consentResponses = []; boundary.calls = []; boundary.sequence = [];
     boundary.createResponses = []; boundary.workerVerified = true;
     boundary.blockRender = false; suspendRender.mockClear(); boundary.workerResponses = [];
@@ -264,13 +264,15 @@ describe('actual-provider refresh continuity regression', () => {
     await act(async () => boundary.authListener!('TOKEN_REFRESHED', { ...boundary.session, access_token: syntheticToken(2) }));
     expect(boundary.mounts - boundary.unmounts).toBe(0); expect(before.isOwnerCurrent()).toBe(false);
     boundary.account = { ...boundary.account, role: 'client', is_active: true };
-    boundary.consent = { user_id: boundary.account.id, terms_version: '2026-09-v1', terms_accepted_at: '2026-09-25T00:00:00Z', privacy_version: '2026-09-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
+    boundary.consent = { user_id: boundary.account.id, terms_version: '2026-09-v1', terms_accepted_at: '2026-09-25T00:00:00Z', privacy_version: '2026-10-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
     await act(async () => boundary.latestAccount!.retryAccountBootstrap());
     expect(boundary.latest!.draft.description).toBe(''); expect(boundary.latest!.beginPost).not.toBe(before.beginPost);
   });
   it('keeps private draft inaccessible through retryable account error and restores only uninterrupted valid lifetime', async () => {
     await makeRoot(); const before = boundary.latest!; await act(async () => before.updateDraft(fields));
-    boundary.accountResponses.push(Promise.resolve({ data: null, error: { message: 'Synthetic offline' } }));
+    // Option B: a refresh recheck retries one transient failure inside its budget, so both attempts fail here.
+    boundary.accountResponses.push(Promise.resolve({ data: null, error: { message: 'Synthetic offline' } }),
+      Promise.resolve({ data: null, error: { message: 'Synthetic offline' } }));
     await act(async () => boundary.authListener!('TOKEN_REFRESHED', { ...boundary.session, access_token: syntheticToken(2) }));
     expect(boundary.sequence.at(-1).access).toBe('account-failure'); expect(before.isOwnerCurrent()).toBe(false);
     expect(before.beginPost()).toBeNull(); expect(before.updateDraft({ description: 'Hidden' })).toBe(false);

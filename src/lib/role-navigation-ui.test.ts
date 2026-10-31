@@ -28,6 +28,8 @@ function load(file: string, overrides: Props = {}): Props {
     '../../tamagui.config': { tamaguiConfig: {} },
     '@/global.css': {},
     '@/lib/session-route-continuation': { sessionRouteContinuation: { destination: () => null } },
+    '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
+
     '@/components/app-tab-bar': { useAppTabScreenOptions: () => ({ headerShown: true }), TabIcon: 'TabIcon', TabLabel: 'TabLabel' },
     '@/components/client-tab-bar': { ClientTabBar: 'ClientTabBar' },
     '@/components/push-notification-registration': { PushNotificationRegistration: 'PushNotificationRegistration' },

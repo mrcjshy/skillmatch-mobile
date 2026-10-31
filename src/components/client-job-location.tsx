@@ -97,7 +97,6 @@ export function ClientJobLocation({ jobId, clientId, onClose, dismissalLabel = '
           <AppButton label="Edit location" onPress={() => { if (parentCurrent() && editorGeneration === generation.current) setEditing(true); }} disabled={busy} />
         </View> : <Text selectable style={{ ...type.body, color: colors.textPrimary }}>{busy ? 'Saving location…' : note ?? 'Loading location…'}</Text>}
         <AppButton label="Refresh location" onPress={() => void refresh()} disabled={busy} />
-        <Text selectable style={{ ...type.helper, color: colors.textSecondary }}>Location can be changed only while this Job remains open.</Text>
       </ScrollView>}
   </Modal>;
 }

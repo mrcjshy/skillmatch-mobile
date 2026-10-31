@@ -138,6 +138,8 @@ describe('M6 mascot placements', () => {
     const { InlineStatus } = compile('src/components/inline-status.tsx', {
       'react-native': RN,
       'expo-symbols': {},
+      '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
+
       '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
       '@/components/refinement-theme': { useUiTheme: () => theme },
     });

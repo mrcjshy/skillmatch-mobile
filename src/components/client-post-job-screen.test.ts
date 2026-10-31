@@ -9,6 +9,7 @@ import * as dateTime from '../lib/date-time';
 import * as location from '../lib/job-location';
 import * as payment from '../lib/job-payment';
 import * as suggestions from '../lib/job-skill-suggestions';
+import * as presets from '../lib/job-description-presets';
 import * as schedule from '../lib/job-posting-schedule';
 import * as wizard from '../lib/post-job-wizard';
 import * as skillSelection from '../lib/post-job-skill-selection';
@@ -55,10 +56,12 @@ function harness(existing?: ReturnType<typeof createClientPostJobDraftOwner>, su
     '@/lib/client-post-job-submission': submission, '@/lib/recent-locations': { saveRecentLocation: recent },
     '@/lib/client-post-job-navigation': postNavigation,
     '@/lib/canonical-job-location': canonicalLocation,
+    '@/lib/job-description-presets': presets,
     '@/providers/session-provider': { useSession: () => session },
     '@/components/job-skill-suggestions-panel': { JobSkillSuggestionsPanel: 'JobSkillSuggestionsPanel' },
     '@/providers/client-post-job-draft-provider': { useClientPostJobDraft: () => owner },
     '@/providers/client-jobs-provider': { useClientJobs: () => jobs },
+    '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
   };
   for (const [file, name] of Object.entries({ 'app-button': 'AppButton', 'app-card': 'AppCard', 'app-field': 'AppField',
     'inline-status': 'InlineStatus', 'job-photo-picker': 'JobPhotoPicker', 'job-location-picker': 'JobLocationPicker',
@@ -175,11 +178,9 @@ it('keeps a confirmed recent authorized during same-owner picker reopen but reje
   expect(h.owner.draft).toMatchObject({ pin: valid.pin, address: valid.address });
   expect(h.recent).toHaveBeenCalledTimes(1);
 });
-it('accounts for the navigation header when placing the form above the keyboard', () => {
+it('ends the form with the keyboard spacer, which rises with the keyboard whatever the header height', () => {
   const h = harness();
-  expect(h.render().props.keyboardVerticalOffset).toBe(80);
-  h.modules['expo-router/react-navigation'].useHeaderHeight = () => 112;
-  expect(h.render().props.keyboardVerticalOffset).toBe(112);
+  expect(all(h.render(), node => node.type === 'KeyboardSpacer')).toHaveLength(1);
   expect(h.owner.draft.wizardStep).toBe(1);
   expect(supabase.rpc).not.toHaveBeenCalled();
 });
@@ -208,6 +209,16 @@ it('preserves the four real steps, validation, invalid Next and Previous without
   h.owner.updateDraft(valid); h.press('Next'); expect(h.owner.draft.wizardStep).toBe(4);
   h.press('Previous step'); expect(h.owner.draft.wizardStep).toBe(3); expect(h.owner.draft.description).toBe(valid.description);
   expect(supabase.rpc).not.toHaveBeenCalled();
+});
+it('hides a step-validation message once the fix is made, without waiting for the next Next press', () => {
+  const h = harness(); h.press('Choose location'); h.control('JobLocationPicker').props.onConfirm({ pin: valid.pin, address: valid.address });
+  h.press('Next'); h.press('Next');
+  const errors = () => all(h.render(), node => node.type === 'InlineStatus').map(node => node.props.message);
+  expect(errors()).toContain('Please select at least one required skill.');
+  h.owner.updateDraft({ primarySkillId: 'primary' });
+  expect(errors()).not.toContain('Please select at least one required skill.');
+  h.owner.updateDraft({ postError: 'Refresh warning' });
+  expect(errors()).toContain('Refresh warning');
 });
 it('retains all values, dates, ordered photos and picker transactions through step changes and exit/reopen', () => {
   const h = harness(); h.owner.updateDraft({ ...valid, photoError: 'Example photo error', modalQuery: 'plumb', modalPrimaryId: 'primary', modalAdditionalIds: ['extra'] });
@@ -289,11 +300,11 @@ it('connects photo/error callbacks to controlled draft and invalidates selection
 it('preserves fee presets and custom value matching, payment options, populated review and long content', () => {
   const h = harness(); h.owner.updateDraft({ ...valid, wizardStep: 3, description: 'Very long work description '.repeat(20), budgetText: '123456.78', feePreset: 'custom' });
   h.control('TextInput').props.onChangeText('500'); expect(h.owner.draft).toMatchObject({ budgetText: '500', feePreset: 500 });
-  h.press('Custom'); expect(h.owner.draft.budgetText).toBe('500'); expect(all(h.render(), node => node.type === 'RadioRow').map(node => node.props.label)).toEqual(['Cash', 'QR Ph — TEST MODE']);
-  h.press('QR Ph — TEST MODE'); expect(h.owner.draft.paymentMethod).toBe('qrph');
+  h.press('Custom'); expect(h.owner.draft.budgetText).toBe('500'); expect(all(h.render(), node => node.type === 'RadioRow').map(node => node.props.label)).toEqual(['Cash', 'QR Ph']);
+  h.press('QR Ph'); expect(h.owner.draft.paymentMethod).toBe('qrph');
   h.press('Next'); const review = h.render(); const text = [...all(review, node => node.type === 'Text').map(node => node.props.children).flat(), ...all(review, node => node.type === 'FactRow').map(node => node.props.value)].join(' ');
   expect(text).toContain('Plumbing, Electrical'); expect(text).toContain('Very long work description'); expect(text).toContain('Confirmed address');
-  expect(text).toContain('QR Ph — TEST MODE'); expect(text).toContain('500');
+  expect(text).toContain('QR Ph'); expect(text).toContain('500');
 });
 it('retains final posting readiness protection and disables the form while posting', () => {
   const h = harness(); h.owner.updateDraft({ ...valid, wizardStep: 4 }); h.jobs.isLoading = true;
@@ -426,14 +437,53 @@ it('places explicit suggestions between description and manual skills only on St
 it('invalidates suggestion authority synchronously before description ABA and manual picker open/toggle/Done', () => { const h=harness(undefined, true); h.owner.updateDraft(valid); h.owner.updateDraft({wizardStep:2}); const authority=h.control('JobSkillSuggestionsPanel').props.authority; const description=h.control('AppField').props.onChangeText; let previous=authority.revision; description('Other work'); description(valid.description); expect(authority.revision).toBeGreaterThan(previous); previous=authority.revision; h.press('Edit skills'); expect(authority.revision).toBeGreaterThan(previous); previous=authority.revision; h.control('SkillCatalogPicker').props.onToggleSkill('extra'); expect(authority.revision).toBeGreaterThan(previous); previous=authority.revision; h.press('Done'); expect(authority.revision).toBeGreaterThan(previous); expect(supabase.rpc).not.toHaveBeenCalled(); });
 it('invalidates suggestion authority synchronously before leaving Step 2 and on blur', () => { const h=harness(undefined, true); h.owner.updateDraft({...valid,wizardStep:2}); const authority=h.control('JobSkillSuggestionsPanel').props.authority; let previous=authority.revision; h.press('Next'); expect(authority.revision).toBeGreaterThan(previous); previous=authority.revision; h.blur(); expect(authority.revision).toBeGreaterThan(previous); });
 it('scopes confirmed recents to captured lifetime and refuses an old scope after blur or session replacement', () => { const h=harness(); h.owner.updateDraft({...valid,wizardStep:1}); h.press('Change location'); h.control('JobLocationPicker').props.onConfirm({pin:valid.pin,address:canonicalLocation.JOB_LOCATION_DISPLAY_FALLBACK}); const scope=h.recent.mock.calls[0][0] as any; expect(scope.userId).toBe(h.owner.ownerId); expect(scope.isCurrent()).toBe(true); h.blur(); expect(scope.isCurrent()).toBe(false); h.focus(); expect(scope.isCurrent()).toBe(false); });
-it('discloses current eligible Worker access and labels fallback as general area rather than confirmed street', () => { const h=harness(); h.owner.updateDraft({...valid,wizardStep:1,address:canonicalLocation.JOB_LOCATION_DISPLAY_FALLBACK}); const subtitles=all(h.render(),node=>node.type==='SectionHeader').map(node=>node.props.subtitle).join(' '); expect(subtitles).toContain('currently qualify'); expect(subtitles).toContain('removed'); expect(h.find('Change location').props.accessibilityValue.text).toContain('General area'); });
+it('discloses current eligible Worker access and labels fallback as general area rather than confirmed street', () => { const h=harness(); h.owner.updateDraft({...valid,wizardStep:1,address:canonicalLocation.JOB_LOCATION_DISPLAY_FALLBACK}); const subtitles=all(h.render(),node=>node.type==='SectionHeader').map(node=>node.props.subtitle).join(' '); expect(subtitles).toContain('Shared only with workers who qualify'); expect(h.find('Change location').props.accessibilityValue.text).toContain('General area'); });
 it('does not let retained confirmation write after focus ABA or foreground loss', () => { const h=harness(); h.owner.updateDraft({...valid,wizardStep:1}); h.press('Change location'); const old=h.control('JobLocationPicker').props.onConfirm; h.blur(); h.focus(); old({pin:valid.pin,address:'Stale replacement'}); expect(h.owner.draft.address).toBe(valid.address); expect(h.recent).not.toHaveBeenCalled(); h.press('Change location'); const current=h.control('JobLocationPicker').props.onConfirm; h.modules['react-native'].AppState.currentState='background'; current({pin:valid.pin,address:'Background replacement'}); expect(h.owner.draft.address).toBe(valid.address); expect(h.recent).not.toHaveBeenCalled(); });
 
 it('reconciliation hold hides suggestions while keeping description, photos and manual skills', () => {
-  const h = harness(); h.owner.updateDraft({ ...valid, wizardStep: 2 });
+  const h = harness(undefined, false); h.owner.updateDraft({ ...valid, wizardStep: 2 });
   expect(h.control('JobSkillSuggestionsPanel')).toBeUndefined();
   expect(h.control('AppField')).toBeDefined();
   expect(h.control('JobPhotoPicker')).toBeDefined();
   expect(h.find('Edit skills')).toBeDefined();
   expect(supabase.rpc).not.toHaveBeenCalled();
+});
+
+it('offers presets from Required skills only once a known primary skill is chosen, filling a blank description', () => {
+  const h = harness(undefined, true); h.owner.updateDraft({ ...valid, description: '', primarySkillId: null, additionalSkillIds: [], wizardStep: 2 });
+  expect(h.find('Start from a preset')).toBeUndefined();
+  h.owner.updateDraft({ primarySkillId: 'primary' });
+  const authority = h.control('JobSkillSuggestionsPanel').props.authority; const previous = authority.revision;
+  h.press('Start from a preset');
+  const preset = presets.descriptionPresetsForSkill('primary')[0];
+  h.press('Use preset: ' + preset);
+  expect(h.owner.draft.description).toBe(preset);
+  expect(authority.revision).toBeGreaterThan(previous);
+  expect(h.find('Close presets')).toBeUndefined();
+  expect(supabase.rpc).not.toHaveBeenCalled();
+});
+it('asks before a preset replaces a written description; Keep leaves it unchanged', () => {
+  const h = harness(); h.owner.updateDraft({ ...valid, wizardStep: 2 });
+  const preset = presets.descriptionPresetsForSkill('primary')[1];
+  h.press('Start from a preset'); h.press('Use preset: ' + preset);
+  expect(h.owner.draft.description).toBe(valid.description);
+  h.press('Keep my description'); expect(h.owner.draft.description).toBe(valid.description);
+  h.press('Use preset: ' + preset); h.press('Replace description');
+  expect(h.owner.draft.description).toBe(preset);
+});
+it('blocks Next while preset blanks remain unfilled and allows it once they are filled', () => {
+  const h = harness(); h.owner.updateDraft({ ...valid, wizardStep: 2, description: presets.descriptionPresetsForSkill('primary')[0] });
+  h.press('Next');
+  expect(h.owner.draft.wizardStep).toBe(2); expect(h.owner.draft.postError).toBe('Fill in or remove the parts in [brackets].');
+  h.control('AppField').props.onChangeText('Water leaks under the kitchen sink.');
+  h.press('Next'); expect(h.owner.draft.wizardStep).toBe(3);
+});
+it('keeps photos in place when suggestions are off and beside the panel when on', () => {
+  const order = (enabled: boolean) => { const h = harness(undefined, enabled); h.owner.updateDraft({ ...valid, wizardStep: 2 });
+    return all(h.render(), node => ['AppField', 'JobPhotoPicker', 'JobSkillSuggestionsPanel', 'SurfaceGroup'].includes(node.type) && node.props.variant !== 'search').map(node => node.type); };
+  const off = order(false); expect(off.indexOf('JobPhotoPicker')).toBeGreaterThan(off.indexOf('SurfaceGroup'));
+  expect(off).not.toContain('JobSkillSuggestionsPanel');
+  const on = order(true); expect(on.indexOf('JobPhotoPicker')).toBeLessThan(on.indexOf('JobSkillSuggestionsPanel'));
+  expect(on.indexOf('AppField')).toBeLessThan(on.indexOf('JobPhotoPicker'));
+  expect(on.filter(type => type === 'JobPhotoPicker')).toHaveLength(1);
 });

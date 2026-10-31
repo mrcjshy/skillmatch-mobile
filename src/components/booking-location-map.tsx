@@ -26,6 +26,8 @@ type MapProps = {
   insets: MapInsets;
   /** Renders the booking panel over the map with this booking's location controls. */
   renderPanel: (location: LocationPanel) => ReactNode;
+  /** The panel covers the map: the pins rest, so reading the details never competes with them. */
+  pinsPaused?: boolean;
 };
 
 /**
@@ -40,7 +42,7 @@ export function BookingLocationMap({ role, ...props }: MapProps & { role: PinRol
   return role === 'worker' ? <WorkerBookingMap {...props} /> : <ClientBookingMap {...props} />;
 }
 
-function WorkerBookingMap({ bookingId, accountId, destination, insets, renderPanel }: MapProps) {
+function WorkerBookingMap({ bookingId, accountId, destination, insets, renderPanel, pinsPaused }: MapProps) {
   const ui = useUiTheme();
   const styles = createStyles(ui);
   const surface = useMapSurface();
@@ -68,7 +70,7 @@ function WorkerBookingMap({ bookingId, accountId, destination, insets, renderPan
     {sharing.state.status === 'denied_settings' ? <AppButton label="Open permission settings" onPress={() => void Linking.openSettings()} /> : null}
   </>;
   return <>
-    <InlineMap surface={surface} markers={markers} destination={destination} insets={insets} />
+    <InlineMap surface={surface} markers={markers} destination={destination} insets={insets} pinsPaused={pinsPaused} />
     {/* Under the panel in paint order: an expanded panel covers it, a collapsed one leaves it on the map. */}
     {fabMode ? <ShareLocationFab mode={fabMode} bottom={insets.bottom + ui.spacing.lg}
       onPress={stopping ? sharing.stop : sharing.start} /> : null}
@@ -76,7 +78,7 @@ function WorkerBookingMap({ bookingId, accountId, destination, insets, renderPan
   </>;
 }
 
-function ClientBookingMap({ bookingId, accountId, destination, insets, renderPanel }: MapProps) {
+function ClientBookingMap({ bookingId, accountId, destination, insets, renderPanel, pinsPaused }: MapProps) {
   const ui = useUiTheme();
   const styles = createStyles(ui);
   const surface = useMapSurface();
@@ -87,11 +89,11 @@ function ClientBookingMap({ bookingId, accountId, destination, insets, renderPan
     [destination, workerPin, freshness]);
   const primary = <Text accessibilityLiveRegion="polite" style={styles.status}>{workerLocationStatusCopy({ pinsStatus: pins.view.status, freshness, hasWorkerPin: workerPin !== null })}</Text>;
   const secondary = <>
-    <Text style={styles.help}>The Worker’s position appears here only while they choose to share it. No route or movement history is stored.</Text>
-    {surface.ready && pins.view.status !== 'denied' ? <AppButton label="Refresh Worker location" variant="secondary" onPress={pins.refresh} /> : null}
+    {/* Pins are live through location_pins_changed; the manual read is only an error fallback. */}
+    {surface.ready && pins.view.status === 'error' ? <AppButton label="Refresh Worker location" variant="secondary" onPress={pins.refresh} /> : null}
   </>;
   return <>
-    <InlineMap surface={surface} markers={markers} destination={destination} insets={insets} />
+    <InlineMap surface={surface} markers={markers} destination={destination} insets={insets} pinsPaused={pinsPaused} />
     {renderPanel({ primary, secondary })}
   </>;
 }
@@ -122,7 +124,7 @@ function useMapSurface() {
   return { available, loaded, ready: available && loaded, setLoaded, setFailed };
 }
 
-function InlineMap({ surface, markers, destination, insets }: { surface: MapSurface; markers: MapMarker[]; destination: JobPin | null; insets: MapInsets }) {
+function InlineMap({ surface, markers, destination, insets, pinsPaused = false }: { surface: MapSurface; markers: MapMarker[]; destination: JobPin | null; insets: MapInsets; pinsPaused?: boolean }) {
   const ui = useUiTheme();
   const styles = createStyles(ui);
   const map = useRef<MapRef | null>(null);
@@ -173,7 +175,7 @@ function InlineMap({ surface, markers, destination, insets }: { surface: MapSurf
       if (!members.length) return null;
       const first = members[0];
       return <Marker key={ids.join(',')} lngLat={[first.longitude, first.latitude]} anchor="bottom">
-        <MapPinLabel kind={members.length > 1 ? 'group' : first.kind} label={members.map(member => member.label).join(' / ')} stale={members.length === 1 && first.stale} />
+        <MapPinLabel kind={members.length > 1 ? 'group' : first.kind} label={members.map(member => member.label).join(' / ')} stale={members.length === 1 && first.stale} paused={pinsPaused} />
       </Marker>;
     })}
   </Map></View></MapBoundary>;

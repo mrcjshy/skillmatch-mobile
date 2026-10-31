@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import { AppSymbol as SymbolView } from '@/components/app-symbol';
 import { type SymbolViewProps } from 'expo-symbols';
-import { ActivityIndicator, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
+import { Skeleton, type SkeletonShape } from '@/components/skeleton';
 
 
 
@@ -17,7 +18,8 @@ type InlineStatusProps = {
   icon?: SymbolViewProps['name'];
   /** Decorative empty-state artwork shown in place of the glyph tile (empty variant only). */
   illustration?: ReactNode;
-  loading?: boolean;
+  /** What is loading (loading variant only), so the placeholder holds the content's place. */
+  skeleton?: SkeletonShape;
   action?: ReactNode;
   style?: StyleProp<ViewStyle>;
 };
@@ -28,7 +30,7 @@ export function InlineStatus({
   headline,
   icon = { android: 'work_outline', ios: 'briefcase' },
   illustration,
-  loading = false,
+  skeleton = 'lines',
   action,
   style,
 }: InlineStatusProps) {
@@ -36,12 +38,13 @@ export function InlineStatus({
   const { colors } = ui;
   const { styles } = createStyles(ui);
 
-  const showSpinner = variant === 'loading' || loading;
+  // The message still reaches screen readers; the placeholder is the visible cue.
+  if (variant === 'loading') return <Skeleton shape={skeleton} label={message} style={style} />;
+
   const messageColor = variant === 'error' ? colors.error : colors.textSecondary;
 
   return (
     <View style={[styles.wrap, variant === 'error' && styles.error, style]}>
-      {showSpinner ? <ActivityIndicator color={colors.accent} /> : null}
       {variant === 'empty' && illustration ? illustration : variant === 'empty' ? <View style={styles.emptyIcon} accessible={false} importantForAccessibility="no-hide-descendants">
         <SymbolView name={icon} size={24} tintColor={colors.accent} />
       </View> : null}

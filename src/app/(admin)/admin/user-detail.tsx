@@ -47,7 +47,7 @@ export default function AdminUserDetailScreen() {
   const current = requestKey && outcome?.key === requestKey ? outcome : null;
   const body = !adminId ? <InlineStatus variant="error" message="Admin access is required." />
     : !requestKey ? <InlineStatus variant="empty" message="Account unavailable." />
-      : !current ? <InlineStatus variant="loading" message="Loading user details…" />
+      : !current ? <InlineStatus variant="loading" skeleton="detail" message="Loading user details…" />
         : current.error ? <InlineStatus variant="error" message={current.error}
           action={current.denied ? undefined : <AppButton label="Retry" variant="secondary" onPress={() => setReload((n) => n + 1)} />} />
           : !current.detail ? <InlineStatus variant="empty" message="Account unavailable." />

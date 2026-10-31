@@ -1,7 +1,7 @@
 export const JOB_MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
 type MapRuntime = Pick<typeof import('@maplibre/maplibre-react-native'),
-  'Map' | 'Camera' | 'Marker' | 'ViewAnnotation'>;
+  'Map' | 'Camera' | 'Marker' | 'ViewAnnotation' | 'GeoJSONSource' | 'Layer'>;
 
 function loadRuntime(): MapRuntime | null {
   try {

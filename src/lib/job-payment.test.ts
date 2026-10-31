@@ -8,7 +8,7 @@ import {
   formatJobPaymentLabel,
   formatJobPaymentReviewValue,
   JOB_PAYMENT_OPTIONS,
-  QRPH_TEST_LABEL,
+  QRPH_LABEL,
   formatOpportunityPaymentLine,
   isPayableQrphBudget,
   parseJobPaymentMethod,
@@ -47,43 +47,39 @@ describe('parseJobPaymentMethod', () => {
 });
 
 describe('Job payment display labels', () => {
-  it('maps stored Job tokens to Cash and the QR Ph TEST MODE label', () => {
+  it('maps stored Job tokens to Cash and the plain QR Ph label', () => {
     expect(formatJobPaymentLabel('cod')).toBe('Cash');
-    expect(formatJobPaymentLabel('qrph')).toBe('QR Ph — TEST MODE');
-    expect(QRPH_TEST_LABEL).toBe('QR Ph — TEST MODE');
+    expect(formatJobPaymentLabel('qrph')).toBe('QR Ph');
+    expect(QRPH_LABEL).toBe('QR Ph');
   });
 
   it('uses neutral older-job copy for a null Job method on the Client list', () => {
     expect(formatClientPostedPaymentLine('cod')).toBe('Payment method: Cash');
     expect(formatPostedPaymentValue('cod')).toBe('Cash');
     expect(formatPostedPaymentValue(null)).toBe('Not specified (older job)');
-    expect(formatClientPostedPaymentLine('qrph')).toBe('Payment method: QR Ph — TEST MODE');
+    expect(formatClientPostedPaymentLine('qrph')).toBe('Payment method: QR Ph');
     expect(formatClientPostedPaymentLine(null)).toBe('Payment method: Not specified (older job)');
   });
 
   it('never presents a legacy null Job as a third "pay after" method for Workers', () => {
     expect(formatOpportunityPaymentLine('cod')).toBe('Payment method: Cash');
-    expect(formatOpportunityPaymentLine('qrph')).toBe('Payment method: QR Ph — TEST MODE');
+    expect(formatOpportunityPaymentLine('qrph')).toBe('Payment method: QR Ph');
     const legacy = formatOpportunityPaymentLine(null);
     expect(legacy).toBe('Payment method: Not specified (older job)');
     expect(legacy).not.toMatch(/cash|pay after|selects|completion/i);
   });
 
-  it('offers exactly Cash and QR Ph TEST MODE when posting', () => {
+  it('offers exactly Cash and QR Ph, with no supporting sentence, when posting', () => {
     expect(JOB_PAYMENT_OPTIONS.map((o) => [o.value, o.label])).toEqual([
       ['cod', 'Cash'],
-      ['qrph', 'QR Ph — TEST MODE'],
+      ['qrph', 'QR Ph'],
     ]);
-    const qr = JOB_PAYMENT_OPTIONS.find((o) => o.value === 'qrph');
-    expect(qr?.meaning).toMatch(/no real money/i);
-    for (const option of JOB_PAYMENT_OPTIONS) {
-      expect(`${option.label} ${option.meaning}`).not.toMatch(/gcash|maya|pay later|pay after/i);
-    }
+    for (const option of JOB_PAYMENT_OPTIONS) expect(Object.keys(option).sort()).toEqual(['label', 'value']);
   });
 
   it('formats the posting review value without defaulting to Cash', () => {
     expect(formatJobPaymentReviewValue('cod')).toBe('Cash');
-    expect(formatJobPaymentReviewValue('qrph')).toBe('QR Ph — TEST MODE');
+    expect(formatJobPaymentReviewValue('qrph')).toBe('QR Ph');
     expect(formatJobPaymentReviewValue(null)).toBe('Not selected');
   });
 });
@@ -110,9 +106,9 @@ describe('QR Ph payable budget', () => {
   });
 
   it('requires a payable QR Ph budget with user-facing copy', () => {
-    expect(postingPaymentError('qrph', null)).toBe('QR Ph — TEST MODE requires a budget of at least ₱1.00.');
-    expect(postingPaymentError('qrph', 0)).toBe('QR Ph — TEST MODE requires a budget of at least ₱1.00.');
-    expect(postingPaymentError('qrph', 0.99)).toBe('QR Ph — TEST MODE requires a budget of at least ₱1.00.');
+    expect(postingPaymentError('qrph', null)).toBe('QR Ph requires a budget of at least ₱1.00.');
+    expect(postingPaymentError('qrph', 0)).toBe('QR Ph requires a budget of at least ₱1.00.');
+    expect(postingPaymentError('qrph', 0.99)).toBe('QR Ph requires a budget of at least ₱1.00.');
     expect(postingPaymentError('qrph', 1)).toBeNull();
     expect(postingPaymentError('qrph', 1.01)).toBeNull();
   });

@@ -23,7 +23,7 @@ export function JobPhotoGallery({
   error = false,
 }: JobPhotoGalleryProps) {
   if (loading) {
-    return <InlineStatus variant="loading" message="Loading job photos…" />;
+    return <InlineStatus variant="loading" skeleton="lines" message="Loading job photos…" />;
   }
   if (error) {
     return <InlineStatus variant="error" message="Job photos are unavailable." />;

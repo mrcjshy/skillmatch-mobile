@@ -1,7 +1,7 @@
 /**
  * R4 Job posting-time payment intent.
  *
- * Stored values stay `cod` | `qrph`. UI labels are Cash / QR Ph — TEST MODE.
+ * Stored values stay `cod` | `qrph`. UI labels are Cash / QR Ph.
  * NULL is legacy compatibility only. `gcash` and `maya` are Booking-schema
  * leftovers and are not Job-level choices.
  *
@@ -33,33 +33,21 @@ export type JobPaymentParse =
 
 const JOB_METHODS: readonly JobPaymentMethod[] = ['cod', 'qrph'];
 
-/** The one place the QR Ph TEST MODE wording is spelled. */
-export const QRPH_TEST_LABEL = 'QR Ph — TEST MODE';
+/** The one place the QR Ph label is spelled. The test warning lives on the QR payment step (QR-12). */
+export const QRPH_LABEL = 'QR Ph';
 
 const JOB_LABEL: Record<JobPaymentMethod, string> = {
   cod: 'Cash',
-  qrph: QRPH_TEST_LABEL,
+  qrph: QRPH_LABEL,
 };
 
 /** Neutral copy for a legacy NULL Job intent. Never "Cash", never a method. */
 const LEGACY_UNSPECIFIED = 'Not specified (older job)';
 
 /** The only selectable posting methods, in display order. */
-export const JOB_PAYMENT_OPTIONS: readonly {
-  value: JobPaymentMethod;
-  label: string;
-  meaning: string;
-}[] = [
-  {
-    value: 'cod',
-    label: JOB_LABEL.cod,
-    meaning: 'Pay the worker in cash. The worker confirms in the app that the cash was received.',
-  },
-  {
-    value: 'qrph',
-    label: JOB_LABEL.qrph,
-    meaning: 'PayMongo test simulation for the demo. No real money moves.',
-  },
+export const JOB_PAYMENT_OPTIONS: readonly { value: JobPaymentMethod; label: string }[] = [
+  { value: 'cod', label: JOB_LABEL.cod },
+  { value: 'qrph', label: JOB_LABEL.qrph },
 ];
 
 export function parseJobPaymentMethod(value: unknown): JobPaymentParse {
@@ -102,7 +90,7 @@ export function postingPaymentError(
 ): string | null {
   if (method === null) return 'Please select a payment method.';
   if (method === 'qrph' && !isPayableQrphBudget(budget)) {
-    return 'QR Ph — TEST MODE requires a budget of at least ₱1.00.';
+    return `${QRPH_LABEL} requires a budget of at least ₱1.00.`;
   }
   return null;
 }

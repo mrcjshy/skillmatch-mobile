@@ -34,6 +34,8 @@ function harness() {
     const seams: Record<string, unknown> = {
       react: { useState: (initial: unknown) => { const slot = cursor++; if (!(slot in state)) state[slot] = initial; return [state[slot], (value: unknown) => { state[slot] = typeof value === 'function' ? value(state[slot]) : value; }]; }, useRef: (initial: unknown) => { const slot = cursor++; return refs[slot] ??= { current: initial }; }, useCallback: (fn: unknown) => fn, useEffect: (fn: () => void) => effects.push(fn) },
       'react-native': native, 'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' }, 'expo-image': { Image: 'Image' },
+    '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
+
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },
       'expo-router': { useRouter: () => ({ push }), useFocusEffect: (fn: () => void) => effects.push(fn) }, 'expo-image-picker': { requestMediaLibraryPermissionsAsync: vi.fn(), launchImageLibraryAsync: vi.fn() }, 'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) },
       '@/constants/theme': { SkillMatchTheme }, '@/lib/skill-catalog': catalog, '@/lib/worker-profile': profileHelpers,

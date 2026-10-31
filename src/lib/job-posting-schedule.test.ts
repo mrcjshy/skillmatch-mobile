@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  availableScheduleSlots,
   combineJobSchedule,
+  firstOpenSchedulePeriod,
+  isScheduleDayOpen,
+  isScheduleDaySelectable,
+  isScheduleSlotOpen,
   postingScheduleError,
+  scheduleDayStrip,
   scheduleMinimumDate,
+  scheduleMonthWeeks,
+  schedulePeriodForTime,
 } from './job-posting-schedule';
 
 describe('combineJobSchedule', () => {
@@ -100,5 +108,94 @@ describe('scheduleMinimumDate', () => {
     expect(min.getDate()).toBe(16);
     expect(min.getHours()).toBe(0);
     expect(min.getMinutes()).toBe(0);
+  });
+});
+
+describe('same-day booking slots', () => {
+  const evening = new Date(2026, 9, 30, 19, 10);
+  const label = (slots: Date[]) => slots.map(slot => `${slot.getHours()}:${String(slot.getMinutes()).padStart(2, '0')}`);
+
+  it('offers today as a real choice, starting half an hour from now', () => {
+    expect(label(availableScheduleSlots(new Date(2026, 9, 30), 'evening', evening)).slice(0, 3)).toEqual(['20:00', '20:30', '21:00']);
+    expect(isScheduleDayOpen(new Date(2026, 9, 30), evening)).toBe(true);
+  });
+
+  it('keeps a slot that starts exactly half an hour out', () => {
+    expect(label(availableScheduleSlots(new Date(2026, 9, 30), 'evening', new Date(2026, 9, 30, 19, 30)))[0]).toBe('20:00');
+    expect(label(availableScheduleSlots(new Date(2026, 9, 30), 'evening', new Date(2026, 9, 30, 19, 29)))[0]).toBe('20:00');
+    expect(label(availableScheduleSlots(new Date(2026, 9, 30), 'evening', new Date(2026, 9, 30, 19, 0)))[0]).toBe('19:30');
+  });
+
+  it('gives every period twelve half-hour slots on a future day', () => {
+    const tomorrow = new Date(2026, 9, 31);
+    expect(label(availableScheduleSlots(tomorrow, 'morning', evening))).toHaveLength(12);
+    expect(label(availableScheduleSlots(tomorrow, 'morning', evening))[0]).toBe('6:00');
+    expect(label(availableScheduleSlots(tomorrow, 'afternoon', evening))[0]).toBe('12:00');
+    expect(label(availableScheduleSlots(tomorrow, 'evening', evening)).at(-1)).toBe('23:30');
+  });
+
+  it('every offered slot passes the posting check', () => {
+    for (const period of ['morning', 'afternoon', 'evening'] as const) {
+      for (const slot of availableScheduleSlots(new Date(2026, 9, 30), period, evening)) {
+        expect(postingScheduleError(new Date(2026, 9, 30), slot, evening)).toBeNull();
+      }
+    }
+  });
+
+  it('closes today once no slot is left, and never closes a later day', () => {
+    const late = new Date(2026, 9, 30, 23, 15);
+    expect(isScheduleDayOpen(new Date(2026, 9, 30), late)).toBe(false);
+    expect(isScheduleDayOpen(new Date(2026, 9, 31), late)).toBe(true);
+    expect(firstOpenSchedulePeriod(new Date(2026, 9, 30), late)).toBeNull();
+  });
+
+  it('opens on the first period that still has times', () => {
+    expect(firstOpenSchedulePeriod(new Date(2026, 9, 30), evening)).toBe('evening');
+    expect(firstOpenSchedulePeriod(new Date(2026, 9, 30), new Date(2026, 9, 30, 13, 0))).toBe('afternoon');
+    expect(firstOpenSchedulePeriod(new Date(2026, 9, 31), evening)).toBe('morning');
+  });
+
+  it('places a chosen time back in its period', () => {
+    expect(schedulePeriodForTime(new Date(2026, 9, 30, 5, 0))).toBe('morning');
+    expect(schedulePeriodForTime(new Date(2026, 9, 30, 11, 30))).toBe('morning');
+    expect(schedulePeriodForTime(new Date(2026, 9, 30, 12, 0))).toBe('afternoon');
+    expect(schedulePeriodForTime(new Date(2026, 9, 30, 18, 0))).toBe('evening');
+  });
+
+  it('notices when a chosen time has slipped out of reach on the chosen day', () => {
+    expect(isScheduleSlotOpen(new Date(2026, 9, 30), new Date(2026, 9, 30, 8, 0), evening)).toBe(false);
+    expect(isScheduleSlotOpen(new Date(2026, 9, 30), new Date(2026, 9, 30, 21, 0), evening)).toBe(true);
+    expect(isScheduleSlotOpen(new Date(2026, 9, 31), new Date(2026, 9, 30, 8, 0), evening)).toBe(true);
+  });
+});
+
+describe('date choices', () => {
+  const now = new Date(2026, 9, 30, 19, 10);
+
+  it('starts the strip with Today and Tomorrow, then named days', () => {
+    const days = scheduleDayStrip(now, 5);
+    expect(days.map(day => day.title)).toEqual(['Today', 'Tomorrow', 'Sun', 'Mon', 'Tue']);
+    expect(days.map(day => day.date.getDate())).toEqual([30, 31, 1, 2, 3]);
+    expect(days[2].date.getMonth()).toBe(10);
+  });
+
+  it('crosses a year end without drifting', () => {
+    const days = scheduleDayStrip(new Date(2026, 11, 31, 10, 0), 2);
+    expect(days[1].date.getFullYear()).toBe(2027); expect(days[1].date.getMonth()).toBe(0); expect(days[1].date.getDate()).toBe(1);
+  });
+
+  it('lays a month out in full Sunday-first weeks', () => {
+    const weeks = scheduleMonthWeeks(2026, 9);
+    expect(weeks.every(week => week.length === 7)).toBe(true);
+    expect(weeks[0].slice(0, 4)).toEqual([null, null, null, null]);
+    expect(weeks[0][4]?.getDate()).toBe(1); // Oct 1 2026 is a Thursday.
+    expect(weeks.flat().filter(day => day !== null)).toHaveLength(31);
+  });
+
+  it('allows today through a year ahead, and nothing earlier', () => {
+    expect(isScheduleDaySelectable(new Date(2026, 9, 30), now)).toBe(true);
+    expect(isScheduleDaySelectable(new Date(2026, 9, 29), now)).toBe(false);
+    expect(isScheduleDaySelectable(new Date(2027, 9, 30), now)).toBe(true);
+    expect(isScheduleDaySelectable(new Date(2027, 9, 31), now)).toBe(false);
   });
 });

@@ -80,8 +80,8 @@ export type NotificationsLike = {
     channel: { name: string; importance: number; sound?: string | null }
   ) => Promise<unknown>;
   deleteNotificationChannelAsync: (channelId: string) => Promise<unknown>;
-  getPermissionsAsync: () => Promise<{ status: string }>;
-  requestPermissionsAsync: () => Promise<{ status: string }>;
+  getPermissionsAsync: () => Promise<{ status: string; canAskAgain?: boolean }>;
+  requestPermissionsAsync: () => Promise<{ status: string; canAskAgain?: boolean }>;
   getExpoPushTokenAsync: (options: { projectId: string }) => Promise<{ data: string }>;
   setNotificationHandler: (handler: {
     handleNotification: (notification: unknown) => Promise<{
@@ -390,8 +390,11 @@ export async function inspectPermission(
 export async function requestPermissionIfUndetermined(
   notifications: Pick<NotificationsLike, 'getPermissionsAsync' | 'requestPermissionsAsync'>
 ): Promise<PushPermissionStatus> {
-  const current = await inspectPermission(notifications);
-  if (current !== 'undetermined') return current;
+  const current = await notifications.getPermissionsAsync();
+  const status = classifyPermissionStatus(current.status);
+  // On Android 13+ Expo reports a never-requested POST_NOTIFICATIONS as denied,
+  // so only a blocked permission (canAskAgain false) skips the system prompt.
+  if (status === 'granted' || (status === 'denied' && current.canAskAgain === false)) return status;
   const requested = await notifications.requestPermissionsAsync();
   return classifyPermissionStatus(requested.status);
 }

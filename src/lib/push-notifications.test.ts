@@ -46,7 +46,11 @@ import {
 const PROJECT_ID = 'fd7953f8-210a-492a-a8e1-9fd842246159';
 const EXPO_TOKEN = 'ExponentPushToken[test-token]';
 
-function fakeNotifications(initialStatus = 'granted'): NotificationsLike & {
+function fakeNotifications(
+  initialStatus = 'granted',
+  // Expo reports a blocked Android permission as denied with canAskAgain false.
+  { canAskAgain = initialStatus !== 'denied', requestResult = 'granted' } = {}
+): NotificationsLike & {
   permissionCalls: { get: number; request: number };
   tokensRequested: { projectId: string }[];
   channels: { id: string; name: string }[];
@@ -78,12 +82,13 @@ function fakeNotifications(initialStatus = 'granted'): NotificationsLike & {
     },
     async getPermissionsAsync() {
       permissionCalls.get += 1;
-      return { status };
+      return { status, canAskAgain };
     },
     async requestPermissionsAsync() {
       permissionCalls.request += 1;
-      status = 'granted';
-      return { status };
+      status = requestResult;
+      canAskAgain = requestResult === 'granted';
+      return { status, canAskAgain };
     },
     async getExpoPushTokenAsync(options) {
       tokensRequested.push(options);
@@ -134,6 +139,26 @@ describe('push-notifications', () => {
     const notifications = fakeNotifications('undetermined');
     await expect(requestPermissionIfUndetermined(notifications)).resolves.toBe('granted');
     expect(notifications.permissionCalls.request).toBe(1);
+  });
+
+  it('requests the Android 13 permission that Expo reports as denied before the first ask', async () => {
+    // expo-notifications returns denied while POST_NOTIFICATIONS was never requested,
+    // because areNotificationsEnabled() is false until the user grants it.
+    const notifications = fakeNotifications('denied', { canAskAgain: true });
+    await expect(requestPermissionIfUndetermined(notifications)).resolves.toBe('granted');
+    expect(notifications.permissionCalls.request).toBe(1);
+  });
+
+  it('reports denied when the user declines the Android prompt', async () => {
+    const notifications = fakeNotifications('denied', { canAskAgain: true, requestResult: 'denied' });
+    await expect(requestPermissionIfUndetermined(notifications)).resolves.toBe('denied');
+    expect(notifications.permissionCalls.request).toBe(1);
+  });
+
+  it('does not prompt when Android has blocked the permission', async () => {
+    const notifications = fakeNotifications('denied', { canAskAgain: false });
+    await expect(requestPermissionIfUndetermined(notifications)).resolves.toBe('denied');
+    expect(notifications.permissionCalls.request).toBe(0);
   });
 
   it('does not acquire a token or register when permission is denied', async () => {

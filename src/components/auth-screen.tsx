@@ -3,7 +3,6 @@ import { StatusBar } from 'expo-status-bar';
 import { useCallback, useRef, type ComponentProps, type ReactNode, type RefObject } from 'react';
 import {
   Image,
-  KeyboardAvoidingView,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
+import { KeyboardSpacer } from '@/components/skeleton';
 
 /** Space kept above a revealed field so its label stays visible (label + gap + breathing room). */
 const REVEAL_OFFSET = 88;
@@ -73,11 +73,12 @@ export function AuthScreen({ scrollRef, title, description, brand = true, childr
   return (
     <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <StatusBar style="dark" />
-      <KeyboardAvoidingView style={styles.flex} behavior="padding">
+      <View style={styles.flex}>
         <ScrollView
           ref={scrollRef}
           style={styles.viewport}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           contentContainerStyle={styles.content}
         >
           <View style={styles.column}>
@@ -93,7 +94,8 @@ export function AuthScreen({ scrollRef, title, description, brand = true, childr
           </View>
         </ScrollView>
         {stickyFooter ? <View style={styles.sticky}>{stickyFooter}</View> : null}
-      </KeyboardAvoidingView>
+        <KeyboardSpacer bottomOffset={insets.bottom} />
+      </View>
     </View>
   );
 }

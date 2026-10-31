@@ -11,10 +11,11 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
-import { useHeaderHeight, useIsFocused, usePreventRemove } from 'expo-router/react-navigation';
+import { useIsFocused, usePreventRemove } from 'expo-router/react-navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/app-button';
+import { KeyboardSpacer } from '@/components/skeleton';
 import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
 import { AppSymbol } from '@/components/app-symbol';
@@ -32,6 +33,7 @@ import { SurfaceGroup } from '@/components/surface-group';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatDetailDateTime } from '@/lib/date-time';
 import { JOB_SKILL_SUGGESTIONS_ENABLED } from '@/lib/job-skill-suggestions';
+import { descriptionPresetsForSkill } from '@/lib/job-description-presets';
 import { postingDescriptionError, postingLocationError } from '@/lib/job-location';
 import { submitClientPostJob } from '@/lib/client-post-job-submission';
 import { openPostedJobMap, postingRecoveryNotice } from '@/lib/client-post-job-navigation';
@@ -40,7 +42,6 @@ import {
   formatJobPaymentReviewValue,
   JOB_PAYMENT_OPTIONS,
   postingPaymentError,
-  QRPH_TEST_LABEL,
 } from '@/lib/job-payment';
 import { combineJobSchedule, postingScheduleError } from '@/lib/job-posting-schedule';
 import { canAddPostJobSkill, orderedPostJobSkillIds, postJobSkillRole, togglePostJobSkill } from '@/lib/post-job-skill-selection';
@@ -110,13 +111,15 @@ export function ClientPostJobScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
   const { isLoading, loadError, skills, refresh } = useClientJobs();
   const [locationPickerBackHandlerRef] = useState<{ current: (() => void) | null }>(() => ({ current: null }));
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [skillsModalVisible, setSkillsModalVisible] = useState(false);
   const [retryingSkills, setRetryingSkills] = useState(false);
+  /** The step-validation message last shown by Next; hidden once the current step no longer produces it. */
+  const [shownValidationError, setShownValidationError] = useState<string | null>(null);
   const [suggestionAuthority] = useState(() => ({ revision: 0 }));
+  const [presetChooser, setPresetChooser] = useState<{ skillId: string; pending: string | null } | null>(null);
   const [locationAuthority] = useState(() => ({ focused: true, generation: 0, pickerGeneration: 0, pickerOpen: false, owner, session }));
   useLayoutEffect(() => { locationAuthority.focused = isFocused; locationAuthority.owner = owner; locationAuthority.session = session; }, [locationAuthority, isFocused, owner, session]);
   function invalidateSuggestions() { suggestionAuthority.revision++; }
@@ -214,6 +217,20 @@ export function ClientPostJobScreen() {
     }
   }
 
+  /** Presets only start an editable description; replacing written text needs confirmation. */
+  function choosePreset(text: string) {
+    if (busy || !isFocused || !owner.isOwnerCurrent() || primarySkillId === null) return;
+    if (description.trim() === '') { setDescription(text); setPresetChooser(null); return; }
+    setPresetChooser({ skillId: primarySkillId, pending: text });
+  }
+
+  function confirmPreset() {
+    const pending = presetChooser?.pending;
+    if (busy || !isFocused || !owner.isOwnerCurrent() || pending == null || presetChooser?.skillId !== primarySkillId) return;
+    setDescription(pending);
+    setPresetChooser(null);
+  }
+
   function onBudgetTextChange(next: string) {
     setBudgetText(next);
     const matched = FEE_PRESETS.find((preset) => next.trim() === String(preset.value));
@@ -237,10 +254,14 @@ export function ClientPostJobScreen() {
     };
   }
 
+  // One validation point per render: Next uses it, and the banner hides a shown message once it no longer applies.
+  const stepError = wizardStep < 4 ? validatePostJobWizardStep(wizardStep, wizardDraft()) : null;
+
   function goToNextStep() {
     if (busy || !owner.isOwnerCurrent() || wizardStep >= 4 || (wizardStep === 2 && !skillsReady)) return;
-    const error = validatePostJobWizardStep(wizardStep, wizardDraft());
+    const error = stepError;
     if (error) {
+      setShownValidationError(error);
       setPostError(error);
       return;
     }
@@ -284,14 +305,31 @@ export function ClientPostJobScreen() {
   const budgetLabel = budgetText.trim() ? `₱${budgetText.trim()}` : 'Not specified';
   const showDock = wizardStep === 4 && !isLoading && !loadError;
   const locationGeneration = locationAuthority.pickerGeneration;
+  const presetSkillId = primarySkillId !== null && knownSkillIds.has(primarySkillId) ? primarySkillId : null;
+  const descriptionPresets = descriptionPresetsForSkill(presetSkillId);
+  const presetsOpen = presetSkillId !== null && presetChooser?.skillId === presetSkillId;
+  // With suggestions enabled, photos sit beside the panel that can use them.
+  const photosSection = wizardStep === 2 ? <View style={styles.section} accessibilityLabel="Job photos">
+                <SectionHeader title="Photos" subtitle="Optional" />
+                <JobPhotoPicker
+                  photos={jobPhotos}
+                  error={photoError}
+                  ownerKey={owner.ownerId}
+                  resetEpoch={owner.draftEpoch}
+                  isOwnerCurrent={() => isFocused && owner.isOwnerCurrent()}
+                  onErrorChange={(error) => owner.updateDraft({ photoError: error })}
+                  disabled={busy}
+                  onPhotosChange={setJobPhotos}
+                />
+              </View> : null;
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior="padding" keyboardVerticalOffset={headerHeight}>
+    <View style={styles.flex}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
-        automaticallyAdjustKeyboardInsets
+        keyboardDismissMode="on-drag"
       >
 
         <View style={styles.form}>
@@ -316,7 +354,6 @@ export function ClientPostJobScreen() {
                   value={description}
                   onChangeText={setDescription}
                   placeholder="Describe the work needed."
-                  helperText="Required."
                   multiline
                   numberOfLines={3}
                   disabled={busy}
@@ -324,11 +361,13 @@ export function ClientPostJobScreen() {
                 />
               </View> : null}
 
+              {JOB_SKILL_SUGGESTIONS_ENABLED ? photosSection : null}
+
               {JOB_SKILL_SUGGESTIONS_ENABLED && wizardStep === 2 && skillsReady ? <JobSkillSuggestionsPanel owner={owner} skills={skills} focused={isFocused} authority={suggestionAuthority} /> : null}
 
               {wizardStep === 2 ? <View style={styles.section} accessibilityLabel="Required skills">
-                <SectionHeader title="Required skills" subtitle="Choose up to two skills. The first is the primary skill and the second the secondary." />
-                {isLoading || retryingSkills ? <InlineStatus variant="loading" message="Loading skills…" /> : loadError ? <InlineStatus variant="error" message={loadError} /> : null}
+                <SectionHeader title="Required skills" subtitle="Up to two" />
+                {isLoading || retryingSkills ? <InlineStatus variant="loading" skeleton="lines" message="Loading skills…" /> : loadError ? <InlineStatus variant="error" message={loadError} /> : null}
                 {loadError ? <AppButton label="Retry skills" variant="secondary" onPress={retrySkills} disabled={busy || retryingSkills} /> : null}
                 {/* One group and one picker: the chosen skills in order, then the single way to change them. */}
                 <SurfaceGroup>
@@ -356,10 +395,34 @@ export function ClientPostJobScreen() {
                     <AppSymbol name={{ android: 'chevron_right', ios: 'chevron.right' }} size={size.icon} tintColor={colors.textSecondary} />
                   </Pressable>
                 </SurfaceGroup>
+                {presetSkillId === null ? null : presetsOpen ? <View style={styles.section} accessibilityLabel="Description presets">
+                  <Text style={styles.help}>Edit the parts in [brackets].</Text>
+                  <SurfaceGroup>
+                    {descriptionPresets.map((preset) => (
+                      <Pressable
+                        key={preset}
+                        style={({ pressed }) => [styles.choiceRow, pressed && styles.choiceRowPressed]}
+                        onPress={() => choosePreset(preset)}
+                        disabled={busy}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Use preset: ${preset}`}
+                        accessibilityState={{ disabled: busy }}
+                      >
+                        <Text style={[styles.choiceValue, styles.choiceCopy]}>{preset}</Text>
+                      </Pressable>
+                    ))}
+                  </SurfaceGroup>
+                  {presetChooser?.pending != null ? <View style={styles.section} accessibilityLabel="Confirm replacing description">
+                    <Text style={styles.help}>Replace your description with this preset?</Text>
+                    <AppButton label="Replace description" onPress={confirmPreset} disabled={busy} />
+                    <AppButton label="Keep my description" variant="secondary" onPress={() => setPresetChooser({ skillId: presetSkillId, pending: null })} disabled={busy} />
+                  </View> : null}
+                  <AppButton label="Close presets" variant="secondary" onPress={() => setPresetChooser(null)} disabled={busy} />
+                </View> : <AppButton label="Start from a preset" variant="secondary" onPress={() => setPresetChooser({ skillId: presetSkillId, pending: null })} disabled={busy} />}
               </View> : null}
 
               {wizardStep === 1 ? <View style={styles.section} accessibilityLabel="Service location">
-                <SectionHeader title="Service location" subtitle="The exact service location is shared with workers who currently qualify for this job so they can decide whether to accept it. Access is removed if they are no longer eligible." />
+                <SectionHeader title="Service location" subtitle="Shared only with workers who qualify for this job." />
                 <SurfaceGroup>
                   <Pressable
                     style={({ pressed }) => [styles.choiceRow, pressed && styles.choiceRowPressed]}
@@ -384,19 +447,7 @@ export function ClientPostJobScreen() {
                 </SurfaceGroup>
               </View> : null}
 
-              {wizardStep === 2 ? <View style={styles.section} accessibilityLabel="Job photos">
-                <SectionHeader title="Photos" subtitle="Optional" />
-                <JobPhotoPicker
-                  photos={jobPhotos}
-                  error={photoError}
-                  ownerKey={owner.ownerId}
-                  resetEpoch={owner.draftEpoch}
-                  isOwnerCurrent={() => isFocused && owner.isOwnerCurrent()}
-                  onErrorChange={(error) => owner.updateDraft({ photoError: error })}
-                  disabled={busy}
-                  onPhotosChange={setJobPhotos}
-                />
-              </View> : null}
+              {JOB_SKILL_SUGGESTIONS_ENABLED ? null : photosSection}
 
               {wizardStep === 3 ? <View style={styles.section} accessibilityLabel="Schedule">
                 <SectionHeader title="When" />
@@ -471,7 +522,7 @@ export function ClientPostJobScreen() {
               </View> : null}
 
               {wizardStep === 3 ? <View style={styles.section} accessibilityLabel="Payment method">
-                <SectionHeader title="Payment method" subtitle="Required. Workers see this before they accept." />
+                <SectionHeader title="Payment method" />
                 <View
                   accessibilityRole="radiogroup"
                   accessibilityLabel="Payment method"
@@ -481,7 +532,6 @@ export function ClientPostJobScreen() {
                     <RadioRow
                       key={option.value}
                       label={option.label}
-                      meaning={option.meaning}
                       selected={paymentMethod === option.value}
                       disabled={busy}
                       accessibilityLabel={option.label}
@@ -489,14 +539,11 @@ export function ClientPostJobScreen() {
                     />
                   ))}
                 </View>
-                {paymentMethod === 'qrph' ? (
-                  <Text style={styles.help}>{QRPH_TEST_LABEL} needs a budget of at least ₱1.00.</Text>
-                ) : null}
               </View> : null}
 
               {wizardStep === 4 ? (
                 <View style={styles.section} accessibilityLabel="Review and Post">
-                  <SectionHeader title="Job summary" subtitle="Check the details, then post." />
+                  <SectionHeader title="Job summary" />
                   <SurfaceGroup>
                     <FactRow icon={{ android: 'location_on', ios: 'mappin' }} label="Location" value={address.trim()} />
                     <FactRow icon={{ android: 'handyman', ios: 'wrench.and.screwdriver' }} label="Skills" value={selectedSkills.map((skill) => skill.skill_name).join(', ')} strong />
@@ -519,7 +566,8 @@ export function ClientPostJobScreen() {
                 ) : null}
               </View>
 
-              {wizardStep < 4 && postError ? <InlineStatus variant="error" message={postError} /> : null}
+              {wizardStep < 4 && postError && !(postError === shownValidationError && stepError !== postError)
+                ? <InlineStatus variant="error" message={postError} /> : null}
         </View>
       </ScrollView>
 
@@ -547,6 +595,8 @@ export function ClientPostJobScreen() {
           </View>
         </View>
       ) : null}
+
+      <KeyboardSpacer />
 
       <Modal visible={locationPickerVisible} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => { if (locationPickerBackHandlerRef.current) locationPickerBackHandlerRef.current(); else closeLocationPicker(); }}>
         {locationPickerVisible ? (
@@ -591,9 +641,7 @@ export function ClientPostJobScreen() {
             <Text style={styles.modalTitle}>Choose skills</Text>
             <AppField variant="search" value={modalQuery} onChangeText={setModalQuery} accessibilityLabel="Search skills"
               placeholder="Search skills" autoCapitalize="none" autoCorrect={false} disabled={busy || !skillsReady} />
-            <Text style={styles.help}>
-              Choose up to two skills. The first is the primary skill and the second the secondary. Tap a chosen skill to remove it.
-            </Text>
+            <Text style={styles.help}>Up to two</Text>
             <ScrollView
               style={styles.modalFlex}
               contentContainerStyle={styles.modalContent}
@@ -629,7 +677,7 @@ export function ClientPostJobScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

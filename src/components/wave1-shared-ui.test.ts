@@ -34,6 +34,8 @@ const base = {
   'react-native': native,
   'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
   '@/components/refinement-theme': { useUiTheme: () => ui },
+  '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
+
   '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
   'expo-symbols': {},
   'expo-status-bar': { StatusBar: 'StatusBar' },
@@ -70,7 +72,7 @@ describe('AuthScreen shell', () => {
     expect(tree.props.style).toContainEqual({ paddingTop: 24, paddingBottom: 16 });
     expect(flat(tree.props.style).backgroundColor).toBe(ui.colors.canvas);
     expect(ofType(tree, 'StatusBar')[0].props.style).toBe('dark');
-    expect(ofType(tree, 'KeyboardAvoidingView')[0].props.behavior).toBe('padding');
+    expect(ofType(tree, 'KeyboardSpacer')[0].props.bottomOffset).toBe(16);
     const scroll = ofType(tree, 'ScrollView')[0];
     expect(scroll.props.style).toMatchObject({ flex: 1, overflow: 'hidden' });
     expect(scroll.props.keyboardShouldPersistTaps).toBe('handled');
@@ -100,11 +102,12 @@ describe('AuthScreen shell', () => {
 
   it('pins a sticky action below the scrolling content with a hairline top edge', () => {
     const tree = AuthScreen({ title: 'T', stickyFooter: element('Action', {}) });
-    const keyboard = ofType(tree, 'KeyboardAvoidingView')[0];
-    const [scroll, sticky] = keyboard.props.children;
+    const column = ofType(tree, 'ScrollView')[0] && tree.props.children.flat?.().find?.((child: any) => child?.props?.children) ;
+    const [scroll, sticky] = [ofType(tree, 'ScrollView')[0], ofType(tree, 'Action')[0] && ofType(tree, 'View').find((node: any) => flat(node.props.style).borderTopWidth === 1)];
+    expect(column).toBeDefined();
     expect(scroll.type).toBe('ScrollView');
     expect(flat(sticky.props.style)).toMatchObject({ borderTopWidth: 1, borderTopColor: ui.colors.hairline, backgroundColor: ui.colors.canvas });
-    expect(ofType(AuthScreen({ title: 'T' }), 'KeyboardAvoidingView')[0].props.children.filter(Boolean)).toHaveLength(1);
+    expect(ofType(AuthScreen({ title: 'T' }), 'View').some((node: any) => flat(node.props.style).borderTopWidth === 1)).toBe(false);
   });
 
   it('gives section titles a header role and links a 48dp accent target that forwards navigation props', () => {
@@ -167,9 +170,9 @@ describe('StateScreen', () => {
     expect(flat(column.props.style).backgroundColor).toBeUndefined();
   });
 
-  it('shows a spinner instead of an icon while loading and keeps the message announced', () => {
+  it('shows pulsing dots instead of an icon while loading and keeps the message announced', () => {
     const tree = StateScreen({ loading: true, title: 'Loading', message: 'Restoring your session…' });
-    expect(ofType(tree, 'ActivityIndicator')).toHaveLength(1);
+    expect(ofType(tree, 'PulseDots')).toHaveLength(1);
     expect(ofType(tree, 'AppSymbol')).toHaveLength(0);
     expect(ofType(tree, 'Text').find((node) => node.props.children === 'Restoring your session…')!.props.accessibilityLiveRegion).toBe('polite');
   });

@@ -31,7 +31,7 @@ describe('legal document versions', () => {
   });
 
   it('exports the locked Privacy version', () => {
-    expect(PRIVACY_VERSION).toBe('2026-09-v1');
+    expect(PRIVACY_VERSION).toBe('2026-10-v1');
     expect(PRIVACY_DOCUMENT.version).toBe(PRIVACY_VERSION);
   });
 });
@@ -169,5 +169,14 @@ describe('approved Terms and Privacy wording', () => {
     expect(termsText).toContain('does not invent work history');
     expect(termsText).toContain('may offer optional AI guidance text');
     expect(privacyText).toContain('Those tools do not decide matching or hiring.');
+  });
+
+  it('discloses Post Job skill suggestions without an unverified provider-training claim', () => {
+    expect(privacyText).toContain('when a Client taps Suggest skills');
+    expect(privacyText).toContain('only one job photo they choose for this purpose');
+    expect(privacyText).toContain('external AI service (Google Gemini)');
+    expect(privacyText).toContain('metadata, including location data, is removed before sending');
+    expect(privacyText).toContain('do not decide matching, pricing, or hiring');
+    expect(legalText.toLowerCase()).not.toMatch(/\btrain(s|ed|ing)?\b/);
   });
 });

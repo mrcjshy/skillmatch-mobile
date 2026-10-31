@@ -58,6 +58,8 @@ function screen(file: string, extra: Props) {
     },
     'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
     'react-native': { StyleSheet: { create: (v: any) => v }, Text: 'Text', View: 'View', ActivityIndicator: 'ActivityIndicator' },
+    '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
+
     '@/components/refinement-theme': { useUiTheme: () => ({ colors: {}, type: {}, spacing: {} }), RefinementThemeProvider: ({ children }: Props) => children },
     '@/lib/auth-errors': authErrors,
     '@/components/app-button': host('AppButton'),

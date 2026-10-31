@@ -9,6 +9,7 @@ import { InlineStatus } from '@/components/inline-status';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatCardDateTime } from '@/lib/date-time';
 import { formatClientPostedPaymentLine } from '@/lib/job-payment';
+import { NOTIFICATION_INSERTED, subscribeInvalidation, userNotificationsTopic } from '@/lib/realtime';
 import { jobStatusLabel, jobStatusVariant } from '@/lib/status-presentation';
 import { useAccount } from '@/providers/account-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
@@ -88,15 +89,20 @@ export default function ClientJobs() {
     operation.current = lifetime;
     unsubscribeSession = subscribeSessionLifecycle(cancel);
     unsubscribeAccount = clientDraftTermination.subscribe(cancel);
-    if (lifetime.current()) void refreshJobs();
-    else cancel();
-    return cancel;
+    if (!lifetime.current()) { cancel(); return cancel; }
+    void refreshJobs();
+    // A Worker acceptance or a cancellation notifies the Client; re-read while this tab is focused.
+    const unsubscribeLive = subscribeInvalidation({
+      topic: userNotificationsTopic(clientId), events: [NOTIFICATION_INSERTED],
+      onInvalidate: () => { if (lifetime.current()) void refreshJobs(); },
+    });
+    return () => { unsubscribeLive(); cancel(); };
   }, [clientId, appActive, isOwnerCurrent, sessionRevision, isSessionRevisionCurrent, subscribeSessionLifecycle, clientDraftTermination, refreshJobs]));
 
   const canShowJobs = authorized && !isLoading && !loadError;
   const retry = <AppButton label="Retry" variant="secondary" disabled={!authorized} loading={refreshing} onPress={() => { void refreshJobs(); }} />;
   const empty = !authorized ? <InlineStatus variant="empty" message="Your jobs are unavailable." /> : isLoading ? (
-    <InlineStatus variant="loading" message="Loading your jobs…" />
+    <InlineStatus variant="loading" skeleton="jobs" message="Loading your jobs…" />
   ) : loadError ? <View style={styles.notice}><InlineStatus variant="error" message={loadError} />{retry}</View> : (
     <InlineStatus variant="empty" message="You have not posted a job yet." />
   );

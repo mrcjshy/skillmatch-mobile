@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect, useRouter, type Href } from 'expo-router';
-import { ActivityIndicator, AppState, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { AppState, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { ActiveBookingHomeDock } from '@/components/active-booking-home-dock';
-import { AppButton } from '@/components/app-button';
+import { PulseDots } from '@/components/skeleton';
+import { AppIconButton } from '@/components/app-icon-button';
 import { AppSheet } from '@/components/app-sheet';
 import { AvailabilityControl } from '@/components/availability-control';
 import { groupPosition } from '@/components/grouped-row';
@@ -235,7 +236,7 @@ function WorkerHomeContent() {
     : availability !== 'available' ? 'busy' : oppLoading ? 'loading' : oppError ? 'error' : 'empty';
   const jobsStatus = !profileReady ? null
     : availability !== 'available' ? <InlineStatus variant="note" message="Set your status to Available to see matching jobs." />
-      : oppLoading ? <InlineStatus variant="loading" message="Loading available jobs…" />
+      : oppLoading ? <InlineStatus variant="loading" skeleton="jobs" message="Loading available jobs…" />
         : oppError ? <InlineStatus variant="error" message={oppError} />
           : <InlineStatus variant="empty" message="No matching jobs right now." illustration={<SkillMatchMascot pose="empty" />} />;
 
@@ -270,29 +271,30 @@ function WorkerHomeContent() {
               }}
               disabled={isPersistingAvailability}
             />
-            {isPersistingAvailability ? <ActivityIndicator color={colors.accent} /> : null}
+            {isPersistingAvailability ? <PulseDots color={colors.accent} /> : null}
           </View>
         )}
         {/* One fixed surface: opportunity controls share the existing Home header. */}
         <View style={styles.opportunityHeader}>
           <SectionHeader
             title="Available jobs"
-            trailing={jobs.length > 0 ? <Text style={styles.count}>{jobs.length === 1 ? '1 job' : `${jobs.length} jobs`}</Text> : undefined}
+            trailing={jobs.length > 0 ? (
+              <View style={styles.headerTrailing}>
+                <Text style={styles.count}>{jobs.length === 1 ? '1 job' : `${jobs.length} jobs`}</Text>
+                {/* Compact icon keeps the list visible; the name still announces the current order. */}
+                {jobs.length > 1 ? (
+                  <AppIconButton
+                    variant="tonal"
+                    accessibilityLabel={sortControlLabel}
+                    icon={{ android: 'sort', ios: 'line.3.horizontal.decrease' }}
+                    expanded={isSortOpen}
+                    onPress={() => setIsSortOpen(true)}
+                  />
+                ) : null}
+              </View>
+            ) : undefined}
           />
-          {jobs.length > 1 ? (
-            <View style={styles.sort}>
-              <AppButton
-                variant="secondary"
-                label={sortControlLabel}
-                accessibilityLabel={sortControlLabel}
-                icon={{ android: 'sort', ios: 'arrow.up.arrow.down' }}
-                expanded={isSortOpen}
-                style={styles.sortButton}
-                onPress={() => setIsSortOpen(true)}
-              />
-              {sort === 'posted' && postedError ? <InlineStatus variant="note" message={WORKER_JOB_SORT_COPY.postedUnavailable} /> : null}
-            </View>
-          ) : null}
+          {jobs.length > 1 && sort === 'posted' && postedError ? <InlineStatus variant="note" message={WORKER_JOB_SORT_COPY.postedUnavailable} /> : null}
         </View>
       </HomeStickyHeader>
       <AppSheet visible={canRenderOwnedContent && jobs.length > 1 && isSortOpen}
@@ -339,7 +341,6 @@ function WorkerHomeContent() {
         renderItem={({ item, index }) => (
           <MotionView entering={rowEnter(item.job_id)} style={styles.inset}>
             <JobOpportunityCompactCard
-              compact
               opportunity={item}
               position={groupPosition(index, jobs.length)}
               onPress={() => router.push({ pathname: '/worker/opportunity-details', params: { jobId: item.job_id } } as unknown as Href)}
@@ -387,8 +388,7 @@ function createStyles(ui: UiTheme) {
     statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     headerNote: { ...type.helper, color: colors.textSecondary, minHeight: size.minTarget, textAlignVertical: 'center' },
     count: { ...type.label, color: colors.textSecondary },
-    sort: { gap: spacing.sm },
-    sortButton: { paddingHorizontal: spacing.md },
+    headerTrailing: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     sortChoices: { gap: spacing.sm },
     notice: {
       marginHorizontal: spacing.gutter,

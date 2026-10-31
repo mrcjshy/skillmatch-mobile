@@ -1,17 +1,18 @@
 import { StatusBar } from 'expo-status-bar';
 import type { ReactNode } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type SymbolViewProps } from 'expo-symbols';
 
 import { AppSymbol } from '@/components/app-symbol';
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
+import { PulseDots } from '@/components/skeleton';
 
 export type StateScreenTone = 'neutral' | 'error' | 'warning' | 'success';
 
 type StateScreenProps = {
   tone?: StateScreenTone;
-  /** State cue. Ignored while `loading` (a spinner is the cue). */
+  /** State cue. Ignored while `loading` (the pulsing dots are the cue). */
   icon?: SymbolViewProps['name'];
   loading?: boolean;
   title: string;
@@ -47,7 +48,7 @@ export function StateScreen({
         <View style={styles.column}>
           <View style={[styles.cue, cueFills[tone]]} accessible={false} importantForAccessibility="no-hide-descendants">
             {loading ? (
-              <ActivityIndicator color={colors.accent} />
+              <PulseDots color={colors.accent} />
             ) : (
               <AppSymbol synchronousGlyph name={icon} size={28} tintColor={cueInk} />
             )}

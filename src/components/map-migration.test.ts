@@ -12,6 +12,7 @@ import * as location from '../lib/job-location';
 import { PICKER_MAP_STYLE } from '../lib/picker-map-style';
 import * as snap from '../lib/job-location-snap';
 import * as permission from '../lib/location-permission';
+import * as serviceArea from '../lib/santa-ana-service-area';
 import { SANTA_ANA_PATEROS_INTERIOR_TEST_PIN as pin } from '../lib/santa-ana-service-area';
 
 vi.mock('../lib/supabase', () => ({ supabase: { rpc: vi.fn() } }));
@@ -20,12 +21,13 @@ vi.mock('../lib/supabase', () => ({ supabase: { rpc: vi.fn() } }));
 // operating-system geocoder are mocked; this is explicitly not native proof.
 type Props = Record<string, any>;
 type Element = { type: string | ((props: Props) => Element); props: Props };
-function harness(file: string, nativeAvailable = true, dev = false) {
+function harness(file: string, nativeAvailable = true, dev = false, overrides: Record<string, unknown> = {}) {
   const slots: unknown[] = [];
   let cursor = 0;
   const effects: (() => unknown)[] = [];
   const layoutEffects: (() => unknown)[] = [];
   const timers: { callback: () => void; milliseconds: number; cancelled?: boolean }[] = [];
+  const frames: { callback: () => void; cancelled?: boolean }[] = [];
   const userId = '11111111-1111-4111-8111-111111111111';
   const authority: Props = {
     session: { session: { user: { id: userId } }, sessionLifetime: { ownerId: userId, isCurrent: () => true }, sessionRevision: 1, isSessionRevisionCurrent: () => true, isSessionLoading: false, sessionError: null, recoveryStatus: 'idle', subscribeSessionLifecycle: vi.fn(() => () => undefined) },
@@ -39,7 +41,7 @@ function harness(file: string, nativeAvailable = true, dev = false) {
     requestForegroundPermissionsAsync: vi.fn(),
     getCurrentPositionAsync: vi.fn().mockResolvedValue({ coords: pin }),
   };
-  const runtime = { Map: 'Map', Camera: 'Camera', Marker: 'Marker', ViewAnnotation: 'ViewAnnotation' };
+  const runtime = { Map: 'Map', Camera: 'Camera', Marker: 'Marker', ViewAnnotation: 'ViewAnnotation', GeoJSONSource: 'GeoJSONSource', Layer: 'Layer' };
   const jsx = (type: Element['type'], props: Props) => ({ type, props });
   const ui = { colors: {}, type: {}, spacing: { sm: 8, md: 16, gutter: 20 }, radius: {}, size: {} };
   const modules: Record<string, unknown> = {
@@ -84,6 +86,7 @@ function harness(file: string, nativeAvailable = true, dev = false) {
     '@/lib/canonical-job-location': canonical,
     '@/lib/job-location': location,
     '@/lib/job-location-snap': snap,
+    '@/lib/santa-ana-service-area': serviceArea,
     '@/lib/location-permission': permission,
     '@/lib/location-search': { LOCATION_SEARCH_DEBOUNCE_MS: 400, LOCATION_SEARCH_MIN_LENGTH: 3, searchPhoton: vi.fn() },
     '@/lib/recent-locations': { loadRecentLocations: vi.fn().mockResolvedValue([]), clearRecentLocations: vi.fn().mockResolvedValue(undefined) },
@@ -92,24 +95,26 @@ function harness(file: string, nativeAvailable = true, dev = false) {
     '@/lib/bookings': { formatLocation: () => 'Santa Ana, Pateros' },
     '@/components/app-button': { AppButton: 'AppButton' },
     '@/components/map-pin-label': { MapPinLabel: 'MapPinLabel' },
+    '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
     '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
     '@/components/app-notice': { AppNotice: 'AppNotice' },
     '@/components/worker-job-location-map': { WorkerJobLocationMapLibre: 'WorkerMap' },
     '@maplibre/maplibre-react-native': runtime,
     'expo-location': geocoder,
     'expo-linking': { openURL: vi.fn() },
+    ...overrides,
   };
   const exports: Props = {};
   const compiled = ts.transpileModule(readFileSync(resolve('src', file), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  runInNewContext(compiled, { exports, AbortController, setTimeout: (callback: () => void, milliseconds: number) => { const timer = { callback, milliseconds }; timers.push(timer); return timer; }, clearTimeout: (timer: { cancelled?: boolean }) => { if (timer) timer.cancelled = true; }, __DEV__: dev, require: (name: string) => {
+  runInNewContext(compiled, { exports, AbortController, requestAnimationFrame: (callback: () => void) => { const frame = { callback }; frames.push(frame); return frame; }, cancelAnimationFrame: (frame: { cancelled?: boolean }) => { if (frame) frame.cancelled = true; }, setTimeout: (callback: () => void, milliseconds: number) => { const timer = { callback, milliseconds }; timers.push(timer); return timer; }, clearTimeout: (timer: { cancelled?: boolean }) => { if (timer) timer.cancelled = true; }, __DEV__: dev, require: (name: string) => {
       if (name === '@/components/refinement-theme') return { useUiTheme: () => (modules['@/constants/theme'] as { SkillMatchTheme: { ui: unknown } }).SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children };
     if (!nativeAvailable && name === '@maplibre/maplibre-react-native') throw new Error('Native module unavailable');
     if (!(name in modules)) throw new Error(`Unexpected import: ${name}`);
     return modules[name];
   } });
-  return { exports, geocoder, effects, appState, modules, authority, flushEffects: () => { effects.splice(0).forEach(effect => effect()); }, runMapTimers: () => { timers.filter(timer => timer.milliseconds === 20000 && !timer.cancelled).forEach(timer => timer.callback()); }, runSearchTimers: () => { timers.splice(0).filter(timer => timer.milliseconds === 400 && !timer.cancelled).forEach(timer => timer.callback()); }, render: (component: (props: Props) => Element, props: Props) => { cursor = 0; const tree = component(props); layoutEffects.splice(0).forEach(effect => effect()); return tree; } };
+  return { exports, geocoder, effects, appState, modules, authority, flushEffects: () => { effects.splice(0).forEach(effect => effect()); }, runFrames: () => { frames.splice(0).filter(frame => !frame.cancelled).forEach(frame => frame.callback()); }, runMapTimers: () => { timers.filter(timer => timer.milliseconds === 20000 && !timer.cancelled).forEach(timer => timer.callback()); }, runSearchTimers: () => { timers.splice(0).filter(timer => timer.milliseconds === 400 && !timer.cancelled).forEach(timer => timer.callback()); }, render: (component: (props: Props) => Element, props: Props) => { cursor = 0; const tree = component(props); layoutEffects.splice(0).forEach(effect => effect()); return tree; } };
 }
 
 function all(tree: Element | null, predicate: (node: Element) => boolean): Element[] {
@@ -189,7 +194,10 @@ describe('migrated map source event contracts', () => {
     confirmButton(render()).props.onPress();
     expect(onConfirm).toHaveBeenCalledWith({ pin: actual, address: 'Canonical selected address' });
   });
-  it.each([false, true])('automatically moves to and confirms a named POI after drag release without a row tap (reduced motion: %s)', async reduced => {
+  // MAP-REFINE-01: automatic snapping was intentionally removed. This case
+  // previously asserted that a named POI moved the camera and coordinate after
+  // drag release; it now asserts an explicit, optional suggestion instead.
+  it.each([false, true])('offers a named POI after drag release without moving the pin and selects it only on tap (reduced motion: %s)', async reduced => {
     const h = harness('components/job-location-picker.tsx');
     (h.modules['@/hooks/use-reduced-motion'] as { useReducedMotion: () => boolean }).useReducedMotion = () => reduced;
     const target = { ...pin, longitude: pin.longitude + .0002 };
@@ -202,38 +210,42 @@ describe('migrated map source event contracts', () => {
     byType(render(), 'Camera').props.ref.current = { easeTo };
     h.flushEffects();
     byType(render(), 'Map').props.onRegionWillChange(region(pin, true, 16.6));
+    byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 16.6));
+    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Use suggested place')).toHaveLength(1));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
     expect(easeTo).not.toHaveBeenCalled();
-    byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 16.6));
-    await vi.waitFor(() => expect(easeTo).toHaveBeenCalledWith(expect.objectContaining({ center: [target.longitude, target.latitude], duration: reduced ? 0 : 200 })));
-    byType(render(), 'Map').props.onRegionDidChange(region(target, false, 16.6));
-    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
-    expect(all(render(), n => n.props.children === 'Public hall')).toHaveLength(2);
-    expect(all(render(), n => n.props.message === 'Adjusted to Public hall')).toHaveLength(1);
-    expect(onConfirm).not.toHaveBeenCalled();
+    expect(h.geocoder.reverseGeocodeAsync).toHaveBeenCalledWith(pin);
+    expect(h.geocoder.reverseGeocodeAsync).not.toHaveBeenCalledWith(target);
+    expect(all(render(), n => n.props.children === 'Nearby mapped place: Public hall')).toHaveLength(1);
+    expect(all(render(), n => n.props.label === 'Use suggested place')[0].props.accessibilityLabel).toBe('Use suggested place Public hall');
+    expect(all(render(), n => n.props.accessibilityLabel === 'Suggested mapped place')[0].props.accessibilityLiveRegion).toBe('polite');
+    expect(all(render(), n => n.props.message === 'Adjusted to Public hall')).toHaveLength(0);
+    expect(all(render(), n => n.props.label === 'Use exact pin instead')).toHaveLength(0);
+    // The suggestion is not duplicated as an ordinary Nearby row. (Its map marker
+    // follows the existing rule that hides markers within 32 px of the pin.)
+    expect(all(render(), n => n.props.accessibilityLabel === 'Move map to Public hall')).toHaveLength(0);
     // Duplicate idle callbacks (even one retaining the last gesture flag) are
-    // not a new deliberate move and cannot overwrite the raw point or resnap.
-    byType(render(), 'Map').props.onRegionDidChange(region(target, true, 16.6));
-    byType(render(), 'Map').props.onRegionDidChange(region(target, false, 16.6));
-    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
-    expect(easeTo).toHaveBeenCalledTimes(1);
-    all(render(), n => n.props.label === 'Use exact pin instead')[0].props.onPress();
-    expect(easeTo.mock.calls.at(-1)?.[0].center).toEqual([pin.longitude, pin.latitude]);
+    // not a new deliberate move and cannot accept or replace the suggestion.
+    byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 16.6));
     byType(render(), 'Map').props.onRegionDidChange(region(pin, false, 16.6));
-    byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 16.6));
-    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
-    const change = h.appState.addEventListener.mock.calls[0][1];
-    change('background'); change('active');
-    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
-    expect(easeTo).toHaveBeenCalledTimes(2);
-    // A new actual gesture renews assisted selection after the exact override.
-    byType(render(), 'Map').props.onRegionWillChange(region(pin, true, 16.6));
-    byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 16.6));
-    await vi.waitFor(() => expect(easeTo).toHaveBeenCalledTimes(3));
+    expect(easeTo).not.toHaveBeenCalled();
+    all(render(), n => n.props.label === 'Use suggested place')[0].props.onPress();
+    expect(easeTo).toHaveBeenCalledExactlyOnceWith({ center: [target.longitude, target.latitude], zoom: 16.6, padding: { top: 88, right: 0, bottom: 342, left: 0 }, duration: 300 });
+    expect(confirmButton(render()).props.disabled).toBe(true);
     byType(render(), 'Map').props.onRegionDidChange(region(target, false, 16.6));
     await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    expect(h.geocoder.reverseGeocodeAsync).toHaveBeenCalledWith(target);
+    expect(all(render(), n => n.props.children === 'Public hall')).toHaveLength(2);
+    expect(all(render(), n => n.props.label === 'Use suggested place')).toHaveLength(0);
+    expect(onConfirm).not.toHaveBeenCalled();
+    all(render(), n => n.props.label === 'Use exact pin instead')[0].props.onPress();
+    expect(easeTo.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ center: [pin.longitude, pin.latitude], duration: reduced ? 0 : 200 }));
+    byType(render(), 'Map').props.onRegionDidChange(region(pin, false, 16.6));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    expect(all(render(), n => n.props.label === 'Use suggested place')).toHaveLength(0);
     confirmButton(render()).props.onPress();
-    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ pin: target, address: 'Canonical selected address' });
-    expect(onConfirm.mock.calls[0][0].pin).not.toEqual(pin);
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ pin, address: 'Canonical selected address' });
+    expect(easeTo).toHaveBeenCalledTimes(2);
   });
   it('hides mapped context immediately when the authenticated lifetime changes before cleanup effects', async () => {
     const h = harness('components/job-location-picker.tsx');
@@ -320,10 +332,11 @@ describe('migrated map source event contracts', () => {
     byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 16.6));
     await vi.waitFor(() => expect(reply).toBeTypeOf('function'));
     await vi.waitFor(() => expect(h.geocoder.reverseGeocodeAsync).toHaveBeenCalledWith(pin), { timeout: 300 });
-    expect(confirmButton(render()).props.disabled).toBe(true);
+    // MAP-REFINE-01: previously asserted Confirm stayed disabled while the optional
+    // context query was pending (the snap guard). Optional context no longer gates it.
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false), { timeout: 300 });
     reply([{ id: 21, geometry: { type: 'Point', coordinates: [target.longitude, target.latitude] }, properties: { name: 'Public school', class: 'school' } }]);
     await vi.waitFor(() => expect(all(render(), n => n.props.children === 'Near Public school')).toHaveLength(2));
-    expect(all(render(), n => n.props.children === 'Your map point, not the place entrance.')).toHaveLength(1);
     expect(all(render(), n => n.props.accessibilityLabel === 'Move map to Public school')).toHaveLength(1);
     expect(easeTo).not.toHaveBeenCalled();
     confirmButton(render()).props.onPress();
@@ -745,12 +758,11 @@ describe('migrated map source event contracts', () => {
     await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
     expect(easeTo).not.toHaveBeenCalled();
   });
-  it('discloses current eligible exact access only while the Worker opportunity location exists', () => {
+  it('shows the exact address only while the Worker opportunity location exists', () => {
     const h = harness('components/job-location-map.tsx');
     const props = { location: { pin, address: 'Authorized', barangay: 'Santa Ana', city: 'Pateros' } };
-    const copy = 'You can see this exact location because you currently qualify. Access may end if your eligibility changes.';
-    expect(all(h.render(h.exports.WorkerOpportunityJobLocation, props), n => n.props.children === copy)).toHaveLength(1);
-    expect(all(h.render(h.exports.WorkerOpportunityJobLocation, { location: null }), n => n.props.children === copy)).toHaveLength(0);
+    expect(all(h.render(h.exports.WorkerOpportunityJobLocation, props), n => n.props.children === 'Authorized')).toHaveLength(1);
+    expect(all(h.render(h.exports.WorkerOpportunityJobLocation, { location: null }), n => n.props.children === 'Authorized')).toHaveLength(0);
   });
   it('rejects an account A recent load after A logs in again under a new lifetime', async () => {
     const h = harness('components/job-location-picker.tsx');
@@ -1000,7 +1012,10 @@ describe('migrated map source event contracts', () => {
     expect(props.onConfirm).not.toHaveBeenCalled();
   });
 
-  it('queries only after settling, geocodes the snap, permits exact override, and does not resnap its own camera move', async () => {
+  // MAP-REFINE-01: previously asserted the settled pin was replaced and geocoded
+  // at the snap target with an "Adjusted to" notice. The exact pin now stays
+  // authoritative and the same candidate is only offered.
+  it('queries only after settling, offers the candidate without moving or geocoding it, and restores the exact pin after acceptance', async () => {
     const h = harness('components/job-location-picker.tsx');
     const target = { ...pin, longitude: pin.longitude + 0.00003 };
     const queryRenderedFeatures = vi.fn(async (_bounds: unknown, options: { layers: string[] }) =>
@@ -1015,24 +1030,31 @@ describe('migrated map source event contracts', () => {
     byType(render(), 'Map').props.onRegionWillChange(region(pin, true, snap.SNAP_MIN_ZOOM));
     expect(queryRenderedFeatures).not.toHaveBeenCalled();
     byType(render(), 'Map').props.onRegionDidChange(region(pin, true, snap.SNAP_MIN_ZOOM));
-    await vi.waitFor(() => expect(h.geocoder.reverseGeocodeAsync).toHaveBeenCalledWith(target));
-    expect(easeTo).toHaveBeenCalledWith({ center: [target.longitude, target.latitude], padding: { top: 88, right: 0, bottom: 342, left: 0 }, duration: 200 });
-    expect(all(render(), n => n.type === 'AppNotice')).toHaveLength(1);
+    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Use suggested place')).toHaveLength(1));
+    expect(h.geocoder.reverseGeocodeAsync).toHaveBeenCalledWith(pin);
+    expect(h.geocoder.reverseGeocodeAsync).not.toHaveBeenCalledWith(target);
+    expect(easeTo).not.toHaveBeenCalled();
+    expect(all(render(), n => n.type === 'AppNotice')).toHaveLength(0);
     openSearch(render);
-    expect(all(render(), n => n.props.label === 'Use exact pin instead')).toHaveLength(0);
+    expect(all(render(), n => n.props.label === 'Use suggested place')).toHaveLength(0);
     all(render(), n => n.props.accessibilityLabel === 'Back to map')[0].props.onPress();
+    all(render(), n => n.props.label === 'Use suggested place')[0].props.onPress();
+    expect(easeTo).toHaveBeenLastCalledWith({ center: [target.longitude, target.latitude], zoom: 16.6, padding: { top: 88, right: 0, bottom: 342, left: 0 }, duration: 300 });
     const calls = queryRenderedFeatures.mock.calls.length;
     byType(render(), 'Map').props.onRegionDidChange(region(target, false, snap.SNAP_MIN_ZOOM));
-    expect(queryRenderedFeatures).toHaveBeenCalledTimes(calls);
+    await vi.waitFor(() => expect(h.geocoder.reverseGeocodeAsync).toHaveBeenCalledWith(target));
+    // The accepted place reads nearby context only; it never evaluates a further suggestion.
+    await vi.waitFor(() => expect(queryRenderedFeatures.mock.calls.length).toBeGreaterThan(calls));
+    expect(queryRenderedFeatures.mock.calls.slice(calls).every(([, options]) => !options.layers.includes('road_minor'))).toBe(true);
     const override = all(render(), n => n.type === 'AppButton' && n.props.label === 'Use exact pin instead')[0];
     expect(override).toBeDefined();
     override.props.onPress();
-    await vi.waitFor(() => expect(h.geocoder.reverseGeocodeAsync).toHaveBeenCalledWith(pin));
-    await vi.waitFor(() => expect(all(render(), n => n.type === 'AppNotice')).toHaveLength(0));
+    await vi.waitFor(() => expect(h.geocoder.reverseGeocodeAsync).toHaveBeenLastCalledWith(pin));
+    const settled = queryRenderedFeatures.mock.calls.length;
     byType(render(), 'Map').props.onRegionDidChange(region(pin, false, snap.SNAP_MIN_ZOOM));
-    expect(queryRenderedFeatures).toHaveBeenCalledTimes(calls);
+    expect(queryRenderedFeatures).toHaveBeenCalledTimes(settled);
     await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
-    all(render(), n => n.props.accessibilityLabel === 'Back to map')[0]?.props.onPress();
+    expect(all(render(), n => n.props.label === 'Use suggested place')).toHaveLength(0);
     confirmButton(render()).props.onPress();
     expect(props.onConfirm).toHaveBeenCalledWith({ pin, address: 'Canonical selected address' });
   });
@@ -1366,5 +1388,314 @@ describe('padding and explicit camera movement ordering', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     byType(render(), 'Map').props.onRegionDidChange(region(pin, false, 17));
     await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+  });
+});
+
+// MAP-REFINE-01 approved picker refinements. Source-level harness only: the
+// native camera, MapLibre layers and geocoder are mocked; this is not native proof.
+describe('explicit nearby suggestion, service boundary and return to service area', () => {
+  type Coordinate = { latitude: number; longitude: number };
+  const projectFrom = (origin: Coordinate) => async ([longitude, latitude]: number[]) =>
+    [200 + (longitude - origin.longitude) * 100000, 200 + (latitude - origin.latitude) * 100000];
+  const hall = (at: Coordinate) => [{ id: 7, geometry: { type: 'Point', coordinates: [at.longitude, at.latitude] }, properties: { name: 'Public hall' } }];
+
+  it('discards a late suggestion and address for an earlier settle after rapid moves', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    const near = { ...pin, longitude: pin.longitude + .0002 };
+    const next = { ...pin, latitude: pin.latitude + .0003 };
+    let replyContext!: (features: unknown[]) => void;
+    let replyAddress!: (rows: { formattedAddress: string }[]) => void;
+    const queryRenderedFeatures = vi.fn().mockImplementationOnce(() => new Promise(resolve => { replyContext = resolve; })).mockResolvedValue([]);
+    h.geocoder.reverseGeocodeAsync.mockImplementationOnce(() => new Promise(resolve => { replyAddress = resolve; }));
+    const easeTo = vi.fn(), onConfirm = vi.fn();
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm });
+    byType(render(), 'Map').props.ref.current = { project: projectFrom(pin), queryRenderedFeatures };
+    byType(render(), 'Camera').props.ref.current = { easeTo };
+    byType(render(), 'Map').props.onRegionWillChange(region(pin, true, 16.6));
+    byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 16.6));
+    await vi.waitFor(() => expect(replyContext).toBeTypeOf('function'));
+    await vi.waitFor(() => expect(replyAddress).toBeTypeOf('function'));
+    byType(render(), 'Map').props.onRegionWillChange(region(next, true, 16.6));
+    byType(render(), 'Map').props.onRegionDidChange(region(next, true, 16.6));
+    await vi.waitFor(() => expect(h.geocoder.reverseGeocodeAsync).toHaveBeenCalledWith(next));
+    replyContext(hall(near));
+    replyAddress([{ formattedAddress: 'Obsolete address' }]);
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(all(render(), n => n.props.label === 'Use suggested place')).toHaveLength(0);
+    expect(all(render(), n => String(n.props.children).includes('Public hall'))).toHaveLength(0);
+    expect(all(render(), n => n.props.children === 'Obsolete address')).toHaveLength(0);
+    expect(easeTo).not.toHaveBeenCalled();
+    confirmButton(render()).props.onPress();
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ pin: next, address: 'Canonical selected address' });
+  });
+
+  // Adopted from the independent review probe: both the settle-time and render-time
+  // generation guards were individually redundant, so neither was proven alone.
+  it('never shows an earlier suggestion for a newer settled pin while its lookup is pending', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    const near = { ...pin, longitude: pin.longitude + .0002 };
+    const next = { ...pin, latitude: pin.latitude + .0003 };
+    const queryRenderedFeatures = vi.fn().mockResolvedValueOnce(hall(near)).mockResolvedValueOnce([]).mockImplementation(() => new Promise(() => undefined));
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    byType(render(), 'Map').props.ref.current = { project: projectFrom(pin), queryRenderedFeatures };
+    byType(render(), 'Camera').props.ref.current = { easeTo: vi.fn() };
+    byType(render(), 'Map').props.onRegionWillChange(region(pin, true, 16.6));
+    byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 16.6));
+    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Use suggested place')).toHaveLength(1));
+    byType(render(), 'Map').props.onRegionWillChange(region(next, true, 16.6));
+    byType(render(), 'Map').props.onRegionDidChange(region(next, true, 16.6));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false), { timeout: 300 });
+    expect(all(render(), n => n.props.label === 'Use suggested place')).toHaveLength(0);
+    expect(all(render(), n => String(n.props.children).startsWith('Nearby mapped place'))).toHaveLength(0);
+  });
+
+  it('rejects a captured suggestion action after a newer map movement', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    const near = { ...pin, longitude: pin.longitude + .0002 };
+    const next = { ...pin, latitude: pin.latitude + .0003 };
+    const queryRenderedFeatures = vi.fn().mockResolvedValueOnce(hall(near)).mockResolvedValue([]);
+    const easeTo = vi.fn(), onConfirm = vi.fn();
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm });
+    byType(render(), 'Map').props.ref.current = { project: projectFrom(pin), queryRenderedFeatures };
+    byType(render(), 'Camera').props.ref.current = { easeTo };
+    byType(render(), 'Map').props.onRegionWillChange(region(pin, true, 16.6));
+    byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 16.6));
+    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Use suggested place')).toHaveLength(1));
+    const captured = all(render(), n => n.props.label === 'Use suggested place')[0];
+    byType(render(), 'Map').props.onRegionWillChange(region(next, true, 16.6));
+    expect(all(render(), n => n.props.label === 'Use suggested place')).toHaveLength(0);
+    captured.props.onPress();
+    expect(easeTo).not.toHaveBeenCalled();
+    byType(render(), 'Map').props.onRegionDidChange(region(next, true, 16.6));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    captured.props.onPress();
+    expect(easeTo).not.toHaveBeenCalled();
+    confirmButton(render()).props.onPress();
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ pin: next, address: 'Canonical selected address' });
+  });
+
+  it('enables Confirm from the address alone while the optional nearby lookup never answers', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    const queryRenderedFeatures = vi.fn(() => new Promise(() => undefined));
+    const onConfirm = vi.fn(), easeTo = vi.fn();
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm });
+    byType(render(), 'Map').props.ref.current = { project: projectFrom(pin), queryRenderedFeatures };
+    byType(render(), 'Camera').props.ref.current = { easeTo };
+    byType(render(), 'Map').props.onRegionWillChange(region(pin, true, 17));
+    byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 17));
+    await vi.waitFor(() => expect(queryRenderedFeatures).toHaveBeenCalled());
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false), { timeout: 300 });
+    expect(all(render(), n => n.props.children === 'Canonical selected address').length).toBeGreaterThan(0);
+    confirmButton(render()).props.onPress();
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ pin, address: 'Canonical selected address' });
+    expect(easeTo).not.toHaveBeenCalled();
+  });
+
+  it('routes an accepted suggestion through the existing validating resolution before Confirm', async () => {
+    // canonical resolve() runs reviewJobPinPlacement (the polygon) before it can become ready.
+    const resolved: unknown[] = [];
+    const wrapped = { ...canonical, createCanonicalLocationSelection: (onChange?: (state: canonical.LocationSelectionState) => void) => {
+      const selection = canonical.createCanonicalLocationSelection(onChange);
+      return { ...selection, resolve: (geocoder: Parameters<typeof selection.resolve>[0]) => { resolved.push(selection.snapshot().pin); return selection.resolve(geocoder); } };
+    } };
+    const h = harness('components/job-location-picker.tsx', true, false, { '@/lib/canonical-job-location': wrapped });
+    const near = { ...pin, longitude: pin.longitude + .0002 };
+    const queryRenderedFeatures = vi.fn().mockResolvedValueOnce(hall(near)).mockResolvedValue([]);
+    const onConfirm = vi.fn();
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm });
+    byType(render(), 'Map').props.ref.current = { project: projectFrom(pin), queryRenderedFeatures };
+    byType(render(), 'Camera').props.ref.current = { easeTo: vi.fn() };
+    byType(render(), 'Map').props.onRegionWillChange(region(pin, true, 16.6));
+    byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 16.6));
+    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Use suggested place')).toHaveLength(1));
+    expect(resolved).not.toContainEqual(near);
+    all(render(), n => n.props.label === 'Use suggested place')[0].props.onPress();
+    expect(confirmButton(render()).props.disabled).toBe(true);
+    byType(render(), 'Map').props.onRegionDidChange(region(near, false, 16.6));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    expect(resolved.at(-1)).toEqual(near);
+    confirmButton(render()).props.onPress();
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ pin: near, address: 'Canonical selected address' });
+  });
+
+  it('draws the exact existing service polygon as an informational, non-interactive line', () => {
+    const h = harness('components/job-location-picker.tsx');
+    const tree = h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    const map = byType(tree, 'Map');
+    const source = all(map, n => n.type === 'GeoJSONSource')[0];
+    expect(source).toBeDefined();
+    expect(source.props.data.geometry.type).toBe('Polygon');
+    expect(source.props.data.geometry.coordinates).toEqual([serviceArea.SANTA_ANA_PATEROS_BOUNDARY_RING.map(vertex => [...vertex])]);
+    expect(serviceArea.santaAnaRingFingerprint(source.props.data.geometry.coordinates[0])).toBe(serviceArea.santaAnaRingFingerprint());
+    // GeoJSON sources simplify by default; the boundary must not be an approximation.
+    expect(source.props.tolerance).toBe(0);
+    expect(source.props.onPress).toBeUndefined();
+    const layers = all(source, n => n.type === 'Layer');
+    expect(layers).toHaveLength(1);
+    expect(layers[0].props.type).toBe('line');
+    expect(layers[0].props.onPress).toBeUndefined();
+    expect(map.props.dragPan).toBe(true);
+    expect(map.props.touchZoom).toBe(true);
+    expect(all(tree, n => n.props.testID === 'service-location-center-pin')[0].props.pointerEvents).toBe('none');
+  });
+
+  it('omits the boundary without failing when the runtime lacks layer components', () => {
+    const h = harness('components/job-location-picker.tsx');
+    const runtime = (h.modules['@/lib/native-job-map'] as Props).jobMapRuntime as Props;
+    delete runtime.GeoJSONSource; delete runtime.Layer;
+    const tree = h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    expect(all(tree, n => n.type === 'Map')).toHaveLength(1);
+    expect(all(tree, n => n.type === 'GeoJSONSource' || n.type === 'Layer')).toHaveLength(0);
+  });
+
+  it.each([false, true])('fits the service area only on recovery without selecting, saving or using GPS (reduced motion: %s)', async reduced => {
+    const h = harness('components/job-location-picker.tsx', true, false, { '@/hooks/use-reduced-motion': { useReducedMotion: () => reduced } });
+    const outside = serviceArea.SANTA_ANA_PATEROS_OUTSIDE_LEGACY_PIN;
+    const display = { latitude: 14.54447388, longitude: 121.07260748 };
+    const easeTo = vi.fn(), fitBounds = vi.fn(), onConfirm = vi.fn(), onCancel = vi.fn();
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onCancel, onConfirm });
+    byType(render(), 'Camera').props.ref.current = { easeTo, fitBounds };
+    render(); h.flushEffects();
+    byType(render(), 'Map').props.onRegionWillChange(region(pin));
+    byType(render(), 'Map').props.onRegionDidChange(region(pin));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    expect(all(render(), n => n.props.label === 'Back to service area')).toHaveLength(0);
+    byType(render(), 'Map').props.onRegionWillChange(region(outside));
+    byType(render(), 'Map').props.onRegionDidChange(region(outside));
+    await vi.waitFor(() => expect(all(render(), n => n.type === 'Text' && n.props.children === 'This location is outside Barangay Santa Ana.')).toHaveLength(1));
+    expect(confirmButton(render()).props.disabled).toBe(true);
+    const geocodes = h.geocoder.reverseGeocodeAsync.mock.calls.length;
+    all(render(), n => n.props.label === 'Back to service area')[0].props.onPress();
+    // Recovery lowers the native floor before the post-commit camera request.
+    expect(fitBounds).not.toHaveBeenCalled();
+    expect(byType(render(), 'Camera').props.minZoom).toBeLessThan(15);
+    h.flushEffects();
+    // The native camera call bypasses the mount queue, so it waits one frame for the lowered floor to mount.
+    expect(fitBounds).not.toHaveBeenCalled();
+    h.runFrames();
+    expect(fitBounds).toHaveBeenCalledExactlyOnceWith(
+      [121.06715730, 14.54026308, 121.07805766, 14.54868468],
+      { padding: { top: 172, right: 20, bottom: 426, left: 20 }, bearing: 0, pitch: 0, duration: reduced ? 0 : 300, easing: 'ease' },
+    );
+    expect(easeTo).not.toHaveBeenCalled();
+    expect(all(render(), n => n.props.label === 'Back to service area')).toHaveLength(0);
+    expect(all(render(), n => n.type === 'Text' && n.props.children === 'This location is outside Barangay Santa Ana.')).toHaveLength(0);
+    expect(confirmButton(render()).props.disabled).toBe(true);
+    // Neither the recovery settle nor duplicate idles (including a retained user flag) select.
+    byType(render(), 'Map').props.onRegionDidChange(region(display, false, 14));
+    byType(render(), 'Map').props.onRegionDidChange(region(display, false, 14));
+    byType(render(), 'Map').props.onRegionDidChange(region(display, true, 14));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(h.geocoder.reverseGeocodeAsync).toHaveBeenCalledTimes(geocodes);
+    expect(confirmButton(render()).props.disabled).toBe(true);
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(h.geocoder.getForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(h.geocoder.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+    expect(h.geocoder.getCurrentPositionAsync).not.toHaveBeenCalled();
+    // A deliberate move still selects and only the explicit Confirm commits.
+    byType(render(), 'Map').props.onRegionWillChange(region(pin));
+    byType(render(), 'Map').props.onRegionDidChange(region(pin));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    expect(onConfirm).not.toHaveBeenCalled();
+    confirmButton(render()).props.onPress();
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ pin, address: 'Canonical selected address' });
+  });
+
+  it('refits recovery for measured overlays, then lets a newer gesture cancel refits without a forced zoom', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    const easeTo = vi.fn(), fitBounds = vi.fn();
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    byType(render(), 'Camera').props.ref.current = { easeTo, fitBounds };
+    render(); h.flushEffects();
+    byType(render(), 'Map').props.onRegionWillChange(region(serviceArea.SANTA_ANA_PATEROS_OUTSIDE_LEGACY_PIN));
+    byType(render(), 'Map').props.onRegionDidChange(region(serviceArea.SANTA_ANA_PATEROS_OUTSIDE_LEGACY_PIN));
+    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Back to service area')).toHaveLength(1));
+    all(render(), n => n.props.label === 'Back to service area')[0].props.onPress();
+    render(); h.flushEffects(); h.runFrames();
+    all(render(), n => n.props.testID === 'location-picker-sheet')[0].props.onLayout({ nativeEvent: { layout: { height: 360 } } });
+    render(); h.flushEffects(); h.runFrames();
+    expect(fitBounds).toHaveBeenCalledTimes(2);
+    expect(fitBounds.mock.calls[1][1].padding).toEqual({ top: 172, right: 20, bottom: 444, left: 20 });
+    expect(easeTo).not.toHaveBeenCalled();
+    byType(render(), 'Map').props.onRegionWillChange(region(pin, true, 14));
+    all(render(), n => n.props.testID === 'location-picker-sheet')[0].props.onLayout({ nativeEvent: { layout: { height: 300 } } });
+    render(); h.flushEffects(); h.runFrames();
+    expect(fitBounds).toHaveBeenCalledTimes(2);
+    expect(byType(render(), 'Camera').props.minZoom).toBeLessThan(15);
+    byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 14));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    expect(byType(render(), 'Camera').props.minZoom).toBeLessThan(15);
+    expect(easeTo).not.toHaveBeenCalled();
+    byType(render(), 'Map').props.onRegionWillChange(region(pin, true, 16));
+    byType(render(), 'Map').props.onRegionDidChange(region(pin, true, 16));
+    expect(byType(render(), 'Camera').props.minZoom).toBe(15);
+  });
+
+  it('cancels a queued recovery fit when a newer user gesture starts before its effect', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    const fitBounds = vi.fn();
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    byType(render(), 'Camera').props.ref.current = { easeTo: vi.fn(), fitBounds };
+    render(); h.flushEffects();
+    byType(render(), 'Map').props.onRegionWillChange(region(serviceArea.SANTA_ANA_PATEROS_OUTSIDE_LEGACY_PIN));
+    byType(render(), 'Map').props.onRegionDidChange(region(serviceArea.SANTA_ANA_PATEROS_OUTSIDE_LEGACY_PIN));
+    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Back to service area')).toHaveLength(1));
+    const oldRecoveryAction = all(render(), n => n.props.label === 'Back to service area')[0].props.onPress;
+    oldRecoveryAction();
+    render(); // queue the post-commit effect, but a gesture takes authority first
+    byType(render(), 'Map').props.onRegionWillChange(region(pin));
+    h.flushEffects();
+    expect(fitBounds).not.toHaveBeenCalled();
+    byType(render(), 'Map').props.onRegionDidChange(region(pin));
+    await vi.waitFor(() => expect(confirmButton(render()).props.disabled).toBe(false));
+    oldRecoveryAction(); render(); h.flushEffects();
+    expect(fitBounds).not.toHaveBeenCalled();
+    expect(confirmButton(render()).props.disabled).toBe(false);
+  });
+
+  it('validates a recovery bbox center and falls back to the existing anchor when it is unsuitable', async () => {
+    const evaluate = vi.fn(serviceArea.evaluateSantaAnaJobPin);
+    const h = harness('components/job-location-picker.tsx', true, false, {
+      '@/lib/santa-ana-service-area': { ...serviceArea, evaluateSantaAnaJobPin: evaluate,
+        santaAnaRingBBox: () => ({ west: '0', south: '0', east: '2', north: '2' }) },
+    });
+    const easeTo = vi.fn(), fitBounds = vi.fn();
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    byType(render(), 'Camera').props.ref.current = { easeTo, fitBounds };
+    render(); h.flushEffects();
+    byType(render(), 'Map').props.onRegionWillChange(region(serviceArea.SANTA_ANA_PATEROS_OUTSIDE_LEGACY_PIN));
+    byType(render(), 'Map').props.onRegionDidChange(region(serviceArea.SANTA_ANA_PATEROS_OUTSIDE_LEGACY_PIN));
+    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Back to service area')).toHaveLength(1));
+    all(render(), n => n.props.label === 'Back to service area')[0].props.onPress();
+    render(); h.flushEffects(); h.runFrames();
+    expect(evaluate).toHaveBeenCalledWith({ longitude: 1, latitude: 1 });
+    expect(fitBounds).not.toHaveBeenCalled();
+    expect(easeTo).toHaveBeenCalledExactlyOnceWith({
+      center: coordinates.pinToLngLat(location.SANTA_ANA_PATEROS_DISPLAY_REGION), zoom: 14,
+      padding: { top: 172, right: 20, bottom: 426, left: 20 }, bearing: 0, pitch: 0, duration: 300,
+    });
+    byType(render(), 'Map').props.onRegionDidChange(region(location.SANTA_ANA_PATEROS_DISPLAY_REGION, false, 14));
+    expect(confirmButton(render()).props.disabled).toBe(true);
+    expect(h.geocoder.reverseGeocodeAsync).not.toHaveBeenCalled();
+  });
+
+  it('keeps Back to service area inert while the picker is busy locating', async () => {
+    const h = harness('components/job-location-picker.tsx');
+    const outside = serviceArea.SANTA_ANA_PATEROS_OUTSIDE_LEGACY_PIN;
+    h.geocoder.getCurrentPositionAsync.mockImplementationOnce(() => new Promise(() => undefined));
+    const easeTo = vi.fn();
+    const render = () => h.render(h.exports.JobLocationPicker, { pin: null, note: null, onNote: vi.fn(), onConfirm: vi.fn() });
+    byType(render(), 'Camera').props.ref.current = { easeTo };
+    byType(render(), 'Map').props.onRegionWillChange(region(outside));
+    byType(render(), 'Map').props.onRegionDidChange(region(outside));
+    await vi.waitFor(() => expect(all(render(), n => n.props.label === 'Back to service area')).toHaveLength(1));
+    all(render(), n => n.props.accessibilityLabel === location.COPY.useCurrentLocation)[0].props.onPress();
+    await vi.waitFor(() => expect(h.geocoder.getCurrentPositionAsync).toHaveBeenCalled());
+    const back = all(render(), n => n.props.label === 'Back to service area')[0];
+    expect(back.props.disabled).toBe(true);
+    back.props.onPress();
+    expect(easeTo).not.toHaveBeenCalled();
   });
 });

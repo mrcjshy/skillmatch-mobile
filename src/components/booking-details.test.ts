@@ -39,6 +39,12 @@ function load(file: string): Props {
   const require = (name: string): any => {
       if (name === '@/components/refinement-theme') return { ...load('src/components/refinement-theme.tsx'), RefinementThemeProvider: 'RefinementThemeProvider' };
     if (name === 'react-native') return native;
+    if (name === 'react-native-worklets') return { scheduleOnRN: (fn: any) => fn() };
+    if (name === 'react-native-reanimated') return { __esModule: true, default: { View: 'Reanimated.View' }, cancelAnimation() {}, ReduceMotion: { System: 'system', Never: 'never' }, Extrapolation: { CLAMP: 'clamp' }, Easing: { bezier: () => 'curve' }, interpolate: () => 1, withTiming: (value: number) => value, withDelay: (_ms: number, value: any) => value, withSequence: (...steps: any[]) => steps.at(-1), withRepeat: (value: any) => value, withSpring: (value: number) => value,
+      useSharedValue: (initial: any) => { let value = initial; return { get: () => value, set: (next: any) => { value = next; } }; }, useAnimatedStyle: (fn: any) => fn() };
+    if (name === 'react-native-gesture-handler') return { GestureHandlerRootView: 'GestureHandlerRootView', GestureDetector: ({ children }: any) => children, Gesture: { Pan: () => {
+      const builder = new Proxy({}, { get: () => () => builder }); return builder;
+    } } };
     if (name === '@/components/booking-location-map') return { BookingLocationMap: 'BookingLocationMap' };
     if (name === 'expo-crypto') return { randomUUID: () => 'test-operation' };
     if (name === 'expo-image') return { Image: 'Image' };
@@ -47,10 +53,12 @@ function load(file: string): Props {
     if (name === 'react') return { createContext: (value: any) => ({ value }), useContext: (context: any) => context.value, useState: (initial: any) => { const i=cursor++; if (!(i in state)) state[i]=typeof initial === 'function' ? initial() : initial; const captured=state; return [state[i], (next: any) => { captured[i]=typeof next === 'function' ? next(captured[i]) : next; }]; }, useRef: (value: any) => ({ current: value }), useCallback: (fn: any) => fn, useMemo: (fn: any) => fn(), useEffect() {}, useLayoutEffect() {} };
     if (name === 'tamagui') return { XStack: 'View', YStack: 'View' };
     if (name === 'expo-router') return { Stack: { Screen: 'StackScreen' }, useRouter: () => ({ push: (route: any) => pushCalls.push(route), canGoBack: () => true, back: () => pushCalls.push('back') }), useFocusEffect() {}, useLocalSearchParams: () => ({}),
-      usePathname: () => '/client/booking-details', useGlobalSearchParams: () => ({ bookingId: ID }) };
+      usePathname: () => '/client/booking-details', useGlobalSearchParams: () => ({ bookingId: ID }), useNavigation: () => ({}),
+      useRoute: () => ({ key: 'booking-details', name: 'client/booking-details', params: { bookingId: ID } }), useIsFocused: () => true };
     if (name === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 24, bottom: 16, left: 0, right: 0 }) };
     if (name === '@/hooks/use-reduced-motion') return { useReducedMotion: () => false };
     // UI-V2: press feedback is native motion; the card parts render through an inert MotionView here.
+    if (name === '@/components/skeleton') return { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' };
     if (name === '@/components/motion') return { MotionView: 'MotionView', usePressScale: () => ({ style: undefined, onPressIn() {}, onPressOut() {} }) };
     if (name === '@/global.css') return {};
     if (name === 'expo-router/react-navigation') return { useHeaderHeight: () => 56 };
@@ -70,18 +78,120 @@ function load(file: string): Props {
 const theme=load('src/constants/theme.ts').SkillMatchTheme.ui;
 const Details=load('src/components/booking-details.tsx').default, List=load('src/components/my-bookings-list.tsx').default;
 const Lifecycle=load('src/components/booking-lifecycle.tsx').default, Payment=load('src/components/booking-payment.tsx').default;
+function namedComponents(tree: any, name: string): any[] {
+  if (Array.isArray(tree)) return tree.flatMap(node => namedComponents(node, name));
+  if (!tree || typeof tree !== 'object') return [];
+  return [...(tree.type?.name === name ? [tree] : []), ...namedComponents(tree.props.children, name)];
+}
 function render(component: any, props: Props, seeds: any[] = []) { state=seeds; cursor=0; return component(props); }
 function all(tree: any, kind: string): any[] { if (Array.isArray(tree)) return tree.flatMap(x=>all(x,kind)); if (!tree || typeof tree !== 'object') return []; return [...(tree.type === kind ? [tree] : []), ...all(tree.props.children,kind)]; }
-function text(tree: any): string { if (Array.isArray(tree)) return tree.map(text).join(''); if (tree==null || typeof tree === 'boolean') return ''; return typeof tree === 'object' ? text(tree.props.children) : String(tree); }
-function visibleText(tree: any): string { if (Array.isArray(tree)) return tree.map(visibleText).join(''); if (tree==null || typeof tree === 'boolean') return ''; if (typeof tree !== 'object') return String(tree); if (flat(tree.props.style).display === 'none' || tree.props.accessibilityElementsHidden) return ''; return visibleText(tree.props.children); }
+function text(tree: any): string { if (Array.isArray(tree)) return tree.map(text).join(''); if (tree==null || typeof tree === 'boolean') return ''; return typeof tree === 'object' ? tree.type === 'Skeleton' ? tree.props.label : text(tree.props.children) : String(tree); }
+function visibleText(tree: any): string { if (Array.isArray(tree)) return tree.map(visibleText).join(''); if (tree==null || typeof tree === 'boolean') return ''; if (typeof tree !== 'object') return String(tree); if (tree.type === 'Skeleton') return tree.props.label; if (flat(tree.props.style).display === 'none' || tree.props.accessibilityElementsHidden) return ''; return visibleText(tree.props.children); }
 const ID='11111111-1111-4111-8111-111111111111';
 const name='Maria Ysabel dela Cruz Villanueva de los Santos';
 function booking(role='client', status='confirmed', id=ID): Props { return { booking_id:id,job_id:'job-a', booking_status:status,payment_status:'unpaid',booked_at:'2030-12-30T07:00:00Z',completed_at:null, job_title:'Masusing pagkukumpuni ng malaking bahay at paglilinis ng tahanan',job_description:'Long supplied description with Unicode ñ',job_scheduled_at:'2030-12-31T07:00:00Z',job_address:'EXACT PRIVATE ADDRESS',job_barangay:'Barangay San Isidro Labrador na may mahabang pangalan',job_city:'Santa Ana Pampanga',job_budget:987654321.75, ...(role==='client' ? { worker_user_id:'worker-a',worker_full_name:name,worker_phone:'09171234567',worker_barangay:'Worker barangay',worker_skills:['Plumbing','Carpentry'],worker_is_verified:true,worker_rating_avg:4.9,worker_rating_count:1234 } : {client_user_id:'client-a',client_full_name:name,client_phone:'09171234567'}) }; }
-function detail(role='client',status='confirmed',overrides: Props={}) { return {booking:booking(role,status),payment:{id:'payment-a',payment_method:'cod',payment_status:'paid'},paymentReadSucceeded:true,jobPaymentMethod:'cash',jobPaymentReady:true,isRated:false,reportReadSucceeded:true,isReported:false,exactLocation:{status:'skipped'},jobPhotos:{status:'skipped'},...overrides}; }
+function detail(role='client',status='confirmed',overrides: Props={}) { return {booking:booking(role,status),workerProgress:{bookingId:ID,arrivedAt:'2026-10-30T01:00:00Z',serviceCompletedAt:'2026-10-30T02:00:00Z'},payment:{id:'payment-a',payment_method:'cod',payment_status:'paid'},paymentReadSucceeded:true,jobPaymentMethod:'cash',jobPaymentReady:true,isRated:false,reportReadSucceeded:true,isReported:false,exactLocation:{status:'skipped'},jobPhotos:{status:'skipped'},...overrides}; }
 function detailTree(role='client',status='confirmed',overrides:Props={},suppress=false) { disclosureStates.clear(); return render(Details,{role,bookingId:ID},[detail(role,status,overrides),false,false,null,null,suppress]); }
 function contrast(tree:any,parent=theme.colors.canvas,pressed=false,opacity=1) { if(Array.isArray(tree)){tree.forEach(x=>contrast(x,parent,pressed,opacity));return;} if(!tree || typeof tree!=='object')return; const style=flat(typeof tree.props.style==='function'?tree.props.style({pressed}):tree.props.style), bg=style.backgroundColor && style.backgroundColor!=='transparent'?style.backgroundColor:parent, alpha=opacity*(style.opacity??1); if(tree.type==='Text' && style.color && /^#[0-9a-f]{6}$/i.test(bg)) { const lum=(c:string)=>c.slice(1).match(/../g)!.map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4).reduce((a,x,i)=>a+x*[.2126,.7152,.0722][i],0); const a=lum(style.color),b=lum(bg); expect(alpha).toBe(1); expect((Math.max(a,b)+.05)/(Math.min(a,b)+.05)).toBeGreaterThanOrEqual(4.5); } contrast(tree.props.children,bg,pressed,alpha); }
+function expandedWorkerTree(overrides:Props={}) { disclosureStates.clear(); return render(Details,{role:'worker',bookingId:ID,initialSheetPosition:'expanded'},[detail('worker','confirmed',overrides),false,false,null,null,false]); }
 const disclosures = (tree: any) => all(tree, 'Pressable').filter(node => node.props.accessibilityState?.expanded !== undefined);
 const statusesFor = (role: string) => ['pending', 'confirmed', 'completed', 'cancelled', 'no_show'].map(status => [role, status]);
+
+it('payment closing flow contains exactly one Client finalization instance, alongside the verified paid state', () => {
+  unrendered = new Set(['BookingPayment', 'BookingLifecycle']);
+  try {
+    for (const method of ['cod', 'qrph']) {
+      const tree = detailTree('client', 'confirmed', { payment: { id: 'p', payment_method: method, payment_status: 'paid' } });
+      const completion = namedComponents(tree, 'BookingLifecycle').filter(node => node.props.showCompletion);
+      expect(completion).toHaveLength(1);
+      const context = all(tree, 'View').filter(node => namedComponents(node, 'BookingPayment').length === 1 && namedComponents(node, 'BookingLifecycle').some(item => item.props.showCompletion)).at(-1);
+      expect(context).toBeTruthy();
+      expect(text(context)).not.toContain('About the job');
+      expect(namedComponents(context, 'BookingPayment')[0].props.payment.payment_status).toBe('paid');
+    }
+  } finally { unrendered = new Set(); }
+});
+
+it('legacy paid Client booking can Finish Booking without Worker milestones or a duplicate standalone action', () => {
+  const tree = detailTree('client', 'confirmed', { workerProgress: null });
+  expect(all(tree, 'Pressable').filter(node => node.props.accessibilityLabel === 'Finish Booking')).toHaveLength(1);
+  expect(visibleText(tree)).not.toContain('Mark as completed');
+  expect(visibleText(tree)).not.toContain('Booking actions');
+});
+
+it('unpaid and unknown payment, restricted status and Worker role never offer Client Finish Booking', () => {
+  const trees = [
+    detailTree('client', 'confirmed', { payment: { id: 'p', payment_method: 'cod', payment_status: 'pending' } }),
+    detailTree('client', 'confirmed', { paymentReadSucceeded: false }),
+    detailTree('worker', 'confirmed'),
+    ...['pending', 'completed', 'cancelled', 'no_show'].map(status => detailTree('client', status)),
+  ];
+  for (const tree of trees) expect(visibleText(tree)).not.toContain('Finish Booking');
+});
+
+it('keeps the placeholder when no read has answered yet, instead of claiming the booking is unavailable', () => {
+  // The first read is skipped while the app is still coming to the foreground: loading has ended with no answer.
+  const tree = render(Details, { role: 'client', bookingId: ID }, [null, false, false, null, null, false]);
+  expect(visibleText(tree)).toContain('Loading booking…');
+  expect(visibleText(tree)).not.toContain('This booking is unavailable.');
+});
+it('says a booking is unavailable only when a finished read found none', () => {
+  const tree = render(Details, { role: 'client', bookingId: ID }, [null, false, false, 'This booking is unavailable.', null, false]);
+  expect(visibleText(tree)).toContain('This booking is unavailable.');
+});
+
+it('the Worker status chip reflects persisted arrival rather than a conflicting generic Confirmed label', () => {
+  accountExtra = { is_active: true, role: 'worker' };
+  try {
+    const tree = detailTree('worker', 'confirmed', { workerProgress: { bookingId: ID, arrivedAt: '2026-10-30T01:00:00Z', serviceCompletedAt: null } });
+    expect(all(panelOf(tree), 'Text').filter(node => text(node) === 'Confirmed')).toHaveLength(0);
+    expect(visibleText(panelOf(tree))).toContain('Arrived at Job Site');
+  } finally { accountExtra = {}; }
+});
+
+it('keeps details scrollable above the dock when large text leaves too little map-panel space', () => {
+  accountExtra = { is_active: true, role: 'worker' };
+  try {
+    const tree = render(Details, { role: 'worker', bookingId: ID }, [detail('worker'), false, false, null, null, false, 0, 220, 300, 640]);
+    expect(all(tree, 'ScrollView')).toHaveLength(1);
+    expect(all(tree, 'BookingLocationMap')).toHaveLength(0);
+  } finally { accountExtra = {}; }
+});
+
+it('reserves both the measured panel and stationary Worker dock in the actual map inset', () => {
+  accountExtra = { is_active: true, role: 'worker' };
+  try {
+    const tree = render(Details, { role: 'worker', bookingId: ID }, [detail('worker'), false, false, null, null, false, 0, 220, 160]);
+    const map = all(tree, 'BookingLocationMap')[0];
+    expect(map.props.insets.bottom).toBe(380);
+  } finally { accountExtra = {}; }
+});
+
+it('Worker accepted booking shows only arrival swipe, deferring cash collection until service completion', () => {
+  accountExtra = { is_active: true, role: 'worker' };
+  try {
+    const overrides = { workerProgress: { bookingId: ID, arrivedAt: null, serviceCompletedAt: null }, payment: { id: 'payment-a', payment_method: 'cod', payment_status: 'pending' } };
+    // Collapsed sheet: the milestone status shows, the swipe waits until the details are pulled up.
+    const collapsed = detailTree('worker', 'confirmed', overrides);
+    // One status, in the sheet header: nothing repeats it under the collapsed sheet.
+    expect(visibleText(panelOf(collapsed)).match(/Accepted/g)).toHaveLength(1);
+    expect(visibleText(collapsed)).not.toContain('Accepted');
+    expect(visibleText(collapsed)).not.toContain('Swipe to Confirm Arrival');
+    const tree = expandedWorkerTree(overrides);
+    expect(visibleText(tree)).toContain('Swipe to Confirm Arrival');
+    expect(visibleText(tree)).not.toContain('Swipe to Mark as Completed');
+    expect(visibleText(tree)).not.toContain('Collect payment');
+  } finally { accountExtra = {}; }
+});
+it('Worker arrived booking offers completion swipe; unavailable progress never fabricates an action', () => {
+  accountExtra = { is_active: true, role: 'worker' };
+  try {
+    expect(visibleText(expandedWorkerTree({ workerProgress: { bookingId: ID, arrivedAt: '2026-10-30T01:00:00Z', serviceCompletedAt: null } }))).toContain('Swipe to Mark as Completed');
+    const unavailable = visibleText(expandedWorkerTree({ workerProgress: null }));
+    expect(unavailable).toContain('Progress Unavailable');
+    expect(unavailable).not.toContain('Swipe to Confirm Arrival');
+  } finally { accountExtra = {}; }
+});
 
 it('uses one layout, one theme and no disclosures for every role and status: nothing important is hidden', () => {
   for (const [role, status] of [...statusesFor('worker'), ...statusesFor('client')]) {
@@ -99,7 +209,7 @@ it('uses one layout, one theme and no disclosures for every role and status: not
 
 it('orders the Worker screen: booking card (ID, time, payment to collect), client, location, about, record, support, then cancellation last', () => {
   const tree = detailTree('worker', 'confirmed', { payment: { id: 'payment-a', payment_method: 'cod', payment_status: 'pending' } }), copy = visibleText(tree);
-  const order = ['Booking ID', 'Date & time', 'Payment you collect', 'Collect payment', 'Client details', 'Job location', 'About the job', 'Booking record', 'Help and reporting', 'Chat and FAQs', 'Cancel booking'].map(label => copy.indexOf(label));
+  const order = ['Booking ID', 'Date & time', '987,654,321.75', 'Client details', 'Job location', 'About the job', 'Booking record', 'Help and reporting', 'Chat and FAQs', 'Cancel booking'].map(label => copy.indexOf(label));
   expect(order.every(index => index >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((x, y) => x - y));
   const title = all(tree, 'Text').find(x => text(x) === booking('worker').job_title);
@@ -113,6 +223,8 @@ it('orders the Worker screen: booking card (ID, time, payment to collect), clien
   expect(flat(idNode.props.style).color).toBe(theme.colors.textPrimary); expect(idNode.props.numberOfLines).toBeUndefined();
   // The method is stated once (payment row), not again by the embedded payment step.
   expect(copy.match(/Payment method: /g) ?? []).toHaveLength(0);
+  // The row is the method and the amount, nothing else; the role's step sits under it.
+  for (const detail of ['Payment you collect', 'Collect payment', 'Nothing to collect']) expect(copy).not.toContain(detail);
   const budget = all(tree, 'Text').find(x => text(x).includes('987,654,321.75'));
   expect(flat(budget.props.style)).toMatchObject({ fontWeight: '700', fontSize: theme.type.money.fontSize }); expect(budget.props.numberOfLines).toBeUndefined();
   for (const value of [name, 'EXACT PRIVATE ADDRESS', booking('worker').job_description, ID]) expect(copy).toContain(value);
@@ -122,9 +234,10 @@ it('orders the Worker screen: booking card (ID, time, payment to collect), clien
 
 it('keeps the Client layout complete: booking card with the payment they make, then the worker, location, lifecycle, record and support', () => {
   const tree = detailTree('client', 'confirmed', { payment: { id: 'p', payment_method: 'cod', payment_status: 'pending' } }), copy = visibleText(tree);
-  const order = ['Booking ID', 'Payment you make', 'Worker details', 'Job location', 'Cancel booking', 'About the job', 'Booking record', 'Help and reporting', 'Chat and FAQs'].map(label => copy.indexOf(label));
+  const order = ['Booking ID', '987,654,321.75', 'Worker details', 'Job location', 'Cancel booking', 'About the job', 'Booking record', 'Help and reporting', 'Chat and FAQs'].map(label => copy.indexOf(label));
   expect(order.every(index => index >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((x, y) => x - y));
+  expect(copy).not.toContain('Payment you make');
   for (const value of [name, 'Worker barangay', 'Plumbing • Carpentry', 'Open chat', '987,654,321.75']) expect(copy).toContain(value);
   expect(copy).not.toContain('09171234567');
   expect(all(tree, 'Pressable').some(node => node.props.accessibilityLabel === 'Call booking counterpart')).toBe(true);
@@ -146,7 +259,7 @@ it('offers cancellation to either party directly while completion remains Client
   for (const role of ['client', 'worker']) {
     const tree = render(Lifecycle, { role, bookingId: ID, showCompletion: true, showCancellation: true, onChanged: async () => {} });
     expect(visibleText(tree)).toContain('Cancel booking');
-    expect(visibleText(tree).includes('Mark as completed')).toBe(role === 'client');
+    expect(visibleText(tree).includes('Finish Booking')).toBe(role === 'client');
     expect(visibleText(tree)).not.toContain('Either party may cancel.'); // UI-V3: removed by owner direction
     expect(all(tree, 'Collapsible')).toHaveLength(0);
   }
@@ -162,7 +275,7 @@ it('uses effective contrast in populated shared details at rest and pressed, wit
 it('orders lifecycle children before separated cancellation and retains validated cancellation drafts',()=>{
   const props={role:'client',bookingId:ID,showCompletion:true,showCancellation:true,onChanged:async()=>{},children:{type:'Text',props:{children:'COMMUNICATION SLOT'}}};
   const seeds=[null,null,true,null,'']; let tree=render(Lifecycle,props,seeds);
-  expect(text(tree).indexOf('Mark as completed')).toBeLessThan(text(tree).indexOf('COMMUNICATION SLOT'));
+  expect(text(tree).indexOf('Finish Booking')).toBeLessThan(text(tree).indexOf('COMMUNICATION SLOT'));
   expect(text(tree).indexOf('COMMUNICATION SLOT')).toBeLessThan(text(tree).indexOf('Cancel booking'));
   const radios=all(tree,'Pressable').filter(x=>x.props.accessibilityRole==='radio'); expect(radios.length).toBeGreaterThan(0);
   for(const radio of radios) for(const pressed of [false,true]) { const style=flat(radio.props.style({pressed}));expect(style.minHeight).toBeGreaterThanOrEqual(48);expect(style.minWidth).toBeGreaterThanOrEqual(48);expect(style.opacity).toBeUndefined(); }
@@ -185,7 +298,7 @@ it('has exactly one filled primary on screen: chat yields to a payment step or t
   const waiting = detailTree('worker', 'confirmed', { payment: { id: 'p', payment_method: 'cod', payment_status: 'pending' } });
   expect(filled(waiting)).toEqual(['Confirm cash received']);
   // Client with completion available: completion owns the primary.
-  expect(filled(detailTree('client', 'confirmed', { payment: { id: 'p', payment_method: 'cod', payment_status: 'paid' } }))).toEqual(['Mark as completed']);
+  expect(filled(detailTree('client', 'confirmed', { payment: { id: 'p', payment_method: 'cod', payment_status: 'paid' } }))).toEqual(['Finish Booking']);
   // Call is always outlined, never filled.
   expect(filled(waiting)).not.toContain('Call booking counterpart');
 });
@@ -232,7 +345,7 @@ it('mounts the map visibly for both roles with the authorized projection and rem
   }
 });
 
-it('renders informational Confirmed and unchanged other status chips in actual details and chat', () => {
+it('renders informational Worker progress while Client, chat and terminal status chips keep their contracts', () => {
   const colors = theme.colors;
   const expected: Props = { confirmed: ['Confirmed', colors.info, colors.infoTint], completed: ['Completed', colors.success, colors.successTint], pending: ['Pending', colors.warning, colors.warningTint], cancelled: ['Cancelled', colors.error, colors.errorTint], no_show: ['No show', colors.error, colors.errorTint] };
   const assertChip = (tree: any, label: string, foreground: string, background: string) => {
@@ -240,7 +353,7 @@ it('renders informational Confirmed and unchanged other status chips in actual d
     const chip = all(tree, 'View').find(x => x.props.children === labelNode); expect(flat(chip.props.style).backgroundColor).toBe(background);
     contrast(tree, colors.canvas); contrast(tree, colors.canvas, true);
   };
-  for (const role of ['client', 'worker']) for (const [status, [label, foreground, background]] of Object.entries(expected)) assertChip(detailTree(role, status), label, foreground, background);
+  for (const role of ['client', 'worker']) for (const [status, [label, foreground, background]] of Object.entries(expected)) assertChip(detailTree(role, status), role === 'worker' && status === 'confirmed' ? 'Job Completed' : label, foreground, background);
   const Chat = load('src/components/booking-chat.tsx').default;
   for (const role of ['client', 'worker']) {
     const tree = render(Chat, { role, bookingId: ID }, [false, false, null, { status: 'confirmed', jobTitle: 'Supplied job', counterpartName: name }, [], role + ':client-a:' + ID, '', false, null]);
@@ -429,6 +542,25 @@ it('retains the expanded detent when focus refresh remounts the protected map an
   } finally { accountExtra = {}; unrendered.delete('BookingSheet'); }
 });
 
+it('keeps the Worker payment step to its status and action, with no instruction text', () => {
+  const unpaid = text(detailTree('worker', 'completed', { payment: { id: 'p', payment_method: 'cod', payment_status: 'pending' } }));
+  expect(unpaid).toContain('Confirm cash received');
+  expect(unpaid).not.toContain('Nothing to collect until then.');
+  const paid = text(detailTree('worker', 'completed', { payment: { id: 'p', payment_method: 'cod', payment_status: 'paid' } }));
+  expect(paid).toContain('Cash received — paid');
+});
+
+it('restores the stack header (Back) when the same screen leaves map-first, e.g. after completion', () => {
+  for (const role of ['worker', 'client']) {
+    accountExtra = { is_active: true, role };
+    try {
+      const tree = detailTree(role, 'completed');
+      expect(all(tree, 'ScrollView')).toHaveLength(1);
+      expect(all(tree, 'StackScreen')[0].props.options).toEqual({ headerShown: true });
+    } finally { accountExtra = {}; }
+  }
+});
+
 it('a confirmed booking opens map-first: one full-screen map, a floating Back and no stack header or page scroll', () => {
   for (const role of ['worker', 'client']) {
     pushCalls.length = 0;
@@ -457,7 +589,7 @@ it('the collapsed panel shows status, title, schedule and the location controls;
   const tree = mapFirstTree('worker', { exactLocation: pinLocation, payment: { id: 'p', payment_method: 'cod', payment_status: 'pending' } });
   let panel = panelOf(tree);
   const header = visibleText(headerOf(panel));
-  for (const value of ['Confirmed', booking('worker').job_title, 'PRIMARY CONTROLS']) expect(header).toContain(value);
+  for (const value of ['Job Completed', booking('worker').job_title, 'PRIMARY CONTROLS']) expect(header).toContain(value);
   // UI-V3: no schedule · budget line in the header; the card below states both once.
   expect(header).not.toContain('987,654,321.75');
   let body = bodyOf(panel);
@@ -470,7 +602,7 @@ it('the collapsed panel shows status, title, schedule and the location controls;
   const copy = text(body);
   // UI-V3: the Worker's sharing details render untitled (no "Your live location" heading).
   expect(copy).not.toContain('Your live location');
-  const order = ['Booking ID', 'Date & time', 'Payment you collect', 'Client details', 'Open chat', 'Video call', 'SECONDARY DETAILS', 'About the job', 'Booking record', 'Chat and FAQs', 'Cancel booking'].map(label => copy.indexOf(label));
+  const order = ['Booking ID', 'Date & time', '987,654,321.75', 'Client details', 'Open chat', 'Video call', 'SECONDARY DETAILS', 'About the job', 'Booking record', 'Chat and FAQs', 'Cancel booking'].map(label => copy.indexOf(label));
   expect(order.every(index => index >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((x, y) => x - y));
   // The address and Open in Maps remain; no second map is drawn inside the panel.

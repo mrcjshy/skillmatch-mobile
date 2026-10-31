@@ -122,7 +122,7 @@ function AdminDirectoryContent({ kind }: { kind: DirectoryKind }) {
           </View>
           {error ? <InlineStatus variant="error" message={error}
             action={<AppButton label="Retry" variant="secondary" onPress={() => setReload((n) => n + 1)} />} /> : null}
-          {loading && !current ? <InlineStatus variant="loading" message={`Loading ${title.toLowerCase()}…`} /> : null}
+          {loading && !current ? <InlineStatus variant="loading" skeleton="rows" message={`Loading ${title.toLowerCase()}…`} /> : null}
           {current ? <Text style={styles.count}>{current.total_count} result{current.total_count === 1 ? '' : 's'} · Page {page} of {totalPages}</Text> : null}
         </View>
       }

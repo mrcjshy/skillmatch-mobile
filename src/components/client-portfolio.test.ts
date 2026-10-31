@@ -192,7 +192,8 @@ it('retains project text and an accessible fallback when a private image cannot 
   expect(nodes(card()).filter(node => node.type === 'Image')).toHaveLength(0);
 });
 
-it('replaces an obsolete Worker resume deep link with Worker Profile without loading private resume data', () => {
+// D-004 AI-02: the Worker route renders the existing deterministic builder (restored 2026-10-26 by owner direction).
+it('renders the Worker Auto Resume Builder on the Worker resume route', () => {
   const exports: Record<string, any> = {};
   const dependencies: string[] = [];
   const jsx = (type: unknown, props: unknown) => ({ type, props });
@@ -203,9 +204,10 @@ it('replaces an obsolete Worker resume deep link with Worker Profile without loa
     dependencies.push(name);
     if (name === 'expo-router') return { Redirect: 'Redirect', Stack: { Screen: 'Screen' } };
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'Fragment' };
-    return { default: 'LegacyResume', RESUME_COPY: { title: 'Legacy' } };
+    return { __esModule: true, default: 'LegacyResume', RESUME_COPY: { title: 'Legacy' } };
   }, exports);
-  expect(exports.default()).toEqual({ type: 'Redirect', props: { href: '/worker/profile' } });
-  expect(dependencies).not.toContain('@/components/resume-builder');
-  expect(dependencies).not.toContain('@/lib/resume');
+  const tree = exports.default();
+  expect(tree.type).toBe('Fragment');
+  expect(tree.props.children.map((child: { type: unknown }) => child.type)).toEqual(['Screen', 'LegacyResume']);
+  expect(dependencies).toContain('@/components/resume-builder');
 });

@@ -1,4 +1,5 @@
-import { type Href, Stack, useFocusEffect, useGlobalSearchParams, usePathname, useRouter } from 'expo-router';
+import { type Href, Stack, useFocusEffect, useGlobalSearchParams, usePathname, useRoute, useRouter } from 'expo-router';
+import { useSessionContinuationRestore } from '@/hooks/use-session-continuation-restore';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AppState,
@@ -12,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/app-button';
+import { KeyboardSpacer } from '@/components/skeleton';
 import { CardDivider, FactLine, IdentifierBlock, PaymentRow, SupportEntry } from '@/components/booking-card-parts';
 import { AppIconButton } from '@/components/app-icon-button';
 import { BookingLocationMap, type LocationPanel } from '@/components/booking-location-map';
@@ -19,6 +21,8 @@ import { BookingSheet } from '@/components/booking-sheet';
 import { AppChip } from '@/components/app-chip';
 import BookingLifecycle from '@/components/booking-lifecycle';
 import BookingPayment from '@/components/booking-payment';
+import WorkerBookingProgress from '@/components/worker-booking-progress';
+import { loadWorkerProgress, workerProgressPresentation, type WorkerProgress } from '@/lib/worker-booking-progress';
 import { InlineStatus } from '@/components/inline-status';
 import { JobPhotoGallery } from '@/components/job-photo-gallery';
 import { WorkerAssignedJobLocation, nativeJobMapsLoaded, openWorkerMapsUrl } from '@/components/job-location-map';
@@ -87,8 +91,10 @@ import {
 } from '@/lib/booking-details-freshness';
 import {
   BOOKING_STATUS_CHANGED,
+  NOTIFICATION_INSERTED,
   bookingMessagesTopic,
   subscribeInvalidation,
+  userNotificationsTopic,
 } from '@/lib/realtime';
 import { bookingDialUrl } from '@/lib/booking-call';
 import { createDetailsAppStateHandler } from '@/lib/booking-details-app-state';
@@ -105,6 +111,8 @@ const UNAVAILABLE = 'This booking is unavailable.';
 
 type DetailState = {
   booking: RoleBooking;
+  workerProgress: WorkerProgress | null;
+  progressReadGeneration: number;
   payment: BookingPaymentState | undefined;
   paymentReadSucceeded: boolean;
   jobPaymentMethod: JobPaymentMethod | null;
@@ -132,6 +140,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
 
   const router = useRouter();
   const { account } = useAccount();
+  const accountId = account?.id ?? null;
   const { sessionLifetime } = useSession();
   const pathname = usePathname(), params = useGlobalSearchParams();
   const [detail, setDetail] = useState<DetailState | null>(null);
@@ -143,6 +152,8 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   const [pinsSession, setPinsSession] = useState(0);
   // Map-first layout: the collapsed panel height frames markers in the visible map above it.
   const [panelHeight, setPanelHeight] = useState(0);
+  const [progressDockHeight, setProgressDockHeight] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
   // The map/sheet subtree is deliberately remounted on focus refresh to clear protected data.
   // Keep only its non-sensitive detent here, so returning from Chat does not collapse it.
   const sheetOwner = `${role}:${bookingId}`;
@@ -209,6 +220,10 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
       return;
     }
 
+    let workerProgress: WorkerProgress | null = null;
+    if (role === 'worker' && booking.booking_status === 'confirmed') {
+      try { workerProgress = await loadWorkerProgress(booking.booking_id); } catch { /* Missing migration/read evidence keeps progress disabled. */ }
+    }
     const payable = isPayableStatus(booking.booking_status);
     let payments = new Map<string, BookingPaymentState>();
     let paymentReadSucceeded = !payable;
@@ -281,6 +296,8 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     displayedStatusRef.current = booking.booking_status;
     setDetail({
       booking,
+      workerProgress,
+      progressReadGeneration: token,
       payment: payments.get(booking.booking_id),
       paymentReadSucceeded,
       jobPaymentMethod,
@@ -408,12 +425,31 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
       onInvalidate: revalidate,
       onUnavailable: hideProtectedProjection,
     });
+    // Payment, completion and cancellation each notify the participant, so the
+    // own-notification topic keeps a confirmed Booking current without a manual pull.
+    // A notification only re-reads; it never hides confirmed details.
+    const cleanupOwn = accountId ? subscribeInvalidation({
+      topic: userNotificationsTopic(accountId),
+      events: [NOTIFICATION_INSERTED],
+      onInvalidate: () => {
+        if (run.cancelled) return;
+        if (run.inFlight) { run.pending = true; return; }
+        run.inFlight = true;
+        load({ preserveProtected: true })
+          .catch(() => { console.warn('[R6-8D-FIX] booking detail notification revalidate failed'); })
+          .finally(() => {
+            run.inFlight = false;
+            if (run.pending && !run.cancelled) { run.pending = false; revalidate(); }
+          });
+      },
+    }) : undefined;
 
     return () => {
       run.cancelled = true;
       cleanup();
+      cleanupOwn?.();
     };
-  }, [bookingId, listenStatus, load]);
+  }, [accountId, bookingId, listenStatus, load]);
 
   async function retry() {
     setIsLoading(true);
@@ -438,10 +474,19 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     }
   }
 
-  if (isLoading && visibleDetail === null) {
+  // Refresh continuation (Option B): only the Booking Details ROUTE rebuilds its parents, and only after this
+  // participant read found the Booking. Embedded in Client Job details, the Job route owns that decision. The
+  // screen's own route decides (the app-wide URL names whichever screen is in front).
+  const routeOwner = useRoute().name === `${role}/booking-details`;
+  useSessionContinuationRestore(role, !routeOwner || isLoading ? 'pending'
+    : visibleDetail !== null && !suppressProtected && loadError === null ? 'ready'
+      : detail === null && loadError === UNAVAILABLE ? 'unavailable' : 'pending');
+
+  // A read skipped while the app comes to the foreground has no answer yet: unavailable is only ever a finished read's result.
+  if (visibleDetail === null && (isLoading || loadError === null)) {
     return (
       <View style={styles.center}>
-        <InlineStatus variant="loading" message="Loading booking…" />
+        <InlineStatus variant="loading" skeleton="detail" message="Loading booking…" />
       </View>
     );
   }
@@ -523,6 +568,13 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     isLifecycleActionableStatus(booking.booking_status) &&
     (actionPresentation.showCompletion || actionPresentation.showCancellation);
   const showPayment = actionPresentation.showPayment;
+  const workerProgress = visibleDetail.workerProgress ?? null;
+  const bookingStatusLabel = role === 'worker' && booking.booking_status === 'confirmed' && workerProgress
+    ? workerProgressPresentation('confirmed', workerProgress, payment?.payment_status ?? null).label
+    : formatBookingStatus(booking.booking_status);
+  // Preserve payment authorization; defer only the Worker's collection UI until service is confirmed.
+  const workerPaymentVisible = role !== 'worker' || booking.booking_status !== 'confirmed' || workerProgress?.serviceCompletedAt != null;
+  const hasWorkerProgressAction = role === 'worker' && booking.booking_status === 'confirmed' && workerProgress !== null && workerProgress.serviceCompletedAt === null;
   const paymentUnavailable = isPayableStatus(booking.booking_status) && !paymentReadSucceeded;
   const showRate = role === 'client' && isRateableStatus(booking.booking_status);
   const showReport = isBookingReportableStatus(booking.booking_status) && reportReadSucceeded;
@@ -545,12 +597,12 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   // The one current primary action. Chat is primary only when nothing else on the screen is
   // (a payment step to take, or the Client's completion), so there is never a competing filled button.
   const paymentActionable =
-    showPayment && jobPaymentReady &&
+    showPayment && jobPaymentReady && workerPaymentVisible &&
     (role === 'worker'
       ? isAwaitingCash(payment)
       : !isPaidCod(payment) && !isPaidQrph(payment));
   const clientCompletion = role === 'client' && showLifecycle && actionPresentation.showCompletion;
-  const hasOtherPrimary = paymentActionable || clientCompletion;
+  const hasOtherPrimary = paymentActionable || clientCompletion || hasWorkerProgressAction;
   const chatVariant = hasOtherPrimary ? 'secondary' : 'primary';
   // A Worker can only cancel, so their lifecycle control closes the screen. A Client's completion is
   // the primary action and stays with the payment step.
@@ -597,14 +649,16 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   // 1-2. Status (the map-first panel header already shows it).
   const statusBlock = (
     <View style={styles.referenceHeader}>
-      <AppChip label={formatBookingStatus(booking.booking_status)} variant={bookingStatusVariant(booking.booking_status)} />
+      <AppChip label={bookingStatusLabel} variant={bookingStatusVariant(booking.booking_status)} />
     </View>
   );
 
   // 3-4. One booking card, as in the reference: the service and the Booking ID people quote for help, the time,
   // where, and the payment row (Cash / QR and the amount) with this role's payment step under it.
   // A confirmed booking opens map-first: full-screen map, floating Back, and the booking in a draggable panel.
-  const mapFirst = booking.booking_status === 'confirmed' && account?.is_active === true && account.role === role;
+  // Large text can make the dock tall. Keep a usable scrolling detail instead of crushing the sheet body.
+  const mapFirst = booking.booking_status === 'confirmed' && account?.is_active === true && account.role === role &&
+    (role !== 'worker' || viewportHeight === 0 || viewportHeight - progressDockHeight >= 400);
   const paymentShown = showPayment || paymentUnavailable;
   const methodLabel = jobPaymentMethod !== null ? formatJobPaymentLabel(jobPaymentMethod) : 'Cash / QR';
   const paysByQr = jobPaymentMethod === 'qrph' || payment?.payment_method === 'qrph';
@@ -624,12 +678,16 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
         <Text selectable style={[styles.routeTitle, styles.routeCopy]}>{formatLocation(null, booking.job_barangay, booking.job_city)}</Text>
       </View>
       <CardDivider />
-      <PaymentRow qr={paysByQr} method={methodLabel} caption={role === 'worker' ? 'Payment you collect' : 'Payment you make'} amount={budget ?? 'Not set'} />
+      <PaymentRow qr={paysByQr} method={methodLabel} amount={budget ?? 'Not set'} />
       {paymentShown ? <View style={styles.paymentBody}>
-        {showPayment ? jobPaymentReady ? <BookingPayment role={role} bookingId={booking.booking_id} payment={payment}
-          jobPaymentMethod={jobPaymentMethod} onChanged={load} amount={budget} embedded />
+        {showPayment && workerPaymentVisible ? jobPaymentReady ? <BookingPayment role={role} bookingId={booking.booking_id} payment={payment}
+          jobPaymentMethod={jobPaymentMethod} onChanged={load} embedded />
           : <Text style={styles.note}>Could not load the agreed payment method.</Text> : null}
         {paymentUnavailable ? <Text style={styles.note}>Could not load the authoritative payment state. Payment and lifecycle actions are unavailable.</Text> : null}
+        {/* One paid-Client closing action, beside authoritative payment state. */}
+        {clientCompletion ? <BookingLifecycle role="client" bookingId={booking.booking_id}
+          showCompletion={actionPresentation.showCompletion} showCancellation={actionPresentation.showCancellation}
+          onChanged={load} /> : null}
       </View> : null}
     </View>
   );
@@ -639,7 +697,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     <View style={[styles.section, suppressProtected && { minHeight: participantHeight.current }]}
       onLayout={event => { if (!suppressProtected) participantHeight.current = event.nativeEvent.layout.height; }}>
       <SectionHeader title={role === 'worker' ? 'Client details' : 'Worker details'} />
-      {suppressProtected ? <InlineStatus variant="loading" message="Checking booking details" /> : !released ? (
+      {suppressProtected ? <InlineStatus variant="loading" skeleton="lines" message="Checking booking details" /> : !released ? (
         <Text style={styles.note}>
           {role === 'worker'
             ? 'Client contact is not available for this booking status.'
@@ -696,7 +754,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   const locationBlock = (sharing: ReactNode) => (
     <View style={[styles.section, suppressProtected && { minHeight: locationHeight.current }]}
       onLayout={event => { if (!suppressProtected) locationHeight.current = event.nativeEvent.layout.height; }}>
-      {suppressProtected ? <InlineStatus variant="loading" message="Checking job location" /> : <>
+      {suppressProtected ? <InlineStatus variant="loading" skeleton="lines" message="Checking job location" /> : <>
       {sharing ? <View style={styles.section}>{role === 'worker' ? null : <SectionHeader title="Worker location" />}{sharing}</View> : null}
       {/* The address surface titles itself when it shows the exact address. */}
       {!locationHasAddress ? <><SectionHeader title="Job location" /><Text selectable style={styles.body}>{location}</Text></> : null}
@@ -713,9 +771,9 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     </View>
   );
 
-  // 7. The immediate step: (Client) completion. The payment step is in the booking card above.
+  // Client finalization stays in the payment card; this area preserves communication and unpaid cancellation.
   const paymentAndLifecycle = <>
-    {!lifecycleAtBottom && showLifecycle ? (
+    {!lifecycleAtBottom && !clientCompletion && showLifecycle ? (
       <BookingLifecycle
         role={role}
         bookingId={booking.booking_id}
@@ -762,7 +820,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     {lifecycleAtBottom && (showLifecycle || (suppressProtected && controlsHeight.current > 0)) ? <View
       style={[styles.destructiveArea, suppressProtected && { minHeight: controlsHeight.current }]}
       onLayout={event => { if (!suppressProtected) controlsHeight.current = event.nativeEvent.layout.height; }}>
-      {suppressProtected ? <InlineStatus variant="loading" message="Checking booking controls" /> : <>
+      {suppressProtected ? <InlineStatus variant="loading" skeleton="line" message="Checking booking controls" /> : <>
       <BookingLifecycle role={role} bookingId={booking.booking_id} showCompletion={actionPresentation.showCompletion}
         showCancellation={actionPresentation.showCancellation} onChanged={load} />
       </>}
@@ -770,14 +828,27 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   </>;
 
   const refreshControl = <RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />;
+  const showWorkerProgress = role === 'worker' && booking.booking_status === 'confirmed' && protectedReleased && account?.is_active === true && account.role === 'worker';
+  const progressDock = showWorkerProgress ? <View onLayout={event => setProgressDockHeight(event.nativeEvent.layout.height)}>
+    <WorkerBookingProgress key={`${account.id}:${booking.booking_id}:${visibleDetail.progressReadGeneration ?? 0}`}
+      frameStyle={[styles.progressDock, { paddingBottom: Math.max(safeArea.bottom, ui.spacing.md) }]}
+      bookingId={booking.booking_id} progress={workerProgress} paymentStatus={paymentReadSucceeded ? payment?.payment_status ?? null : null}
+      onChanged={load} isCurrent={() => sessionLifetime?.isCurrent() === true}
+      // On the map layout the swipe appears only once the Worker pulls the details sheet fully up.
+      actionVisible={!mapFirst || sheetPosition === 'expanded'} />
+  </View> : null;
 
   if (!mapFirst) {
     return (
       <RefinementThemeProvider>
+      {/* The map layout hides the stack header; restore it when the same screen leaves map mode (e.g. completed). */}
+      <Stack.Screen options={{ headerShown: true }} />
+      <View style={styles.scroll} onLayout={event => setViewportHeight(event.nativeEvent.layout.height)}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
+        keyboardDismissMode="on-drag"
         refreshControl={refreshControl}
       >
         {statusBlock}
@@ -787,6 +858,9 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
         {paymentAndLifecycle}
         {supportingRecord}
       </ScrollView>
+      {progressDock}
+      <KeyboardSpacer />
+      </View>
       </RefinementThemeProvider>
     );
   }
@@ -794,11 +868,11 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   // Map-first layout. The floating header replaces the stack header; the panel reserves the space under it.
   const headerBottom = safeArea.top + ui.spacing.sm + ui.size.iconButton + ui.spacing.sm;
   const panel = (sharing: LocationPanel) => (
-    <BookingSheet topReserve={headerBottom} onCollapsedHeight={setPanelHeight} refreshControl={refreshControl}
+    <BookingSheet topReserve={headerBottom} bottomReserve={showWorkerProgress ? progressDockHeight : 0} onCollapsedHeight={setPanelHeight} refreshControl={refreshControl}
       initialPosition={sheetPosition} onPositionChange={rememberSheetPosition}
       header={<>
         <View style={styles.sheetTitleRow}>
-          <AppChip label={formatBookingStatus(booking.booking_status)} variant={bookingStatusVariant(booking.booking_status)} />
+          <AppChip label={bookingStatusLabel} variant={bookingStatusVariant(booking.booking_status)} />
           <Text accessibilityRole="header" numberOfLines={2} style={styles.sheetTitle}>{booking.job_title}</Text>
         </View>
         {sharing.primary}
@@ -812,13 +886,13 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   );
   return (
     <RefinementThemeProvider>
-    <View style={styles.mapScreen}>
+    <View style={styles.mapScreen} onLayout={event => setViewportHeight(event.nativeEvent.layout.height)}>
       <Stack.Screen options={{ headerShown: false }} />
       {inlineMapShown && account ? <BookingLocationMap key={`${account.id}:${booking.booking_id}:${pinsSession}`} bookingId={booking.booking_id}
-        accountId={account.id} role={role} destination={exactLocation.status === 'ready' ? exactLocation.location.pin : null}
-        insets={mapInsetsForPanel({ headerBottom, collapsedHeight: panelHeight })} renderPanel={panel} /> : <>
-        <View style={[StyleSheet.absoluteFill, styles.mapPlaceholder]}><InlineStatus variant="loading" message="Checking job location" /></View>
-        {panel({ primary: <InlineStatus variant="loading" message="Checking location sharing" />, secondary: null })}
+        accountId={account.id} role={role} destination={exactLocation.status === 'ready' ? exactLocation.location.pin : null} pinsPaused={sheetPosition === 'expanded'}
+        insets={mapInsetsForPanel({ headerBottom, collapsedHeight: panelHeight + (showWorkerProgress ? progressDockHeight : 0) })} renderPanel={panel} /> : <>
+        <View style={[StyleSheet.absoluteFill, styles.mapPlaceholder]}><InlineStatus variant="loading" skeleton="fill" message="Checking job location" /></View>
+        {panel({ primary: <InlineStatus variant="loading" skeleton="line" message="Checking location sharing" />, secondary: null })}
       </>}
       <View pointerEvents="box-none" style={[styles.floatingHeader, { top: safeArea.top + ui.spacing.sm }]}>
         <AppIconButton icon={{ android: 'arrow_back', ios: 'chevron.left' }} accessibilityLabel="Navigate up" style={styles.floatingButton}
@@ -827,6 +901,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
           <Text accessibilityRole="header" numberOfLines={1} style={styles.floatingTitleText}>Booking details</Text>
         </View>
       </View>
+      {progressDock ? <View style={styles.progressDockPosition}>{progressDock}</View> : null}
     </View>
     </RefinementThemeProvider>
   );
@@ -848,6 +923,8 @@ function DetailLine({ label, value }: { label: string; value: string | null }) {
 function createStyles(ui: UiTheme) {
   const { colors, type, spacing, radius } = ui;
   const styles = StyleSheet.create({
+    progressDockPosition: { position: 'absolute', bottom: 0, left: 0, right: 0 },
+    progressDock: { paddingTop: spacing.md, paddingHorizontal: spacing.gutter, gap: spacing.sm, backgroundColor: colors.surfaceRaised, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.controlBorder },
     scroll: {
       flex: 1,
       backgroundColor: colors.canvas,

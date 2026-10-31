@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { callPresentation, counterpartLabel } from './video-call-view';
+import { callPresentation, counterpartLabel, callToAutoJoin } from './video-call-view';
 import type { VideoCall, VideoSessionView } from './video-call';
 
 vi.mock('./supabase', () => ({ supabase: {} }));
@@ -43,5 +43,28 @@ describe('immersive call states', () => {
       .toEqual({ stage: 'closed', status: 'Call closed on this device', actions: [] });
     expect(callPresentation({ view: view({ call: call('ended'), cleanupPending: true }), ended: true }).actions).toEqual(['retry_end']);
     expect(callPresentation({ view: view({ call: call('accepted'), connected: true, cleanupPending: true }), ended: false }).actions).toEqual(['end', 'retry_end']);
+  });
+});
+
+describe('caller connects by itself once the call is answered', () => {
+  const caller = { call_id: 'c1', booking_id: 'b', role: 'caller', state: 'accepted', ring_expires_at: '', server_now: '', counterpart_away: false } as VideoCall;
+  const view = (patch: Partial<VideoSessionView> = {}): VideoSessionView => ({ call: caller, busy: false, connected: false, message: null, cleanupPending: false, ...patch });
+
+  it('joins the answered call once', () => {
+    expect(callToAutoJoin(view(), false, null)).toBe('c1');
+    expect(callToAutoJoin(view(), false, 'c1')).toBeNull();
+  });
+  it('joins again for a new call', () => {
+    expect(callToAutoJoin(view({ call: { ...caller, call_id: 'c2' } }), false, 'c1')).toBe('c2');
+  });
+  it('waits while connecting or connected, and after the screen closed', () => {
+    expect(callToAutoJoin(view({ busy: true }), false, null)).toBeNull();
+    expect(callToAutoJoin(view({ connected: true }), false, null)).toBeNull();
+    expect(callToAutoJoin(view(), true, null)).toBeNull();
+  });
+  it('never joins for the person answering, or before an answer', () => {
+    expect(callToAutoJoin(view({ call: { ...caller, role: 'callee' } }), false, null)).toBeNull();
+    expect(callToAutoJoin(view({ call: { ...caller, state: 'ringing' } }), false, null)).toBeNull();
+    expect(callToAutoJoin(view({ call: null }), false, null)).toBeNull();
   });
 });

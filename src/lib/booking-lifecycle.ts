@@ -126,16 +126,16 @@ const PAYMENT_BLOCKED = 'SM403';
 export const COPY = {
   heading: 'Booking actions',
 
-  complete: 'Mark as completed',
-  completing: 'Completing…',
+  complete: 'Finish Booking',
+  completing: 'Finishing…',
   cancel: 'Cancel booking',
   cancelling: 'Cancelling…',
 
   /** Says what completion does and, just as importantly, what it does not do. */
-  completeConfirmTitle: 'Mark as completed',
+  completeConfirmTitle: 'Finish Booking',
   completeConfirmBody:
     'Payment is settled. Mark this booking and job as finally completed?',
-  completeConfirmAction: 'Mark as completed',
+  completeConfirmAction: 'Finish Booking',
 
   /**
    * Cancellation is terminal and the Job does NOT return to the matching pool.

@@ -47,6 +47,22 @@ describe('synchronous local session lifetime (offline, not authorization)', () =
     else lifecycle.terminate();
     lifecycle.replace(session(), URL); expect(old.isCurrent()).toBe(false); expect(lifecycle.lifetime).not.toBe(old);
   });
+  // Option B follow-up: the identity boundary the account recheck history is bound to.
+  it('advances the identity boundary only on a sign-out to no session or a recovery takeover', () => {
+    const lifecycle = createSessionLifecycle(); lifecycle.replace(session(), URL);
+    const start = lifecycle.boundary;
+    lifecycle.replace(session({ ...claims, iat: 9 }), URL); // ordinary refresh
+    lifecycle.replace(session({ ...claims, iss: 'https://other.supabase.co/auth/v1' }), URL); // unrecognised marker
+    lifecycle.replace(null, URL); // restore error / transient null, not a sign-out
+    lifecycle.replace(session(), URL);
+    expect(lifecycle.boundary).toBe(start);
+    lifecycle.replace(null, URL, true); // SIGNED_OUT
+    expect(lifecycle.boundary).toBe(start + 1);
+    lifecycle.replace(session(), URL); lifecycle.terminate(); // recovery takes over
+    expect(lifecycle.boundary).toBe(start + 2);
+    lifecycle.replace(session(), URL, true); // a refresh inside the active recovery
+    expect(lifecycle.boundary).toBe(start + 2);
+  });
   it('missing configured issuer permits only a fresh lifetime, never correlation', () => {
     expect(extractSessionMarker(session(), undefined)).toBeNull();
     const lifecycle = createSessionLifecycle(); lifecycle.replace(session(), undefined); const old = lifecycle.lifetime!;

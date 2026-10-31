@@ -39,6 +39,8 @@ function inbox({ open = true, marking = null as string | null, refreshing = fals
         calls.push(['read', table, columns, column, options]); return { data: fixtureRows, error: rereadError };
       } }) }),
     } },
+    '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
+
     '@/components/app-divider': { AppDivider: 'AppDivider' },
     ...Object.fromEntries(['app-button', 'app-notice', 'inline-status'].map(n => ['@/components/' + n,
       { [n.split('-').map(x => x[0].toUpperCase()+x.slice(1)).join('')]: n }])),
@@ -193,11 +195,10 @@ it('keeps all dated and missing-date row text readable across interactive, stati
         expect(texts.filter(node => node.text === formatted)).toHaveLength(1);
       } else {
         expect(formatted).toBeNull();
-        expect(texts).toHaveLength(unread ? 4 : opts.open === false ? 2 : 3);
+        expect(texts).toHaveLength((unread ? 3 : 2) + (opts.marking === row.id ? 1 : 0));
       }
       const marking = opts.marking === row.id;
-      const hint = marking ? 'Marking as read…' : unread ? opts.open === false ? 'Tap to mark as read' : 'Tap to mark as read and open' : opts.open === false ? null : 'Tap to open';
-      if (hint) expect(texts.some(node => node.text === hint)).toBe(true);
+      if (marking) expect(texts.some(node => node.text === 'Marking as read…')).toBe(true);
       if (unread) expect(texts.find(node => node.text === 'Unread')?.background).toBe(texts.find(node => node.text === h.notifications.formatNotificationLabel(row.type))?.background);
       for (const text of texts) {
         expect(text.opacity).toBe(1);

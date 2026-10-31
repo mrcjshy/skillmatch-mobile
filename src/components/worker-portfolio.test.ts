@@ -28,6 +28,8 @@ function harness() {
   function load(file: string): Props {
     if (cache[file]) return cache[file]; const exports: Props = {}; cache[file] = exports;
     const seams: Record<string, unknown> = {
+    '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
+
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },
       react: { useState: (initial: unknown) => { const slot = cursor++; if (!(slot in state)) state[slot] = initial; return [state[slot], (value: unknown) => { state[slot] = typeof value === 'function' ? value(state[slot]) : value; }]; }, useRef: (initial: unknown) => { const slot = cursor++; return refs[slot] ??= { current: initial }; }, useCallback: (fn: unknown) => fn, useEffect: (fn: () => void) => effects.push(fn) },
       'react-native': native, 'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' }, 'expo-image': { Image: 'Image' }, 'expo-image-picker': picker,
@@ -120,6 +122,6 @@ describe('Worker Portfolio actual composition and existing callbacks', () => {
     h.loadOwnPortfolio.mockImplementation(() => new Promise(resolve => { finish = resolve as (v: unknown) => void; })); h.render(); h.effects(); h.cleanup(); h.changeAccount(null);
     finish({ kind: 'ready', workerProfileId: 'profile-a', items: h.items }); await Promise.resolve(); await Promise.resolve(); expect(texts(h.render())).not.toContain(h.items[0].title);
     const e = harness(); e.loadOwnPortfolio.mockRejectedValue(new Error('network')); const tree = await ready(e);
-    expect(texts(tree)).toContain(portfolio.PORTFOLIO_COPY.loadFailed); (action(tree, portfolio.PORTFOLIO_COPY.retry).props.onPress as () => void)(); expect(texts(e.render())).toContain(portfolio.PORTFOLIO_COPY.loading); expect(e.createOwnPortfolioItem).not.toHaveBeenCalled();
+    expect(texts(tree)).toContain(portfolio.PORTFOLIO_COPY.loadFailed); (action(tree, portfolio.PORTFOLIO_COPY.retry).props.onPress as () => void)(); expect(JSON.stringify(e.render())).toContain(portfolio.PORTFOLIO_COPY.loading); expect(e.createOwnPortfolioItem).not.toHaveBeenCalled();
   });
 });

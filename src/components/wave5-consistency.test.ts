@@ -122,7 +122,7 @@ describe('one status vocabulary across roles', () => {
   });
   it('Job details shows the cased status in the shared tone, not the raw stored value', () => {
     const details = code('src/components/client-job-details.tsx');
-    expect(details).toContain('<AppChip label={jobStatusLabel(job.status)} variant={jobStatusVariant(job.status)} />');
+    expect(details).toContain('<AppChip label={jobStatusLabel(job.status)} variant={jobStatusVariant(job.status)} style={styles.findingChip} />');
     expect(details).not.toContain('Status: ${job.status}');
   });
 });

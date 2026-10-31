@@ -20,6 +20,7 @@ function compile(path: string, seams: Record<string, Props>): Props {
     if (id === '@/constants/motion') return compile('src/constants/motion.ts', {});
     if (id === '@/constants/theme') return compile('src/constants/theme.ts', { 'react-native': { Platform: { OS: 'android', select: (x: Props) => x.android ?? x.default } } });
     if (id === '@/global.css') return {};
+    if (id === '@/components/skeleton') return { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' };
     throw new Error('Unapproved import: ' + id);
   };
   new Function('require', 'exports', ts.transpileModule(source(path), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText)(requireSeam, exports);
@@ -227,6 +228,8 @@ describe('M2 call sites', () => {
     const { ClientTabBar } = compile('src/components/client-tab-bar.tsx', {
       'react-native': { Animated: { View: 'Animated.View' }, Pressable: 'Pressable', Text: 'Text', View: 'View', StyleSheet: { create: (x: Props) => x } },
       'expo-router/react-navigation': { CommonActions: { navigate: vi.fn() } },
+      '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
+
       '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
       '@/components/app-tab-bar': { TAB_ACTIVE_COLOR: theme.colors.accent, TAB_INACTIVE_COLOR: theme.colors.textMuted },
       '@/components/motion': { MotionView: 'MotionView', usePressScale: () => press },

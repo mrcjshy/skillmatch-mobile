@@ -37,7 +37,7 @@
  * mark anything paid, because neither call exists.
  */
 
-import { QRPH_TEST_LABEL, type JobPaymentMethod } from './job-payment';
+import { QRPH_LABEL, type JobPaymentMethod } from './job-payment';
 import { supabase } from './supabase';
 
 /** The values `bookings_payment_method_check` permits. `cod` and `qrph` are
@@ -173,7 +173,7 @@ const METHOD_LABEL: Record<PaymentMethod, string> = {
   // so a historical row reads as what it is instead of as Cash or an error.
   gcash: 'GCash (legacy, not offered)',
   maya: 'Maya (legacy, not offered)',
-  qrph: QRPH_TEST_LABEL,
+  qrph: QRPH_LABEL,
 };
 
 export function formatPaymentMethod(method: PaymentMethod | null): string | null {
@@ -246,24 +246,21 @@ export const COPY = {
    *  `notSelected`, which explains an absent control rather than inviting
    *  a choice the Worker is not allowed to make. */
   chooseMethod: 'Choose a payment method.',
-  selectQrph: QRPH_TEST_LABEL,
+  selectQrph: QRPH_LABEL,
   starting: 'Starting…',
   showQr: 'Show or refresh QR',
   /** Client (payer): re-fetch the test payment page; the QR is never rendered for the payer. */
   loadPaymentPage: 'Load payment page',
-  clientPaysQrph: 'You pay the worker from your phone on the PayMongo test payment page. This screen updates once the payment is confirmed.',
-  /** Worker (collector) tile. */
-  collectHeading: 'Collect payment',
-  collectCash: 'When the client pays you in cash, confirm it here. Nothing to collect until then.',
-  collectQrph: 'The client pays by QR Ph (TEST) on their phone. It confirms here automatically.',
+  /** Worker (collector) line. */
+  collectQrph: 'The client pays by QR Ph on their phone. It confirms here automatically.',
   refreshingQr: 'Refreshing…',
   openTestPage: 'Open PayMongo test payment',
   refreshStatus: 'Refresh payment status',
   checking: 'Checking…',
   /** Method-specific on purpose: never the cash wording. */
   awaitingQrphClient: 'Status: Awaiting payment confirmation',
-  awaitingQrphWorker: 'Awaiting QR Ph TEST MODE payment confirmation.',
-  paidQrph: `Status: Paid — ${QRPH_TEST_LABEL}`,
+  awaitingQrphWorker: `Awaiting ${QRPH_LABEL} payment confirmation.`,
+  paidQrph: `Status: Paid — ${QRPH_LABEL}`,
   /** Neutral, not an error: reconciliation answered, it is simply not settled. */
   stillPending: 'Payment is still pending.',
   testModeTitle: 'Test mode',

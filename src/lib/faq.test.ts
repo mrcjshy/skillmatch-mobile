@@ -50,9 +50,9 @@ describe('FAQ reflects the implemented product', () => {
     expect(byId('opp-accept').answer).toMatch(/verified, at kasalukuyang eligible na Worker/);
   });
 
-  it('offers only Cash and QR Ph TEST MODE and no third pay-later method', () => {
+  it('offers only Cash and QR Ph and no third pay-later method', () => {
     const answer = byId('pay-methods').answer;
-    expect(answer).toMatch(/Dalawa lang: Cash at QR Ph — TEST MODE/);
+    expect(answer).toMatch(/Dalawa lang: Cash at QR Ph\. Pinipili/);
     expect(answer).toMatch(/walang hiwalay na pay-later na method/);
     expect(answer).toMatch(/walang totoong pera/);
     for (const e of FAQ_ENTRIES) {

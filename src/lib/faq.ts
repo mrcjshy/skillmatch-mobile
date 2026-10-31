@@ -65,7 +65,7 @@ export const CATEGORY_LABEL: Record<FaqCategory, string> = {
   ratings: 'Ratings',
   payments: 'Payment methods',
   cash: 'Cash payment',
-  qrph: 'QR Ph payment (TEST MODE)',
+  qrph: 'QR Ph payment',
   notifications: 'Notifications',
   general: 'Tungkol sa SkillMatch',
 };
@@ -291,7 +291,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'payments',
     question: 'Anong payment methods ang meron sa SkillMatch?',
     answer:
-      'Dalawa lang: Cash at QR Ph — TEST MODE. Pinipili ng Client ang method kapag nagpo-post ng trabaho, at nakikita ito ng Worker bago tumanggap. Walang direktang GCash o Maya option at walang hiwalay na pay-later na method. Sa parehong method, binabayaran ang trabaho habang confirmed ang Booking, bago ang final completion ng Client. Ang QR Ph ay PayMongo TEST simulation lang para sa demo; walang totoong pera.',
+      'Dalawa lang: Cash at QR Ph. Pinipili ng Client ang method kapag nagpo-post ng trabaho, at nakikita ito ng Worker bago tumanggap. Walang direktang GCash o Maya option at walang hiwalay na pay-later na method. Sa parehong method, binabayaran ang trabaho habang confirmed ang Booking, bago ang final completion ng Client. Ang QR Ph ay PayMongo TEST simulation lang para sa demo; walang totoong pera.',
     keywords: ['payment method', 'payment methods', 'methods', 'pay', 'how to pay', 'paano magbayad', 'pambayad', 'gcash', 'maya', 'pay later', 'options'],
   },
 
@@ -319,7 +319,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'qrph',
     question: 'Paano gumagana ang QR Ph payment?',
     answer:
-      'Kapag QR Ph — TEST MODE ang piniling payment method sa pag-post, habang confirmed ang Booking ay maaaring simulan ng Client ang QR Ph payment. Gagawa ang app ng QR code para sa eksaktong halaga ng trabaho. Magiging paid lang ang Booking kapag kinumpirma ng payment provider sa server ang bayad; saka maaaring gawin ng Client ang final completion. Sa kasalukuyang demo, TEST mode ito at hindi totoong pera ang ginagamit.',
+      'Kapag QR Ph ang piniling payment method sa pag-post, habang confirmed ang Booking ay maaaring simulan ng Client ang QR Ph payment. Gagawa ang app ng QR code para sa eksaktong halaga ng trabaho. Magiging paid lang ang Booking kapag kinumpirma ng payment provider sa server ang bayad; saka maaaring gawin ng Client ang final completion. Sa kasalukuyang demo, TEST mode ito at hindi totoong pera ang ginagamit.',
     keywords: ['qr', 'qr ph', 'qrph', 'qr code', 'online', 'paymongo', 'scan', 'digital', 'bayad', 'magbayad'],
   },
   {

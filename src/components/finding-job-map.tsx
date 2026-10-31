@@ -66,7 +66,7 @@ export function FindingJobMap({ jobId, clientId, isOperationCurrent, insets, rev
       </Marker> : null}
     </Map>
     {pin ? null : <View pointerEvents="none" style={[styles.loading, { top: insets.top + spacing.md }]}>
-      <InlineStatus variant="loading" message="Loading job location" />
+      <InlineStatus variant="loading" skeleton="line" message="Loading job location" />
     </View>}
   </View></MapBoundary>;
 }

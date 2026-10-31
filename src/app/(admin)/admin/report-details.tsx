@@ -300,7 +300,7 @@ function AdminReportDetailsContent() {
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <InlineStatus variant="loading" message="Loading report…" />
+        <InlineStatus variant="loading" skeleton="detail" message="Loading report…" />
       </View>
     );
   }
@@ -393,7 +393,7 @@ function AdminReportDetailsContent() {
         <View style={styles.section}>
           <SectionHeader title={COPY.evidenceTitle} />
           {evidenceLoading ? (
-            <InlineStatus variant="loading" message={COPY.evidenceLoading} />
+            <InlineStatus variant="loading" skeleton="lines" message={COPY.evidenceLoading} />
           ) : evidenceError ? (
             <InlineStatus variant="error" message={evidenceError} />
           ) : evidence === null || evidence.length === 0 ? (

@@ -169,7 +169,7 @@ export function WorkerIdentitySection({
     <View style={styles.wrap}>
       {onboarding ? null : <SectionHeader title="Valid ID" />}
       {loading ? (
-        <InlineStatus variant="loading" message="Loading your ID submission…" />
+        <InlineStatus variant="loading" skeleton="lines" message="Loading your ID submission…" />
       ) : (
         <>
           {onboarding && submission === null ? null : (

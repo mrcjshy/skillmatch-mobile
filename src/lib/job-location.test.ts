@@ -118,6 +118,11 @@ describe('posting description validation', () => {
     expect(postingDescriptionError('   ')).toBe('Please describe the work needed.');
     expect(postingDescriptionError('Fix leaking kitchen faucet.')).toBeNull();
   });
+  it('rejects only the exact preset blanks left unfilled', () => {
+    expect(postingDescriptionError('There is a leak at [where in the house]. Water drips.')).toBe('Fill in or remove the parts in [brackets].');
+    expect(postingDescriptionError('Leak at the kitchen. [what you noticed].')).toBe('Fill in or remove the parts in [brackets].');
+    expect(postingDescriptionError('Leak on the [2nd floor] bathroom.')).toBeNull();
+  });
 });
 
 describe('reviewJobPinPlacement', () => {

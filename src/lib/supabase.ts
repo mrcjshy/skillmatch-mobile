@@ -2,6 +2,7 @@ import 'react-native-url-polyfill/auto';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import { toByteArray } from 'base64-js';
 import { Platform } from 'react-native';
 
 import { withAuthRequestTimeout } from '@/lib/auth-request-timeout';
@@ -31,6 +32,23 @@ function resolveClientKey(): string {
       'Missing Supabase client key: set EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ' +
         '(preferred) or EXPO_PUBLIC_SUPABASE_ANON_KEY. See .env.example.'
     );
+  }
+  // Configuration screening only, never JWT verification or caller authorization.
+  // Legacy public keys carry role=anon; service_role and server secrets belong only on the server.
+  let isPublicKey = /^sb_publishable_[A-Za-z0-9_-]+$/.test(key);
+  if (!isPublicKey && key.length <= 32768) {
+    try {
+      const parts = key.split('.');
+      if (parts.length === 3 && parts.every(part => /^[A-Za-z0-9_-]+$/.test(part))) {
+        const payload = parts[1];
+        const bytes = toByteArray(payload + '='.repeat((4 - payload.length % 4) % 4));
+        const claims = JSON.parse(decodeURIComponent(Array.from(bytes, byte => '%' + byte.toString(16).padStart(2, '0')).join('')));
+        isPublicKey = claims !== null && !Array.isArray(claims) && claims.role === 'anon';
+      }
+    } catch { /* Malformed configuration is rejected below without exposing the key. */ }
+  }
+  if (!isPublicKey) {
+    throw new Error('Configure the public Supabase client with a publishable or legacy anon key only.');
   }
   return key;
 }

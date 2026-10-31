@@ -142,8 +142,9 @@ describe('Worker Home hierarchy', () => {
   it('needs no button to reach work: the jobs are the content, with no browse entry point', () => {
     expect(source).not.toMatch(/Browse opportunities|Find work/);
     const header = source.slice(source.indexOf('<HomeStickyHeader'), source.indexOf('</HomeStickyHeader>'));
-    expect((header.match(/<AppButton/g) ?? []).length).toBe(1);
-    expect(header).toContain('label={sortControlLabel}');
+    expect((header.match(/<AppButton/g) ?? []).length).toBe(0);
+    expect((header.match(/<AppIconButton/g) ?? []).length).toBe(1);
+    expect(header).toContain('accessibilityLabel={sortControlLabel}');
     expect(header).toContain('onPress={() => setIsSortOpen(true)}');
     const sheet = source.slice(source.indexOf('<AppSheet'), source.indexOf('</AppSheet>'));
     expect(sheet).toContain('title={WORKER_JOB_SORT_COPY.label}');

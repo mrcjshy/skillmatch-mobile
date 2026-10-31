@@ -1,7 +1,8 @@
 import { Redirect, type Href } from 'expo-router';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { ACCESS_ROUTE, deriveAccessState } from '@/app/_layout';
+import { PulseDots } from '@/components/skeleton';
 import { SkillMatchTheme } from '@/constants/theme';
 import { sessionRouteContinuation } from '@/lib/session-route-continuation';
 import {
@@ -49,7 +50,7 @@ export default function RootIndex() {
   if (!home) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator />
+        <PulseDots color={SkillMatchTheme.ui.colors.accent} />
       </View>
     );
   }

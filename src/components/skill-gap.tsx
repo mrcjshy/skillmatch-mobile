@@ -215,7 +215,7 @@ export default function SkillGap() {
   if (currentBase === null || currentBase.kind === 'loading') {
     return (
       <View style={styles.center}>
-        <InlineStatus variant="loading" message={SKILL_GAP_COPY.loading} />
+        <InlineStatus variant="loading" skeleton="detail" message={SKILL_GAP_COPY.loading} />
       </View>
     );
   }
@@ -290,7 +290,7 @@ export default function SkillGap() {
       </AppSheet>
 
       {current === null || current.kind === 'loading' ? (
-        <InlineStatus variant="loading" message={SKILL_GAP_COPY.loadingRequirements} />
+        <InlineStatus variant="loading" skeleton="lines" message={SKILL_GAP_COPY.loadingRequirements} />
       ) : current.kind === 'error' ? (
         <InlineStatus
           variant="error"
@@ -482,7 +482,7 @@ export function GuidanceSection({
           onPress={requestGuidance}
         />
       ) : state.kind === 'loading' ? (
-        <InlineStatus variant="loading" message={SKILL_GAP_GUIDANCE_COPY.loading} />
+        <InlineStatus variant="loading" skeleton="lines" message={SKILL_GAP_GUIDANCE_COPY.loading} />
       ) : state.kind === 'error' ? (
         <InlineStatus
           variant="error"

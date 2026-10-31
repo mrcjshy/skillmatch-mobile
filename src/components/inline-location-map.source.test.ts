@@ -116,7 +116,7 @@ describe('Worker-to-Client live location (source contracts, not native proof)', 
     expect(fn(map, 'ClientBookingMap')).not.toMatch(/Share my location|Stop sharing|useLocationSharing/);
     // The map is still keyed to the booking session: leaving/backgrounding remounts it and ends sharing.
     expect(details).toContain('<BookingLocationMap key={`${account.id}:${booking.booking_id}:${pinsSession}`}');
-    expect(details).toContain('insets={mapInsetsForPanel({ headerBottom, collapsedHeight: panelHeight })} renderPanel={panel}');
+    expect(details).toContain('insets={mapInsetsForPanel({ headerBottom, collapsedHeight: panelHeight + (showWorkerProgress ? progressDockHeight : 0) })} renderPanel={panel}');
     expect(details).toContain('onCollapsedHeight={setPanelHeight}');
     expect(details).toContain("<Stack.Screen options={{ headerShown: false }} />");
   });

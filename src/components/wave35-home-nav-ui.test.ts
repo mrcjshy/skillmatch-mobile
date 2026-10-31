@@ -72,11 +72,12 @@ describe('Worker navigation and Home', () => {
     expect(home).toContain('workerOpportunitiesTopic()');
     // Motion: the same FlatList through the Reanimated host (`MotionFlatList`), same data.
     expect(home).toMatch(/<MotionFlatList[\s\S]*data=\{jobs\}/);
-    expect(home).toMatch(/<JobOpportunityCompactCard\s+compact/);
+    expect(home).toMatch(/<JobOpportunityCompactCard\s+opportunity=/);
     expect(home).toContain('title="Available jobs"');
     expect(home).not.toMatch(/FindWorkOverlay|Browse opportunities|\.slice\(/);
-    expect((home.match(/<AppButton/g) ?? []).length).toBe(1);
-    expect(home).toContain('label={sortControlLabel}');
+    expect((home.match(/<AppButton/g) ?? []).length).toBe(0);
+    expect((home.match(/<AppIconButton/g) ?? []).length).toBe(1);
+    expect(home).toContain('accessibilityLabel={sortControlLabel}');
   });
 
   it('keeps work status in the header through the shared sheet, as a compact 48dp control', () => {
@@ -180,7 +181,7 @@ describe('Post job skill selection', () => {
     const post = code(POST);
     expect((post.match(/<SkillCatalogPicker/g) ?? []).length).toBe(1);
     expect(post).toContain('isSkillUnavailable={(skillId) => !canAddPostJobSkill(modalSelection, skillId)}');
-    expect(post).toContain('Choose up to two skills.');
+    expect(post).toContain('subtitle="Up to two"');
     expect((post.match(/onPress=\{openSkillsModal\}/g) ?? []).length).toBe(1);
     expect(post).not.toMatch(/Primary skill<|Choose primary skill|cannot be removed|SkillListSummary/);
     expect(code('src/lib/client-post-job-submission.ts')).toContain('const skillIds = [...new Set([primary.id, ...draft.additionalSkillIds.filter(id => knownIds.has(id))])];');

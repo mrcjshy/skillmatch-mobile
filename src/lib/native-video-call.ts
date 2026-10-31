@@ -17,18 +17,25 @@ export function loadVideoRuntime(): Runtime | null {
   return runtime;
 }
 
-export function createNativeCallMedia(onRoom: (room: Room | null) => void, sdk: Runtime | null = loadVideoRuntime()): CallMedia {
+export function createNativeCallMedia(onRoom: (room: Room | null) => void, sdk: Runtime | null = loadVideoRuntime(), onDisconnected: () => void = () => {}): CallMedia {
   if (!sdk) throw new Error('Video calling needs a compatible SkillMatch build. Your current installation can still use booking chat.');
   const room = new sdk.client.Room();
   let stopped = false;
   const ownAudio = ++audioOwner;
   let tracks: Awaited<ReturnType<Runtime['client']['createLocalTracks']>> = [];
   const halt = () => {
+    room.off(sdk.client.RoomEvent.Disconnected, disconnected);
     for (const track of tracks) track.stop();
     for (const publication of room.localParticipant.trackPublications.values()) publication.track?.stop();
     void room.disconnect(true).catch(() => {});
     if (audioOwner === ownAudio) void sdk.native.AudioSession.stopAudioSession().catch(() => {});
   };
+  const disconnected = () => {
+    if (stopped) return;
+    stopped = true;
+    halt(); onRoom(null); onDisconnected();
+  };
+  room.on(sdk.client.RoomEvent.Disconnected, disconnected);
   return {
     async connect(url, token) {
       try {
@@ -44,7 +51,7 @@ export function createNativeCallMedia(onRoom: (room: Room | null) => void, sdk: 
           if (stopped) { halt(); return; }
         }
         onRoom(room);
-      } catch (error) { halt(); throw error; }
+      } catch (error) { stopped = true; halt(); throw error; }
     },
     stop() { stopped = true; halt(); onRoom(null); },
   };

@@ -261,10 +261,11 @@ export function formatRatingScoreLine(ratingPoints: number): string {
   return `Rating score: ${formatMatchPoints(ratingPoints)}/20`;
 }
 
+/** One flowing line of text: a preview never keeps the blank lines of the full description. */
 export function previewOpportunityDescription(description: string | null): string | null {
   if (description === null) return null;
-  const trimmed = description.trim();
-  return trimmed === '' ? null : trimmed;
+  const flowing = description.trim().replace(/\s+/g, ' ');
+  return flowing === '' ? null : flowing;
 }
 
 export function compactPrimarySkillName(name: string | null | undefined): string | null {

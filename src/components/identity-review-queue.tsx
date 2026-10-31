@@ -110,7 +110,7 @@ export function IdentityReviewQueue({
       </Text>
 
       {isLoading ? (
-        <InlineStatus variant="loading" message="Loading the ID review queue…" />
+        <InlineStatus variant="loading" skeleton="rows" message="Loading the ID review queue…" />
       ) : loadError ? (
         <InlineStatus
           variant="error"

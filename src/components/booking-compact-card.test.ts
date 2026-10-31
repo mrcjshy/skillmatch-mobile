@@ -21,6 +21,7 @@ function load(file: string): Props {
       if (name === '@/components/app-symbol') return { AppSymbol: 'SymbolView' };
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
     if (name === '@/global.css') return {};
+    if (name === '@/components/skeleton') return { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' };
     if (name.endsWith('/supabase')) return { supabase: new Proxy({}, { get() { throw Error('No provider/database access permitted'); } }) };
     const stem = name.startsWith('@/') ? path.resolve('src', name.slice(2)) : path.resolve(path.dirname(file), name);
     const target = [stem + '.ts', stem + '.tsx'].find(existsSync);

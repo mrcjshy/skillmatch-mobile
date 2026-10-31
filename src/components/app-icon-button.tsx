@@ -12,11 +12,13 @@ type AppIconButtonProps = {
   /** `plain` has no fill; `tonal` sits on a subtle accent fill. */
   variant?: 'plain' | 'tonal';
   disabled?: boolean;
+  /** For a control that opens a sheet or menu. */
+  expanded?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
 /** 48 x 48 icon action (close, back-like actions, overflow). */
-export function AppIconButton({ icon, accessibilityLabel, onPress, variant = 'plain', disabled = false, style }: AppIconButtonProps) {
+export function AppIconButton({ icon, accessibilityLabel, onPress, variant = 'plain', disabled = false, expanded, style }: AppIconButtonProps) {
   const ui = useUiTheme();
   const { colors, size } = ui;
   const { styles } = createStyles(ui);
@@ -24,7 +26,7 @@ export function AppIconButton({ icon, accessibilityLabel, onPress, variant = 'pl
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled }}
+      accessibilityState={expanded === undefined ? { disabled } : { disabled, expanded }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [

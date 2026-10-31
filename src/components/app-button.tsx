@@ -1,5 +1,4 @@
 import {
-  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -8,6 +7,7 @@ import {
 } from 'react-native';
 
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
+import { PulseDots } from '@/components/skeleton';
 import { type SymbolViewProps } from 'expo-symbols';
 import { AppSymbol as SymbolView } from '@/components/app-symbol';
 
@@ -46,7 +46,7 @@ export function AppButton({
   const { styles, variantStyles, labelStyles } = createStyles(ui);
 
   const blocked = disabled || loading;
-  const spinnerColor =
+  const waitColor =
     variant === 'destructive'
       ? colors.error
       : variant === 'primary' && !blocked
@@ -76,7 +76,7 @@ export function AppButton({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={spinnerColor} />
+        <PulseDots color={waitColor} />
       ) : icon ? (
         <>
           <SymbolView pointerEvents="none" accessible={false} name={icon} size={size.icon} tintColor={blocked ? colors.textSecondary : variant === 'primary' || variant === 'compact' ? colors.onAccent : variant === 'destructive' ? colors.error : colors.accent} />

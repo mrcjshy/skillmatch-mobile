@@ -192,8 +192,6 @@ export default function BookingLifecycle({
 
   return (
     <View style={styles.section}>
-      {role === 'client' && showCompletion ? <Text style={styles.heading}>{COPY.heading}</Text> : null}
-
       {/*
         Client only. The Worker branch below never renders this control.
 

@@ -193,7 +193,7 @@ function AdminVerificationDetailsContent() {
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <InlineStatus variant="loading" message="Loading identity review…" />
+        <InlineStatus variant="loading" skeleton="detail" message="Loading identity review…" />
       </View>
     );
   }

@@ -94,7 +94,7 @@ describe('AvailabilityControl as a Work status row opening the shared bottom she
     const tree = h.render({ value: 'available', onChange: vi.fn() });
     trigger(tree).props.onPress();
     const rows = options(h.render({ value: 'available', onChange: vi.fn() }));
-    expect(rows.map(n => n.props.meaning)).toEqual(['See jobs that match your skills.', 'Pause matching for new work.']);
+    expect(rows.map(n => n.props.meaning)).toEqual([undefined, undefined]);
     expect(rows.map(n => n.props.accessibilityLabel)).toEqual(['Available', 'Busy']);
     expect(children(trigger(tree)).filter(n => n.type === 'SymbolView').some(n => n.props.name.android === 'check_circle')).toBe(true);
     const busy = h.render({ value: 'busy', onChange: vi.fn() });

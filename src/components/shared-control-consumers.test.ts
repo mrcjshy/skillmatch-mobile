@@ -31,6 +31,7 @@ function harness() {
     } }).outputText;
     runInNewContext(code, { ...context, exports, require: (name: string) => {
       if (name === '@/components/refinement-theme') return { useUiTheme: () => modules['@/constants/theme'].SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children };
+      if (name === '@/components/skeleton') return { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' };
       if (!(name in modules)) throw Error(`Unexpected import: ${name}`);
       return modules[name];
     } });
@@ -39,6 +40,8 @@ function harness() {
   const theme = compile(read('src/constants/theme.ts'), { 'react-native': native, '@/global.css': {} });
   const { AppButton } = compile(read('src/components/app-button.tsx'), {
     'react-native': native, 'react/jsx-runtime': { jsx, jsxs: jsx }, '@/constants/theme': theme,
+    '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
+
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },
   });
   // Execute actual source style declarations and selected JSX at the control seam.
@@ -82,6 +85,7 @@ function harness() {
       'react-native': { ...native, View: 'View', ScrollView: 'ScrollView', KeyboardAvoidingView: 'KeyboardAvoidingView' },
       'react/jsx-runtime': { jsx, jsxs: jsx },
       'expo-router/react-navigation': { useHeaderHeight: () => headerHeight },
+      'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 24, left: 0, right: 0 }) },
       '@/constants/theme': theme, '@/lib/faq': knowledge,
       '@/components/app-button': { AppButton },
       '@/components/app-chip': { AppChip: 'AppChip' },
@@ -140,7 +144,7 @@ describe('Booking Chat Send compatibility', () => {
       expect(props.onPress).toBe(handleSend);
       expect(control.props.accessibilityLabel).toBe('Send');
       expect(control.props.accessibilityState).toEqual({ disabled: !isDraftSendable || isSending, busy: isSending });
-      expect(control.props.children.type).toBe(isSending ? 'ActivityIndicator' : 'Text');
+      expect(control.props.children.type).toBe(isSending ? 'PulseDots' : 'Text');
       if (!control.props.disabled) control.props.onPress();
     }
     expect(handleSend).toHaveBeenCalledTimes(1);
@@ -280,23 +284,23 @@ describe('FAQ quick-topic touch targets (V8-05 P1)', () => {
 });
 
 describe('FAQ keyboard avoidance (V8-05D)', () => {
-  // Edge-to-edge Android does not resize the window for the keyboard, so the screen pads itself
-  // by the keyboard height less the native header it sits under, as Booking Chat does.
-  it('pads the whole screen for the keyboard, offset by the real native header height', () => {
-    for (const headerHeight of [80, 112]) {
-      const root = harness().mountFaq(headerHeight).render();
-      expect(root.type).toBe('KeyboardAvoidingView');
-      expect(root.props.behavior).toBe('padding');
-      expect(root.props.keyboardVerticalOffset).toBe(headerHeight);
-      expect(flatten(root.props.style).flex).toBe(1);
-    }
+  // Edge-to-edge Android does not resize the window for the keyboard, so the screen leaves the
+  // room itself, frame by frame, as Booking Chat does.
+  it('ends the screen with the keyboard spacer so the field rises with the keyboard', () => {
+    const root = harness().mountFaq(80).render();
+    expect(root.type).toBe('View');
+    expect(flatten(root.props.style).flex).toBe(1);
+    const children = [root.props.children].flat().filter(Boolean);
+    expect(children.at(-1).type).toBe('KeyboardSpacer');
+    expect(children.at(-1).props.bottomOffset).toBe(24);
+    expect(flatten(root.props.style).paddingBottom).toBe(24);
   });
   it('keeps the transcript flexible and the field and Ask last inside the avoiding container', () => {
     const h = harness();
     const { render, find } = h.mountFaq(80);
     const children = [render().props.children].flat().filter(Boolean);
     const [transcript, , composer] = children;
-    expect(children).toHaveLength(3);
+    expect(children).toHaveLength(4);
     expect(transcript.type).toBe('ScrollView');
     expect(flatten(transcript.props.style).flex).toBe(1);
     expect(transcript.props.keyboardShouldPersistTaps).toBe('handled');
@@ -309,13 +313,13 @@ describe('FAQ keyboard avoidance (V8-05D)', () => {
     const { render, find } = harness().mountFaq(80);
     const field = () => find(render(), (element: any) => element.type === 'AppField');
     field().props.onChangeText('Paano mag-apply?');
-    expect(render().type).toBe('KeyboardAvoidingView');
+    expect(render().type).toBe('View');
     expect(field().props.value).toBe('Paano mag-apply?');
     const ask = find(render(), (element: any) => element.props?.label === 'Ask');
     expect(ask.props.disabled).toBe(false);
     ask.props.onPress();
     const tree = render();
-    expect(tree.type).toBe('KeyboardAvoidingView');
+    expect(tree.type).toBe('View');
     expect(find(tree, (element: any) => element.type === 'Text' && element.props.children === 'Paano mag-apply?')).toBeDefined();
     expect(field().props.value).toBe('');
   });

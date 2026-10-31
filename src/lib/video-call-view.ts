@@ -42,3 +42,13 @@ export function callPresentation({ view, ended }: { view: VideoSessionView; ende
   if (view.busy) return { stage: 'connecting', status: 'Connecting…', actions: ['end', ...retry] };
   return { stage: 'rejoin', status: 'Call in progress. Tap Join to connect.', actions: ['end', 'join', ...retry] };
 }
+
+/**
+ * The caller of an answered call, not yet connected: the call to join on their behalf, once.
+ * Tapping Join stays available for a connection that drops or a join that failed.
+ */
+export function callToAutoJoin(view: VideoSessionView, ended: boolean, attempted: string | null): string | null {
+  const call = view.call;
+  if (ended || !call || call.role !== 'caller' || call.state !== 'accepted' || view.connected || view.busy) return null;
+  return call.call_id === attempted ? null : call.call_id;
+}

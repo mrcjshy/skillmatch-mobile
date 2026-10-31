@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 
 import { AppButton } from '@/components/app-button';
+import { KeyboardSpacer } from '@/components/skeleton';
 import { AppCard } from '@/components/app-card';
 import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
@@ -251,13 +252,13 @@ export default function WorkerPortfolio() {
   }
 
   if (state.kind === 'ready' && state.accountId !== account.id) {
-    return <View style={styles.center}><InlineStatus variant="loading" message={PORTFOLIO_COPY.loading} /></View>;
+    return <View style={styles.center}><InlineStatus variant="loading" skeleton="detail" message={PORTFOLIO_COPY.loading} /></View>;
   }
 
   if (state.kind === 'loading') {
     return (
       <View style={styles.center}>
-        <InlineStatus variant="loading" message={PORTFOLIO_COPY.loading} />
+        <InlineStatus variant="loading" skeleton="detail" message={PORTFOLIO_COPY.loading} />
       </View>
     );
   }
@@ -290,10 +291,12 @@ export default function WorkerPortfolio() {
   }
 
   return (
+    <View style={styles.scroll}>
     <ScrollView
       style={styles.scroll}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
     >
       <Text style={styles.helper}>{PORTFOLIO_COPY.helper}</Text>
 
@@ -413,6 +416,8 @@ export default function WorkerPortfolio() {
         />
       </View>
     </ScrollView>
+    <KeyboardSpacer />
+    </View>
   );
 }
 

@@ -36,7 +36,7 @@ const CONSENT_ROW = {
   user_id: '11111111-1111-4111-8111-111111111111',
   terms_version: '2026-09-v1',
   terms_accepted_at: '2026-09-18T02:00:00.000Z',
-  privacy_version: '2026-09-v1',
+  privacy_version: '2026-10-v1',
   privacy_acknowledged_at: '2026-09-18T02:00:00.000Z',
 };
 
@@ -46,7 +46,7 @@ describe('parseUserConsent', () => {
       userId: CONSENT_ROW.user_id,
       termsVersion: '2026-09-v1',
       termsAcceptedAt: CONSENT_ROW.terms_accepted_at,
-      privacyVersion: '2026-09-v1',
+      privacyVersion: '2026-10-v1',
       privacyAcknowledgedAt: CONSENT_ROW.privacy_acknowledged_at,
     });
   });
@@ -66,10 +66,15 @@ describe('parseUserConsentResult', () => {
 });
 
 describe('isCurrentLegalConsent', () => {
-  it('is current only for the locked 2026-09-v1 pair', () => {
+  it('is current only for the Terms 2026-09-v1 / Privacy 2026-10-v1 pair', () => {
     expect(TERMS_VERSION).toBe('2026-09-v1');
-    expect(PRIVACY_VERSION).toBe('2026-09-v1');
+    expect(PRIVACY_VERSION).toBe('2026-10-v1');
     expect(isCurrentLegalConsent(parseUserConsent(CONSENT_ROW))).toBe(true);
+    expect(
+      isCurrentLegalConsent(
+        parseUserConsent({ ...CONSENT_ROW, privacy_version: '2026-09-v1' })
+      )
+    ).toBe(false);
     expect(
       isCurrentLegalConsent(
         parseUserConsent({ ...CONSENT_ROW, terms_version: '2026-08-v0' })
@@ -103,11 +108,11 @@ describe('getMyConsent / recordMyConsent', () => {
     rpc.mockResolvedValueOnce({ data: [CONSENT_ROW], error: null } as never);
     await expect(recordMyConsent()).resolves.toMatchObject({
       termsVersion: '2026-09-v1',
-      privacyVersion: '2026-09-v1',
+      privacyVersion: '2026-10-v1',
     });
     expect(rpc).toHaveBeenCalledWith('record_my_consent', {
       p_terms_version: '2026-09-v1',
-      p_privacy_version: '2026-09-v1',
+      p_privacy_version: '2026-10-v1',
     });
   });
 

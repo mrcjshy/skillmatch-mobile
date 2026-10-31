@@ -149,7 +149,6 @@ export const COPY = {
   loadGeneric: "We couldn't load your notifications. Please refresh and try again.",
   empty: 'You have no notifications yet.',
   loading: 'Loading your notifications…',
-  intro: 'Updates about your bookings and account.',
   markForbidden: "You don't have permission to update this notification.",
   markGeneric: "We couldn't mark that notification as read. Please try again.",
   /**

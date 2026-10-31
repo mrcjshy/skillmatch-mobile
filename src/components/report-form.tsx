@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
+import { KeyboardSpacer } from '@/components/skeleton';
 import { AppField } from '@/components/app-field';
 import { FormMessage } from '@/components/form-message';
 import { InlineStatus } from '@/components/inline-status';
@@ -107,10 +108,12 @@ export default function ReportForm(props: Props) {
       : COPY.submitAppIssue;
 
   return (
+    <View style={styles.scroll}>
     <ScrollView
       style={styles.scroll}
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
     >
       {props.variant === 'booking' ? (
         <View style={styles.section}>
@@ -153,6 +156,8 @@ export default function ReportForm(props: Props) {
         loading={isSubmitting}
       />
     </ScrollView>
+    <KeyboardSpacer />
+    </View>
   );
 }
 

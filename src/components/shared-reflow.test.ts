@@ -20,6 +20,7 @@ function load(file: string): Props {
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'Fragment' };
       if (name === '@/global.css') return {};
       if (name === '@expo/vector-icons') return { Ionicons: 'Icon' };
+      if (name === '@/components/skeleton') return { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' };
       if (name === '@/components/app-symbol') return { AppSymbol: 'SymbolView' };
       if (name === 'expo-image') return { Image: 'Image' };
       if (name === 'react') return { useState: (v: any) => [v, () => {}] };

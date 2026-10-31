@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View, type TextInput } from 'react-native';
+import { StyleSheet, Text, View, type TextInput } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
+import { PulseDots } from '@/components/skeleton';
 import { AuthScreen, useAuthScroll } from '@/components/auth-screen';
 import { FormMessage } from '@/components/form-message';
 import { PasswordField } from '@/components/password-field';
@@ -121,7 +122,7 @@ export default function UpdatePasswordScreen() {
     <AuthScreen scrollRef={scrollRef} title={title}>
       {showProcessing ? (
         <View style={styles.checking} accessibilityLiveRegion="polite">
-          <ActivityIndicator color={colors.accent} />
+          <PulseDots color={colors.accent} />
           <Text style={styles.checkingText}>Checking recovery link…</Text>
         </View>
       ) : null}

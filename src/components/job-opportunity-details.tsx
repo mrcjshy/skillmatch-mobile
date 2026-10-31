@@ -250,7 +250,7 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <InlineStatus variant="loading" message={JOB_OPPORTUNITY_COPY.loading} />
+        <InlineStatus variant="loading" skeleton="detail" message={JOB_OPPORTUNITY_COPY.loading} />
       </View>
     );
   }
@@ -324,7 +324,7 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
       <View style={[styles.pad, styles.section]}>
         <SectionHeader title="Skills for this job" />
         {requirements.status === 'loading' ? (
-          <InlineStatus variant="loading" message={JOB_OPPORTUNITY_COPY.loadingRequirements} />
+          <InlineStatus variant="loading" skeleton="lines" message={JOB_OPPORTUNITY_COPY.loadingRequirements} />
         ) : requirements.status === 'error' ? (
           <Text style={styles.note}>{JOB_OPPORTUNITY_COPY.requirementsFailed}</Text>
         ) : requirements.skills.length === 0 ? (
@@ -363,7 +363,7 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
       ) : null}
 
       <View style={[styles.pad, styles.section]}>
-        <SectionHeader title="Location" subtitle="Review the saved service location before accepting." />
+        <SectionHeader title="Location" />
         <WorkerOpportunityJobLocation location={location} />
       </View>
 

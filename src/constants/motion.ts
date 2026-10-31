@@ -2,7 +2,8 @@
  * SkillMatch motion tokens: the only timing, easing, scale and distance values motion may use.
  *
  * Personality: responsive, warm, calm and purposeful, Android-first. Motion explains a change of
- * state (pressed, arrived, reordered, succeeded); it never decorates, loops or delays a task.
+ * state (pressed, arrived, reordered, succeeded); it never decorates or delays a task. A wait may
+ * breathe, but only a bounded number of times, so an idle screen really is idle.
  * Every value here is consumed through `@/components/motion`, which also applies the system
  * reduced-motion preference (see `@/hooks/use-reduced-motion`). Components never hard-code a
  * duration or a curve of their own.
@@ -52,6 +53,12 @@ export const MotionTokens = {
   },
   /** Arriving rows animate only within this window after the list's job set changes (ms). */
   revealWindow: 900,
+  /** A wait: one leg of the breath (ms), how many legs (even, so it ends at rest), and how far it dims. */
+  loading: { leg: 720, legs: 14, dim: 0.5 },
+  /** Button-sized wait: one sweep across the three dots (ms), how many sweeps, and the resting strength. */
+  dots: { sweep: 900, sweeps: 14, rest: 0.35 },
+  /** The swipe control invites a drag: how far the thumb leans (dp), for how long (ms), and how many times. */
+  swipeHint: { lean: 14, leg: 260, delay: 500, times: 2 },
 } as const;
 
 /** The delay before an arriving row at `index` starts: a short, capped cascade, never a wait. */

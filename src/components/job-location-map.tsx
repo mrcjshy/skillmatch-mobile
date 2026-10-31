@@ -1,8 +1,9 @@
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import * as Linking from 'expo-linking';
 
 import { AppButton } from '@/components/app-button';
+import { Skeleton } from '@/components/skeleton';
 import { MapPinLabel } from '@/components/map-pin-label';
 import {
   WorkerJobLocationMapLibre,
@@ -103,7 +104,7 @@ export function StaticJobMap({
             <MapPinLabel kind="destination" label="Job location" />
           </Marker>
         </Map>
-        {!loaded ? <View style={styles.loading}><ActivityIndicator accessibilityLabel="Loading job location map" /></View> : null}
+        {!loaded ? <View style={styles.loading}><Skeleton shape="fill" label="Loading job location map" /></View> : null}
       </View>
     </MapErrorBoundary>
   );
@@ -119,7 +120,6 @@ export function WorkerOpportunityJobLocation({ location }: { location: Opportuni
       <Text style={styles.heading}>Job location</Text>
       <Text style={styles.body}>{location.address ?? 'Address unavailable for this saved job.'}</Text>
       <Text style={styles.help}>{formatLocation(location.barangay, location.city)}</Text>
-      <Text style={styles.help}>You can see this exact location because you currently qualify. Access may end if your eligibility changes.</Text>
       <WorkerJobLocationMapLibre key={`${location.pin.longitude}:${location.pin.latitude}`} pin={location.pin} />
     </View>
   );

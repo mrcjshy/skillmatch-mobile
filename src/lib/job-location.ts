@@ -10,6 +10,7 @@
 
 import { supabase } from './supabase';
 import type { JobPaymentMethod } from './job-payment';
+import { hasUnfilledPresetBlank } from './job-description-presets';
 import {
   evaluateSantaAnaJobPin,
   isPinInSantaAnaServiceArea,
@@ -58,6 +59,7 @@ const INVALID_INPUT = '22023';
 export const COPY = {
   missingAddress: 'Please confirm your selected job location.',
   missingDescription: 'Please describe the work needed.',
+  unfilledPresetBlank: 'Fill in or remove the parts in [brackets].',
   missingPin: 'Please select a location on the map.',
   invalidPin: 'Please select a valid location on the map.',
   outsideServiceArea: [
@@ -173,7 +175,8 @@ export function isValidJobCoordinate(latitude: unknown, longitude: unknown): boo
 }
 
 export function postingDescriptionError(description: string): string | null {
-  return description.trim().length === 0 ? COPY.missingDescription : null;
+  if (description.trim().length === 0) return COPY.missingDescription;
+  return hasUnfilledPresetBlank(description) ? COPY.unfilledPresetBlank : null;
 }
 
 export function postingLocationError(address: string, pin: JobPin | null): string | null {

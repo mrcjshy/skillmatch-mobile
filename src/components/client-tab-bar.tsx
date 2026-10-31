@@ -8,7 +8,7 @@ import { MotionView, usePressScale } from '@/components/motion';
 import { SkillMatchTheme } from '@/constants/theme';
 
 /**
- * Wave 7 — the Client bottom navigation with Post a job as its central circular action.
+ * Wave 7 â€” the Client bottom navigation with Post a job as its central circular action.
  *
  * The four tab routes stay ordinary tabs (same `tablist` / `tab` roles, selected state, labels,
  * tabPress/tabLongPress events and navigate action as the stock bar). The action is not a route:
@@ -101,7 +101,7 @@ export function ClientTabBar({ state, descriptors, navigation, insets, onPostJob
 
 const styles = StyleSheet.create({
   row: { flex: 1, flexDirection: 'row' },
-  tab: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', padding: 5 },
+  tab: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingVertical: 5, paddingHorizontal: 0 },
   actionSlot: {
     width: size.actionCircle + spacing.lg,
     alignItems: 'center',

@@ -1,7 +1,9 @@
 /**
  * V3 Wave 1 — own-user Terms/Privacy consent RPCs.
  *
- * Versions are the locked pair from legal-documents.ts (2026-09-v1).
+ * Versions are the current pair from legal-documents.ts (Terms 2026-09-v1,
+ * Privacy 2026-10-v1). A stored older Privacy version is not current, so the
+ * consent gate asks again.
  * Consent is never stored in Auth metadata. record_my_consent requires an
  * authenticated caller with a public.users row (42501 otherwise).
  */

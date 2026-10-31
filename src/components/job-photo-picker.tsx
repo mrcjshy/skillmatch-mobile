@@ -136,9 +136,6 @@ export function JobPhotoPicker({ disabled = false, photos, error, ownerKey, rese
           {photos.length}/3
         </Text>
       </View>
-      <Text style={styles.help}>
-        Optional. Add up to 3 JPEG, PNG, or WebP images. Each image can be up to 5 MiB.
-      </Text>
 
       {photos.length > 0 ? (
         <View style={styles.gallery}>

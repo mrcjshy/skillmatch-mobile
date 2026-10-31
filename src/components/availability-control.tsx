@@ -20,11 +20,6 @@ type AvailabilityControlProps = {
   compact?: boolean;
 };
 
-const OPTION_MEANING: Record<AvailabilityControlPresentedValue, string> = {
-  available: 'See jobs that match your skills.',
-  busy: 'Pause matching for new work.',
-};
-
 /**
  * The Worker's work status: a row showing the current state that opens the shared bottom sheet.
  * Opening changes nothing; a status is applied only by choosing it. Choosing the current status just
@@ -85,13 +80,11 @@ export function AvailabilityControl({ value, onChange, disabled = false, compact
       </Pressable>
 
       <AppSheet visible={open} onClose={close} title="Work status">
-        <Text style={styles.help}>Changes apply immediately.</Text>
         <View accessibilityRole="radiogroup" accessibilityLabel="Work status" style={styles.options}>
           {AVAILABILITY_CONTROL_OPTIONS.map((option) => (
             <RadioRow
               key={option.value}
               label={option.label}
-              meaning={OPTION_MEANING[option.value]}
               selected={option.value === presented}
               accessibilityLabel={option.label}
               onPress={() => selectOption(option.value)}

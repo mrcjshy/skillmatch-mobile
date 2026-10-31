@@ -47,7 +47,7 @@ export function createVideoCallApi(invoke = (body: Record<string, string>) => su
 
 export type CallMedia = { connect: (url: string, token: string) => Promise<void>; stop: () => void };
 export type VideoSessionView = { call: VideoCall | null; busy: boolean; connected: boolean; message: string | null; cleanupPending: boolean };
-export function createVideoSession(deps: { bookingId: string; request: CallRequest; media: () => CallMedia; onChange: (view: VideoSessionView) => void }) {
+export function createVideoSession(deps: { bookingId: string; request: CallRequest; media: (onDisconnected: () => void) => CallMedia; onChange: (view: VideoSessionView) => void }) {
   let view: VideoSessionView = { call: null, busy: false, connected: false, message: null, cleanupPending: false };
   let generation = 0;
   let active = false;
@@ -58,8 +58,30 @@ export function createVideoSession(deps: { bookingId: string; request: CallReque
   let unfinished: VideoCall | null = null;
   let acting = false;
   const retired = new Set<string>();
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  let deadlineKey = '', deadlineAt = 0;
+  const checkedDeadlines = new Set<string>();
+  const clearDeadline = () => { clearTimeout(deadlineTimer); deadlineTimer = undefined; };
+  const reconcileDeadline = () => {
+    clearDeadline();
+    const call = view.call;
+    if (!active || closed || call?.state !== 'ringing') return;
+    const key = `${call.call_id}:${call.ring_expires_at}`;
+    if (checkedDeadlines.has(key)) return;
+    if (key !== deadlineKey) {
+      deadlineKey = key;
+      deadlineAt = Date.now() + Math.max(0, Math.min(45_000, Date.parse(call.ring_expires_at) - Date.parse(call.server_now)));
+    }
+    deadlineTimer = setTimeout(() => {
+      deadlineTimer = undefined;
+      if (!active || closed || view.call?.call_id !== call.call_id || view.call.state !== 'ringing') return;
+      checkedDeadlines.add(key);
+      // The deadline is only a reason to read. Only the server may mark a call missed.
+      void session.refresh();
+    }, Math.max(250, deadlineAt - Date.now()));
+  };
   const set = (patch: Partial<VideoSessionView>) => { view = { ...view, ...patch }; deps.onChange(view); };
-  const stopMedia = () => { media?.stop(); media = null; set({ connected: false }); };
+  const stopMedia = () => { const current = media; media = null; current?.stop(); set({ connected: false }); };
   const finish = async (call: VideoCall) => {
     if (terminalCall(call)) return;
     unfinished = call;
@@ -81,9 +103,10 @@ export function createVideoSession(deps: { bookingId: string; request: CallReque
     }
     set({ call });
     if (call && terminalCall(call)) { retired.add(call.call_id); generation++; stopMedia(); }
+    reconcileDeadline();
     return true;
   };
-  return {
+  const session = {
     get view() { return view; },
     async refresh() {
       if (!active || closed) return;
@@ -108,10 +131,17 @@ export function createVideoSession(deps: { bookingId: string; request: CallReque
         const result = await deps.request(action, action === 'start' ? deps.bookingId : view.call!.call_id);
         if (closed || gen !== generation) { if (result.call) await finish(result.call); return; }
         if (!apply(result.call)) return;
-        if (result.ok === false) { set({ message: 'This action is unavailable. Refresh the call status.' }); return; }
+        // The call moved on (answered elsewhere, expired, ended). Read the server's state instead of asking the user to.
+        if (result.ok === false) { set({ message: 'This call has changed. Showing the latest status.' }); void session.refresh(); return; }
         if (active && result.call?.state === 'accepted' && result.token && result.url) {
           stopMedia();
-          const connection = deps.media(); media = connection;
+          const connection = deps.media(() => {
+            if (closed || !active || gen !== generation || media !== connection) return;
+            generation++; stopMedia();
+            set({ busy: false, message: 'Call disconnected. Tap Join to reconnect.' });
+            // The other person hanging up looks the same as a dropped line: ask the server which it was.
+            void session.refresh().then(() => { if (view.call && terminalCall(view.call)) set({ message: null }); });
+          }); media = connection;
           await connection.connect(result.url, result.token);
           if (closed || !active || gen !== generation) { connection.stop(); return; }
           const back = await deps.request('back', result.call.call_id);
@@ -129,12 +159,14 @@ export function createVideoSession(deps: { bookingId: string; request: CallReque
     setActive(next: boolean) {
       if (closed || next === active) return;
       active = next;
+      reconcileDeadline();
       if (!next) {
         generation++; stopMedia(); set({ busy: false });
         if (view.call?.state === 'accepted') void deps.request('away', view.call.call_id).catch(() => {});
       }
     },
-    end() { closed = true; active = false; generation++; stopMedia(); set({ busy: false }); if (view.call) void finish(view.call); },
+    end() { closed = true; active = false; clearDeadline(); generation++; stopMedia(); set({ busy: false }); if (view.call) void finish(view.call); },
     retryEnd() { if (closed && unfinished) void finish(unfinished); },
   };
+  return session;
 }

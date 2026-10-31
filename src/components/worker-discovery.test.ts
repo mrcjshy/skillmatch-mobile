@@ -32,6 +32,7 @@ function harness(file: string, overrides: P = {}) {
     '@/lib/booking-records': { loadWorkerBookings: async () => [] },
     '@/lib/worker-identity': { workerHomeIdentityNotice: () => 'none', getMyIdentitySubmission: async () => null },
     '@/lib/realtime': { createCoalescedInvalidation: (fn: any) => ({ invalidate: fn, cancel: noop }), subscribeInvalidation: () => noop, workerOpportunitiesTopic: () => 'worker' },
+    '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
     '@/components/grouped-row': leaf('src/components/grouped-row.ts'),
     '@/lib/worker-opportunity-sort': sortModule(),
     // Inert motion seam: the Reanimated list host stays a FlatList; reveal and presets are recorded.
@@ -53,12 +54,13 @@ function harness(file: string, overrides: P = {}) {
 }
 function all(tree: any): any[] {
   if (Array.isArray(tree)) return tree.flatMap(all);
-  return tree?.props ? [tree, ...all(tree.props.children)] : [];
+  return tree?.props ? [tree, ...all(tree.props.children), ...all(tree.props.trailing)] : [];
 }
 const home = 'src/app/(worker)/(tabs)/worker/index.tsx';
 const rows = [{ job_id: 'ranked-first', title: 'A complete long opportunity name', total_points: 91 }, { job_id: 'ranked-tie', title: 'Second tied record', total_points: 91 }];
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
-const sortButton = (h: ReturnType<typeof harness>) => all(h.render()).find(x => x.type === 'AppButton' && x.props.label?.startsWith('Sort by: '));
+// A compact 48dp icon in the Available jobs header; its name carries the current order.
+const sortButton = (h: ReturnType<typeof harness>) => all(h.render()).find(x => x.type === 'AppIconButton' && x.props.accessibilityLabel?.startsWith('Sort by: '));
 const sortSheet = (h: ReturnType<typeof harness>) => all(h.render()).find(x => x.type === 'AppSheet' && x.props.title === 'Sort by');
 function chooseSort(h: ReturnType<typeof harness>, label: string) {
   sortButton(h).props.onPress();
@@ -76,6 +78,7 @@ function leaf(file: string): P {
     if (id === 'react-native') return { StyleSheet: { create: (x: any) => x, hairlineWidth: 1 }, Platform: { select: (x: any) => x.android ?? x.default }, Text: 'Text', View: 'View', Pressable: 'Pressable', ActivityIndicator: 'ActivityIndicator' };
       if (id === '@/components/app-symbol') return { AppSymbol: 'SymbolView' };
     if (id === '@/constants/theme') return leaf('src/constants/theme.ts');
+    if (id === '@/components/skeleton') return { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' };
     throw Error('Unexpected leaf dependency ' + id);
   };
   new Function('require', 'exports', ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText)(require, exports);
@@ -133,9 +136,10 @@ it('Home keeps name and status in the sticky header above the list and renders e
   // Server order is kept and every job is listed; there is no entry button, overlay or modal.
   expect(list.props.data.map((x: P) => x.job_id)).toEqual(['ranked-first', 'ranked-tie', 'ranked-first', 'ranked-tie']);
   expect(nodes.some(x => x.type === 'FindWorkOverlay' || x.type === 'Modal')).toBe(false);
-  expect(nodes.filter(x => x.type === 'AppButton').map(x => x.props.label)).toEqual(['Sort by: Best match']);
+  expect(nodes.filter(x => x.type === 'AppButton')).toEqual([]);
+  expect(nodes.filter(x => x.type === 'AppIconButton').map(x => x.props.accessibilityLabel)).toEqual(['Sort by: Best match']);
   const card = all(list.props.renderItem({ item: rows[0], index: 0 })).find(x => x.type === 'JobOpportunityCompactCard');
-  expect(card.props.compact).toBe(true); expect(card.props.opportunity).toBe(rows[0]);
+  expect(card.props.opportunity).toBe(rows[0]);
   card.props.onPress();
   expect(h.navigation).toEqual([{ pathname: '/worker/opportunity-details', params: { jobId: 'ranked-first' } }]);
 });
@@ -317,7 +321,7 @@ it('Wave 7: Home offers Sort by (Best match, Job date, Date posted) and only reo
   chooseSort(h, 'Job date');
   expect(ids()).toEqual(['soon', 'best', 'past', 'unscheduled']);
   chooseSort(h, 'Date posted');
-  expect(sortButton(h).props.label).toBe('Sort by: Date posted');
+  expect(sortButton(h).props.accessibilityLabel).toBe('Sort by: Date posted');
   h.render(); await h.effects.at(-1)(); await flush();
   expect(ids()).toEqual(['soon', 'past', 'best', 'unscheduled']);
   // The same rows every time: nothing added, dropped or re-scored.
@@ -327,7 +331,7 @@ it('Wave 7: Home offers Sort by (Best match, Job date, Date posted) and only reo
 it('offers one compact sort disclosure and closes without changing order when dismissed', () => {
   const h = harness(home); h.states.splice(0, 6, false, null, rows, [], null, true);
   const button = sortButton(h);
-  expect(button).toBeDefined(); expect(button.props.variant).toBe('secondary');
+  expect(button).toBeDefined(); expect(button.props.variant).toBe('tonal');
   expect(all(h.render()).filter(x => x.type === 'AppSegment')).toHaveLength(0);
   expect(sortSheet(h).props.visible).toBe(false);
   button.props.onPress(); expect(sortButton(h).props.expanded).toBe(true);
@@ -336,7 +340,7 @@ it('offers one compact sort disclosure and closes without changing order when di
   expect(choices.map(x => x.props.selected)).toEqual([true, false, false]);
   expect(all(sortSheet(h)).find(x => x.props.accessibilityRole === 'radiogroup').props.accessibilityLabel).toBe('Sort by');
   sortSheet(h).props.onClose(); expect(sortSheet(h).props.visible).toBe(false);
-  expect(sortButton(h).props.label).toBe('Sort by: Best match');
+  expect(sortButton(h).props.accessibilityLabel).toBe('Sort by: Best match');
   expect(all(h.render()).find(x => x.type === 'FlatList').props.data).toEqual(rows);
   expect(h.navigation).toEqual([]);
 });
@@ -352,7 +356,7 @@ it.each(['zero', 'one', 'loading', 'error'])('keeps the sort sheet closed when j
   expect(sortSheet(h).props.visible).toBe(false);
   h.states[0] = false; h.states[1] = null; h.states[2] = rows;
   expect(sortSheet(h).props.visible).toBe(false);
-  expect(sortButton(h).props).toMatchObject({ label: 'Sort by: Job date', expanded: false });
+  expect(sortButton(h).props).toMatchObject({ accessibilityLabel: 'Sort by: Job date', expanded: false });
 });
 
 it('Wave 7: Sort by is hidden for zero or one job, so empty states stay as they were', () => {
@@ -389,13 +393,13 @@ it('UI-L1: pulling the job list refreshes its rows and finishes while keeping th
   chooseSort(h, 'Job date');
   list().props.refreshControl.props.onRefresh();
   expect(list().props.refreshControl.props.refreshing).toBe(true);
-  expect(sortButton(h).props.label).toBe('Sort by: Job date');
+  expect(sortButton(h).props.accessibilityLabel).toBe('Sort by: Job date');
   expect(list().props.data.map((row: P) => row.job_id)).toEqual(['soon', 'later']);
   release([...initial, { job_id: 'earliest', title: 'New work', scheduled_at: '2098-12-01T00:00:00Z', total_points: 80 }]);
   await flush();
   expect(list().props.refreshControl.props.refreshing).toBe(false);
   expect(list().props.data.map((row: P) => row.job_id)).toEqual(['earliest', 'soon', 'later']);
-  expect(sortButton(h).props.label).toBe('Sort by: Job date');
+  expect(sortButton(h).props.accessibilityLabel).toBe('Sort by: Job date');
   cleanups.forEach(cleanup => cleanup?.());
 });
 

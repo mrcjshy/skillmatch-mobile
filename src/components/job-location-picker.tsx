@@ -1,5 +1,5 @@
 import { Component, useCallback, useEffect, useLayoutEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
-import { ActivityIndicator, AppState, Keyboard, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { AppState, Keyboard, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { CameraRef, MapRef, ViewStateChangeEvent } from '@maplibre/maplibre-react-native';
 import type { NativeSyntheticEvent } from 'react-native';
@@ -18,8 +18,10 @@ import { createCanonicalLocationSelection, emptyLocationSelection, type Canonica
 import { jobMapRuntime as mapsRuntime } from '@/lib/native-job-map';
 import { PICKER_MAP_STYLE } from '@/lib/picker-map-style';
 import { pinFromMapCenter, pinToLngLat } from '@/lib/map-coordinates';
-import { findPickerMapContext, NEAR_LANDMARK_METERS, SNAP_MIN_ZOOM, type NearbyMappedFeature, type SnapKind } from '@/lib/job-location-snap';
+import { findPickerMapContext, NEAR_LANDMARK_METERS, SNAP_MIN_ZOOM, type NearbyMappedFeature } from '@/lib/job-location-snap';
+import { evaluateSantaAnaJobPin, santaAnaRingBBox, SANTA_ANA_PATEROS_BOUNDARY_RING } from '@/lib/santa-ana-service-area';
 import { AppButton } from '@/components/app-button';
+import { PulseDots, Skeleton } from '@/components/skeleton';
 import { AppSymbol } from '@/components/app-symbol';
 import { AppNotice } from '@/components/app-notice';
 import { inspectLocationPermission, type LocationPermissionState } from '@/lib/location-permission';
@@ -32,6 +34,14 @@ const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 // Keeps the school area and surrounding streets in view on a phone-sized map.
 const PICKER_STREET_ZOOM = 16.6;
 type PickerOwner = { scope: RecentLocationScope; lifetime: SessionLifetime | null | undefined; revision: number | undefined };
+type Suggestion = { generation: number; place: NearbyMappedFeature };
+// Informational outline of the authoritative service polygon, drawn from its exact
+// vertices. Confirmation still depends only on the coordinate validation path.
+const SERVICE_AREA_BOUNDARY = {
+  type: 'Feature' as const,
+  properties: {},
+  geometry: { type: 'Polygon' as const, coordinates: [SANTA_ANA_PATEROS_BOUNDARY_RING.map(([longitude, latitude]) => [longitude, latitude])] },
+};
 
 /** Native pin-tip projection shares the optional context deadline. */
 async function captureMapPin(map: MapRef, target: [number, number], fallback: JobPin): Promise<{ raw: JobPin; budgetMs: number }> {
@@ -100,6 +110,10 @@ export function JobLocationPicker({
   const topOverlayHeight = insets.top + 64;
   const cameraPadding = { top: topOverlayHeight, right: 0, bottom: sheetHeight, left: 0 };
   const pinTarget: [number, number] = [mapSize.width / 2, (mapSize.height + topOverlayHeight - sheetHeight) / 2];
+  const [recoveryMinZoom, setRecoveryMinZoom] = useState(15);
+  const [serviceAreaRecovery, setServiceAreaRecovery] = useState<{
+    epoch: number; scope: RecentLocationScope; bounds: [number, number, number, number] | null;
+  } | null>(null);
   const cameraRef = useRef<CameraRef>(null);
   const mapRef = useRef<MapRef>(null);
   const initialRenderResolved = useRef(false);
@@ -113,8 +127,7 @@ export function JobLocationPicker({
   const lookupEpoch = useRef(0);
   const locationRequestEpoch = useRef(0);
   const [moving, setMoving] = useState(false);
-  const [checkingSnap, setCheckingSnap] = useState(false);
-  const [snapKind, setSnapKind] = useState<SnapKind | null>(null);
+  const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
   const [showInitialAddress, setShowInitialAddress] = useState(Boolean(pin && initialAddress));
   const [mapReady, setMapReady] = useState(mapsRuntime !== null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -161,6 +174,8 @@ export function JobLocationPicker({
   const Map = mapsRuntime?.Map;
   const Camera = mapsRuntime?.Camera;
   const Marker = mapsRuntime?.Marker;
+  const GeoJSONSource = mapsRuntime?.GeoJSONSource;
+  const Layer = mapsRuntime?.Layer;
 
   useEffect(() => {
     if (!mapReady || mapLoaded || mapRendered) return;
@@ -217,8 +232,7 @@ export function JobLocationPicker({
       setSuggestions([]);
       setSearching(false);
       setLocating(false);
-      setCheckingSnap(false);
-      setSnapKind(null);
+      setSuggestion(null);
       candidateMoveRef.current = null;
       movingRef.current = false;
       currentMoveRef.current = false;
@@ -255,8 +269,7 @@ export function JobLocationPicker({
       setSuggestions([]);
       setSearching(false);
       setLocating(false);
-      setCheckingSnap(false);
-      setSnapKind(null);
+      setSuggestion(null);
       candidateMoveRef.current = null;
       movingRef.current = false;
       currentMoveRef.current = false;
@@ -386,8 +399,6 @@ export function JobLocationPicker({
       if (state === 'active') void resolveAddress();
       else {
         lookupEpoch.current += 1;
-        // An invalidated native query must not retain a confirmation blocker.
-        setCheckingSnap(false);
         searchEpoch.current += 1;
         setSuggestions([]);
         setSearching(false);
@@ -400,14 +411,14 @@ export function JobLocationPicker({
 
   function beginMove(): void {
     if (movingRef.current) return;
+    setServiceAreaRecovery(null);
     locationRequestEpoch.current += 1;
     movingRef.current = true;
     lookupEpoch.current += 1;
     selection.select(null);
     candidateMoveRef.current = null;
     selectedScope.current = null;
-    setCheckingSnap(false);
-    setSnapKind(null);
+    setSuggestion(null);
     setShowInitialAddress(false);
     rawCenterRef.current = null;
     onInvalidate?.();
@@ -433,6 +444,8 @@ export function JobLocationPicker({
     // userInteraction=true, including after an assisted/exact camera movement.
     if (!movingRef.current && !currentMoveRef.current && (!event.nativeEvent.userInteraction || handledIdleRef.current)) return;
     handledIdleRef.current = true;
+    // Do not force a zoom jump when the user interrupts the wider recovery view.
+    if (event.nativeEvent.zoom >= 15) setRecoveryMinZoom(15);
     if (!movingRef.current) beginMove();
     currentMoveRef.current = false;
     movingRef.current = false;
@@ -461,31 +474,21 @@ export function JobLocationPicker({
     const scope = captureScope();
     selectedScope.current = scope;
     const generation = selection.snapshot().generation;
-    const maySnap = budgetMs > 0 && selection.snapshot().origin === 'manual' && zoom >= SNAP_MIN_ZOOM && mapRef.current !== null;
-    setCheckingSnap(maySnap);
-    // Address and optional native context start independently. Only a possible
-    // coordinate adjustment temporarily guards confirmation (bounded to 750 ms).
+    const maySuggest = budgetMs > 0 && selection.snapshot().origin === 'manual' && zoom >= SNAP_MIN_ZOOM && mapRef.current !== null;
+    // The address alone gates confirmation. Optional native context may only
+    // offer a mapped place; it never moves the camera or the chosen coordinate.
     void resolveAddress();
-    let candidate = null;
+    let candidate: NearbyMappedFeature | null = null;
     let landmarks: NearbyMappedFeature[] = [];
     try {
       if (zoom >= 15 && mapRef.current) {
-        const context = await findPickerMapContext(mapRef.current, rawCenter, zoom, maySnap, budgetMs);
-        candidate = maySnap ? context.snap : null;
+        const context = await findPickerMapContext(mapRef.current, rawCenter, zoom, maySuggest, budgetMs);
+        candidate = maySuggest ? context.snap : null;
         landmarks = context.nearby;
       }
     } catch { /* A failed feature query keeps the manually placed center. */ }
     if (!scope.isCurrent() || epoch !== lookupEpoch.current || movingRef.current || generation !== selection.snapshot().generation) return;
-    setCheckingSnap(false);
-    if (candidate && cameraRef.current) {
-      setSnapKind(candidate.kind);
-      selection.adjust(candidate.pin, { label: candidate.label, pin: candidate.pin, source: 'mapped', mapped: candidate });
-      programmaticMoveRef.current = true;
-      cameraRef.current.easeTo({ center: pinToLngLat(candidate.pin), padding: cameraPadding, duration: reducedMotion ? 0 : 200 });
-      void resolveAddress();
-    } else {
-      setSnapKind(null);
-    }
+    setSuggestion(candidate ? { generation, place: candidate } : null);
     selection.setNearby(generation, landmarks);
   }
 
@@ -511,17 +514,72 @@ export function JobLocationPicker({
     finally { initialRenderPending.current = false; }
   }
 
+  useEffect(() => {
+    const recovery = serviceAreaRecovery;
+    if (!recovery || !recovery.scope.isCurrent() || recovery.epoch !== lookupEpoch.current || movingRef.current || !cameraRef.current) return;
+    // The lower recovery-only zoom floor has committed, but the camera module call reaches the UI
+    // thread ahead of queued prop mounts; one frame lets the floor mount so the fit is not clamped at 15.
+    // Symmetric insets keep the existing pin-tip target fixed while clearing the
+    // 52-point location control, its sheet gap, and an extra margin on all edges.
+    const inset = 52 + spacing.md * 2;
+    const padding = { top: topOverlayHeight + inset, right: spacing.gutter, bottom: sheetHeight + inset, left: spacing.gutter };
+    programmaticMoveRef.current = true;
+    const failed = () => { if (recovery.epoch === lookupEpoch.current) programmaticMoveRef.current = false; };
+    const frame = requestAnimationFrame(() => {
+      if (!cameraRef.current || recovery.epoch !== lookupEpoch.current || movingRef.current) { failed(); return; }
+      try {
+        const result = recovery.bounds
+          ? cameraRef.current.fitBounds(recovery.bounds, { padding, bearing: 0, pitch: 0, duration: reducedMotion ? 0 : 300, easing: 'ease' })
+          : cameraRef.current.easeTo({ center: pinToLngLat(SANTA_ANA_PATEROS_DISPLAY_REGION), zoom: 14, padding, bearing: 0, pitch: 0, duration: reducedMotion ? 0 : 300 });
+        void Promise.resolve(result).catch(failed);
+      } catch { failed(); }
+    });
+    // A measured viewport or sheet change refits only this still-current action.
+    return () => cancelAnimationFrame(frame);
+  }, [serviceAreaRecovery, topOverlayHeight, sheetHeight, mapSize.width, mapSize.height, reducedMotion]);
+
   function useExactPin(): void {
     const current = selection.snapshot();
     const rawCenter = current.rawPin;
-    if (!rawCenter || (!snapKind && current.origin !== 'mapped') || !cameraRef.current) return;
+    if (!rawCenter || current.origin !== 'mapped' || !cameraRef.current) return;
     lookupEpoch.current += 1;
-    setSnapKind(null);
-    setCheckingSnap(false);
+    setSuggestion(null);
     selection.select(rawCenter);
     programmaticMoveRef.current = true;
     cameraRef.current.easeTo({ center: pinToLngLat(rawCenter), padding: cameraPadding, duration: reducedMotion ? 0 : 200 });
     void resolveAddress();
+  }
+
+  function acceptSuggestion(offer: Suggestion): void {
+    // Only this explicit tap selects the mapped coordinate, and only for the pin it was found for.
+    if (offer.generation !== selection.snapshot().generation) return;
+    selectNearby(offer.place);
+  }
+
+  function returnToServiceArea(): void {
+    if (busy || mapAvailable !== 'ready' || movingRef.current || !cameraRef.current) return;
+    const current = selection.snapshot();
+    const scope = captureScope();
+    if (current.error !== 'outside' || current.generation !== selectionState.generation || !scope.isCurrent()) return;
+    const box = santaAnaRingBBox();
+    const bounds: [number, number, number, number] = [Number(box.west), Number(box.south), Number(box.east), Number(box.north)];
+    const center = { longitude: (bounds[0] + bounds[2]) / 2, latitude: (bounds[1] + bounds[3]) / 2 };
+    // The bbox is for framing only. Validate its center against the real polygon;
+    // an unsuitable center falls back to the existing anchor with a wider view.
+    const usableCenter = evaluateSantaAnaJobPin(center).ok;
+    locationRequestEpoch.current += 1;
+    lookupEpoch.current += 1;
+    selection.select(null);
+    candidateMoveRef.current = null;
+    currentMoveRef.current = false;
+    selectedScope.current = null;
+    rawCenterRef.current = null;
+    setSuggestion(null);
+    setShowInitialAddress(false);
+    onInvalidate?.();
+    programmaticMoveRef.current = true;
+    setRecoveryMinZoom(12);
+    setServiceAreaRecovery({ epoch: lookupEpoch.current, scope, bounds: usableCenter ? bounds : null });
   }
 
   async function handleUseCurrentLocation(): Promise<void> {
@@ -567,7 +625,7 @@ export function JobLocationPicker({
   function updateSheetHeight(nextHeight: number): void {
     if (!Number.isFinite(nextHeight) || nextHeight <= 0 || Math.abs(nextHeight - sheetHeight) < 0.5) return;
     setSheetHeight(nextHeight);
-    if (movingRef.current || !cameraRef.current) return;
+    if (movingRef.current || !cameraRef.current || (serviceAreaRecovery && serviceAreaRecovery.epoch === lookupEpoch.current)) return;
     const center = selection.snapshot().pin ?? rawCenterRef.current ?? pin ?? SANTA_ANA_PATEROS_DISPLAY_REGION;
     programmaticMoveRef.current = true;
     try {
@@ -584,12 +642,14 @@ export function JobLocationPicker({
 
   function moveToCandidate(pin: JobPin, context: SelectionContext = {}): void {
     if (busy || !cameraRef.current) return;
+    setServiceAreaRecovery(null);
+    setRecoveryMinZoom(15);
     const selected = selection.snapshot();
     if (!movingRef.current && selected.status === 'ready' && selected.pin && selectedScope.current?.isCurrent() &&
       Math.abs(selected.pin.latitude - pin.latitude) < 0.0000001 && Math.abs(selected.pin.longitude - pin.longitude) < 0.0000001) {
       // MapLibre need not emit an idle event for a camera already at this pin.
       lookupEpoch.current += 1;
-      setSnapKind(null);
+      setSuggestion(null);
       selection.identify(context);
       const scope = captureScope();
       selectedScope.current = scope;
@@ -616,11 +676,14 @@ export function JobLocationPicker({
   const fallback = selectionState.error === 'geocode' && selectionState.status === 'ready';
   const selectedFeature = authorityIsCurrent && ownerMatches(selectedOwner) && !moving && selectionState.error !== 'outside' ? selectionState.feature : null;
   const nearby = authorityIsCurrent && candidateScope && !moving ? selectionState.nearby : [];
-  const nearPlace = !selectedFeature && selectionState.deliberate && selectionState.origin === 'manual' && !snapKind &&
+  const nearPlace = !selectedFeature && selectionState.deliberate && selectionState.origin === 'manual' &&
     selectionState.error !== 'outside' ? nearby.find(item => item.distanceMeters <= NEAR_LANDMARK_METERS) : null;
   const primaryAddress = selectedFeature?.label ?? (nearPlace ? `Near ${nearPlace.label}` : fallback ? 'Santa Ana, Pateros' : addressParts[0] ?? addressCopy);
   const secondaryAddress = fallback ? 'Exact street unavailable.' : selectedFeature || nearPlace ? selectionState.address : addressParts.slice(1).join(', ');
   const alternatives = nearby.filter(item => item.id !== selectedFeature?.mapped?.id);
+  const offered = authorityIsCurrent && candidateScope && ownerMatches(selectedOwner) && !moving && suggestion?.generation === selectionState.generation ? suggestion : null;
+  // The offered place keeps its map marker but is not repeated as a Nearby row.
+  const listedAlternatives = alternatives.filter(item => item.id !== offered?.place.id);
   const candidateMarkers = alternatives.filter((item, index, items) => item.distancePx > 32 &&
     !items.slice(0, index).some(other => Math.hypot(item.offsetPx[0] - other.offsetPx[0], item.offsetPx[1] - other.offsetPx[1]) < 48));
   const canReturnToPoint = selectedFeature?.source === 'mapped' && selectionState.rawPin && selectionState.pin &&
@@ -661,11 +724,16 @@ export function JobLocationPicker({
             >
               <Camera
                 ref={cameraRef}
-                minZoom={15}
+                minZoom={recoveryMinZoom}
                 maxZoom={19}
                 padding={cameraPadding}
                 initialViewState={{ center: pinToLngLat(pin ?? SANTA_ANA_PATEROS_DISPLAY_REGION), zoom: PICKER_STREET_ZOOM, padding: cameraPadding, bearing: 0, pitch: 0 }}
               />
+              {GeoJSONSource && Layer ? (
+                <GeoJSONSource id="service-area-boundary" data={SERVICE_AREA_BOUNDARY} tolerance={0}>
+                  <Layer id="service-area-boundary-line" type="line" paint={{ 'line-color': colors.accent, 'line-width': 2, 'line-opacity': 0.8 }} />
+                </GeoJSONSource>
+              ) : null}
               {!searchOpen && Marker ? candidateMarkers.map(item => (
                 <Marker key={item.id} id={`candidate:${item.id}`} lngLat={pinToLngLat(item.pin)}
                   onPress={() => selectNearby(item)}>
@@ -685,7 +753,7 @@ export function JobLocationPicker({
             </View>
             {!mapLoaded && !mapRendered ? (
               <View style={styles.loading} pointerEvents="none">
-                <ActivityIndicator accessibilityLabel="Loading job location map" />
+                <Skeleton shape="fill" label="Loading job location map" />
               </View>
             ) : null}
             <Pressable
@@ -701,7 +769,7 @@ export function JobLocationPicker({
               accessibilityRole="button"
               accessibilityLabel={COPY.useCurrentLocation}
               accessibilityState={{ disabled: busy, busy: locating }}
-            >{locating ? <ActivityIndicator color={colors.accent} /> : <AppSymbol name={{ android: 'my_location', ios: 'location' }} size={24} tintColor={colors.accent} />}</Pressable>
+            >{locating ? <PulseDots color={colors.accent} /> : <AppSymbol name={{ android: 'my_location', ios: 'location' }} size={24} tintColor={colors.accent} />}</Pressable>
           </View>
         </MapErrorBoundary>
       ) : (
@@ -727,7 +795,7 @@ export function JobLocationPicker({
           </Pressable>
         )}
       </View>
-      {!searchOpen && !moving && !checkingSnap && authorityIsCurrent && ownerMatches(selectedOwner) && selectionState.status === 'ready' ? (
+      {!searchOpen && !moving && authorityIsCurrent && ownerMatches(selectedOwner) && selectionState.status === 'ready' ? (
         <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants"
           style={[styles.pinLabel, { top: pinTarget[1] - 128 }]}>
           <Text style={styles.pinLabelText} numberOfLines={2}>{primaryAddress}</Text>
@@ -745,12 +813,13 @@ export function JobLocationPicker({
             <Text style={styles.addressText} numberOfLines={3}>{primaryAddress}</Text>
             {fallback ? <Text style={styles.selectedCaption}>General area</Text> : null}
             {secondaryAddress ? <Text style={styles.help} numberOfLines={2}>{secondaryAddress}</Text> : null}
-            {nearPlace ? <Text style={styles.help}>Your map point, not the place entrance.</Text> : null}
-            {selectedFeature ? <Text style={styles.help}>{selectedFeature.mapped?.kind === 'street' ? 'Selected point on mapped street' : 'Selected place · mapped point'}</Text> : null}
           </View>
         </View> : <Text style={styles.selectedTitle}>Find a service location</Text>}
           {note ? <AppNotice variant="warning" message={note} /> : null}
-          {searchOpen && searching && ownerMatches(queryOwner) ? <ActivityIndicator accessibilityLabel="Searching locations" /> : null}
+          {!searchOpen && !moving && selectionState.error === 'outside' && authorityIsCurrent && ownerMatches(selectedOwner) ? (
+            <AppButton label="Back to service area" variant="ghost" onPress={returnToServiceArea} disabled={busy || mapAvailable !== 'ready'} />
+          ) : null}
+          {searchOpen && searching && ownerMatches(queryOwner) ? <Skeleton shape="line" label="Searching locations" /> : null}
           {searchOpen && searchUnavailable && ownerMatches(queryOwner) ? (
             <View>
               <AppNotice message="Search unavailable. Retry search or choose on the map." />
@@ -763,19 +832,22 @@ export function JobLocationPicker({
               style={styles.searchRow} onPress={() => { if (displayedSearchScope?.isCurrent()) { closeSearch(); moveToCandidate(item.pin, { origin: 'search', feature: { label: item.label.split(',')[0], pin: item.pin, source: 'search' } }); } }}
               accessibilityRole="button" accessibilityLabel={`Search result ${item.label}`}>
               <AppSymbol name={{ android: 'search', ios: 'magnifyingglass' }} size={20} tintColor={colors.textSecondary} />
-              <View style={styles.rowCopy}><Text style={styles.nearbyLabel}>{item.label}</Text><Text style={styles.help}>Move map to this place</Text></View>
+              <View style={styles.rowCopy}><Text style={styles.nearbyLabel}>{item.label}</Text></View>
             </Pressable>
           ))}
-          {!searchOpen && (snapKind || canReturnToPoint) ? (
-            <View>
-              {snapKind && selectedFeature ? <AppNotice variant="success" message={`Adjusted to ${selectedFeature.label}`} /> : null}
-              <AppButton label="Use exact pin instead" variant="ghost" onPress={useExactPin} disabled={busy || moving} />
+          {!searchOpen && offered ? (
+            <View accessibilityLabel="Suggested mapped place" accessibilityLiveRegion="polite">
+              <Text style={styles.nearbyLabel}>{`Nearby mapped place: ${offered.place.label}`}</Text>
+              <AppButton label="Use suggested place" accessibilityLabel={`Use suggested place ${offered.place.label}`} variant="ghost" onPress={() => acceptSuggestion(offered)} disabled={busy || moving} />
             </View>
           ) : null}
-          {alternatives.length > 0 ? (
+          {!searchOpen && canReturnToPoint ? (
+            <AppButton label="Use exact pin instead" variant="ghost" onPress={useExactPin} disabled={busy || moving} />
+          ) : null}
+          {listedAlternatives.length > 0 ? (
             <View style={styles.nearbyBlock} accessibilityLabel="Nearby landmarks">
               <Text style={styles.nearbyTitle}>Nearby landmarks</Text>
-              {alternatives.map((item) => (
+              {listedAlternatives.map((item) => (
                 <Pressable key={item.id}
                   style={styles.nearbyRow} onPress={() => { closeSearch(); selectNearby(item); }}
                   accessibilityRole="button" accessibilityLabel={`Move map to ${item.label}`}>
@@ -790,12 +862,11 @@ export function JobLocationPicker({
             <View>
               <AppNotice message={COPY.geocodeUnavailable} />
               <AppButton label="Retry address" variant="ghost" onPress={() => { void resolveAddress(); }}
-                disabled={busy || moving || checkingSnap || mapAvailable !== 'ready' || selectionState.status !== 'ready'} />
+                disabled={busy || moving || mapAvailable !== 'ready' || selectionState.status !== 'ready'} />
             </View>
           ) : null}
           {permission && permission !== 'granted' ? (
             <View>
-              <Text style={styles.help}>Device location is optional. Move the map or search to choose a location.</Text>
               <AppButton label={permission === 'settings' ? 'Open settings' : 'Enable current location'}
                 variant="ghost"
                 onPress={() => { if (permission === 'settings') void Linking.openSettings().catch(() => onNote('Unable to open Settings. Open Android app settings manually.')); else void handleUseCurrentLocation(); }} disabled={busy || moving} />
@@ -815,7 +886,7 @@ export function JobLocationPicker({
                   style={styles.searchRow} onPress={() => { if (displayedRecentScope?.isCurrent()) { closeSearch(); moveToCandidate(item.pin, { origin: 'recent' }); } }}
                   accessibilityRole="button" accessibilityLabel={`Recent location ${item.address}`}>
                   <AppSymbol name={{ android: 'history', ios: 'clock' }} size={20} tintColor={colors.textSecondary} />
-                  <View style={styles.rowCopy}><Text style={styles.nearbyLabel}>{item.address}</Text><Text style={styles.help}>Recent service location</Text></View>
+                  <View style={styles.rowCopy}><Text style={styles.nearbyLabel}>{item.address}</Text></View>
                 </Pressable>
               ))}
             </View>
@@ -831,7 +902,7 @@ export function JobLocationPicker({
         {!searchOpen ? <AppButton
           label="Confirm location"
           variant="primary"
-          disabled={busy || moving || checkingSnap || mapAvailable !== 'ready' || selectionState.status !== 'ready' || !ownerMatches(selectedOwner)}
+          disabled={busy || moving || mapAvailable !== 'ready' || selectionState.status !== 'ready' || !ownerMatches(selectedOwner)}
           onPress={() => {
             if (movingRef.current || !selectedOwner?.scope.isCurrent() ||
               selectedScope.current !== selectedOwner.scope || selection.snapshot().generation !== selectedOwner.generation) return;

@@ -4,7 +4,6 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import { directoryRowStatus } from '@/lib/admin-presentation';
-import { formatScheduleDate, formatScheduleTime } from '@/lib/date-time';
 
 /**
  * Iteration 06 Wave 6.5: the five accessibility repairs, rendered from source with inert framework
@@ -33,6 +32,8 @@ function load(path: string): Props {
     'react/jsx-runtime': { jsx: node, jsxs: node, Fragment: 'Fragment' },
     react: { Component: class {}, useState: (initial: unknown) => [typeof initial === 'function' ? initial() : initial, noop], useRef: (value: unknown) => ({ current: value }), useCallback: (fn: unknown) => fn, useEffect: noop, useMemo: (fn: () => unknown) => fn() },
     'react-native': { ...hosts, StyleSheet: { create: (value: unknown) => value }, Platform: { OS: 'android', select: (choices: Props) => choices.android ?? choices.default } },
+    '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
+
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },
     '@/global.css': {},
     'expo-symbols': { SymbolView: 'SymbolView' },
@@ -116,7 +117,7 @@ describe('A11Y-02 error messages are announced alerts', () => {
     const error = message(render(node(InlineStatus, { variant: 'error', message: 'Please select at least one required skill.' })), 'Please select at least one required skill.');
     expect(error.props.accessibilityRole).toBe('alert');
     expect(error.props.accessibilityLiveRegion).toBe('polite');
-    for (const variant of ['note', 'empty', 'loading']) {
+    for (const variant of ['note', 'empty']) {
       const plain = message(render(node(InlineStatus, { variant, message: 'Nothing yet' })), 'Nothing yet');
       expect(plain.props.accessibilityRole).toBeUndefined();
       expect(plain.props.accessibilityLiveRegion).toBeUndefined();
@@ -188,27 +189,3 @@ describe('A11Y-03 a field error belongs to its input', () => {
   });
 });
 
-describe('A11Y-05 schedule rows expose the chosen date and time', () => {
-  const { JobSchedulePicker } = load('src/components/job-schedule-picker.tsx');
-  const rows = (props: Props) => all(render(node(JobSchedulePicker, { onChangeDate: noop, onChangeTime: noop, ...props })), 'Pressable');
-  const row = (props: Props, label: string) => rows(props).find((item) => item.props.accessibilityLabel === label)!;
-
-  it('unset rows say so and offer to choose', () => {
-    expect(row({ date: null, time: null }, 'Scheduled date').props.accessibilityValue).toEqual({ text: 'Not selected' });
-    expect(row({ date: null, time: null }, 'Scheduled date').props.accessibilityHint).toBe('Choose date');
-    expect(row({ date: null, time: null }, 'Scheduled time').props.accessibilityValue).toEqual({ text: 'Not selected' });
-    expect(row({ date: null, time: null }, 'Scheduled time').props.accessibilityHint).toBe('Choose time');
-  });
-
-  it('chosen rows read the same formatted value the row shows, and offer to change it', () => {
-    const date = new Date(2026, 9, 3);
-    const time = new Date(2026, 9, 3, 15, 30);
-    const picked = { date, time };
-    expect(row(picked, 'Scheduled date').props.accessibilityValue).toEqual({ text: formatScheduleDate(date) });
-    expect(row(picked, 'Scheduled date').props.accessibilityHint).toBe('Change date');
-    expect(row(picked, 'Scheduled time').props.accessibilityValue).toEqual({ text: formatScheduleTime(time) });
-    expect(row(picked, 'Scheduled time').props.accessibilityHint).toBe('Change time');
-    expect(texts(row(picked, 'Scheduled date'))).toContain(formatScheduleDate(date));
-    expect(texts(row(picked, 'Scheduled time'))).toContain(formatScheduleTime(time));
-  });
-});

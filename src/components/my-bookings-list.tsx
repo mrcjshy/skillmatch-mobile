@@ -9,6 +9,7 @@ import { groupPosition } from '@/components/grouped-row';
 import { SectionHeader } from '@/components/section-header';
 import { InlineStatus } from '@/components/inline-status';
 import { SkillMatchTheme } from '@/constants/theme';
+import { sortBookingsByDate } from '@/lib/booking-date-order';
 import { BookingLoadError, loadErrorCopy } from '@/lib/bookings';
 import {
   BookingRole,
@@ -121,7 +122,7 @@ export default function MyBookingsList({ role }: { role: BookingRole }) {
     requestRefresh('manual');
   }
 
-  const visibleBookings = bookingsForSegment(bookings, segment);
+  const visibleBookings = sortBookingsByDate(bookingsForSegment(bookings, segment), segment);
 
   return (
     <ScrollView
@@ -145,13 +146,10 @@ export default function MyBookingsList({ role }: { role: BookingRole }) {
         onChange={setSegment}
       />
 
-      <SectionHeader
-        title={segment === 'active' ? 'Active bookings' : 'Booking history'}
-        subtitle={role === 'worker' ? 'Jobs booked to you.' : 'Workers booked to your jobs.'}
-      />
+      <SectionHeader title={segment === 'active' ? 'Active bookings' : 'Booking history'} />
 
       {isLoading ? (
-        <InlineStatus variant="loading" message="Loading your bookings…" />
+        <InlineStatus variant="loading" skeleton="bookings" message="Loading your bookings…" />
       ) : loadError ? (
         <InlineStatus
           variant="error"

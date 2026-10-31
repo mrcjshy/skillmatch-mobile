@@ -93,7 +93,7 @@ export default function ClientPortfolio({ bookingId }: { bookingId: string | nul
     return <View style={styles.center}><InlineStatus variant="empty" message={CLIENT_PORTFOLIO_COPY.unavailable} /></View>;
   }
   if (view.ownerKey !== ownerKey || (view.result === null && !view.error)) {
-    return <View style={styles.center}><InlineStatus variant="loading" message={CLIENT_PORTFOLIO_COPY.loading} /></View>;
+    return <View style={styles.center}><InlineStatus variant="loading" skeleton="detail" message={CLIENT_PORTFOLIO_COPY.loading} /></View>;
   }
   if (view.error) {
     return <View style={styles.center}><InlineStatus variant="error" message={CLIENT_PORTFOLIO_COPY.loadFailed}
@@ -109,7 +109,6 @@ export default function ClientPortfolio({ bookingId }: { bookingId: string | nul
       <SectionHeader title={state.workerName ?? 'Worker'} trailing={
         <InitialsAvatar name={state.workerName ?? 'Worker'} accent={colors.accentSubtle} size={56} photoUri={state.workerPhotoUrl} />
       } />
-      <Text style={styles.meta}>From this Worker&apos;s saved profile and portfolio.</Text>
       <View style={styles.summary}>
         <Text accessibilityRole="header" style={styles.itemTitle}>Professional profile</Text>
         {resume.isVerified === null ? null : <Text style={styles.body}>{resume.isVerified ? 'Verified Worker' : 'Not yet verified'}</Text>}

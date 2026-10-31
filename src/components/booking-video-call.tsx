@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { AppState, PermissionsAndroid, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -7,7 +7,7 @@ import type { Room } from 'livekit-client';
 import { AppSymbol } from '@/components/app-symbol';
 import { useAccount } from '@/providers/account-provider';
 import { createVideoCallApi, createVideoSession, validCallId, type VideoSessionView } from '@/lib/video-call';
-import { callPresentation, counterpartLabel, type CallAction } from '@/lib/video-call-view';
+import { callPresentation, callToAutoJoin, counterpartLabel, type CallAction } from '@/lib/video-call-view';
 import { createNativeCallMedia, loadVideoRuntime } from '@/lib/native-video-call';
 import { subscribeInvalidation, userNotificationsTopic } from '@/lib/realtime';
 
@@ -32,10 +32,11 @@ function CallScreen({ bookingId, accountId, role }: { bookingId: string; account
   const [ended, setEnded] = useState(false);
   const [permissionNote, setPermissionNote] = useState<string | null>(null);
   const permissionBusy = useRef(false);
+  const autoJoined = useRef<string | null>(null);
   useLayoutEffect(() => {
     let mounted = true;
     const session = createVideoSession({ bookingId, request: createVideoCallApi().request,
-      media: () => createNativeCallMedia(next => { if (mounted) setRoom(next); }),
+      media: onDisconnected => createNativeCallMedia(next => { if (mounted) setRoom(next); }, undefined, onDisconnected),
       onChange: next => { if (mounted) setView(next); } });
     owner.current = session;
     const update = (state: string) => { session.setActive(focused.current && state === 'active'); if (state === 'active') void session.refresh(); };
@@ -65,6 +66,13 @@ function CallScreen({ bookingId, accountId, role }: { bookingId: string; account
       setPermissionNote(null); await owner.current?.act(action);
     } finally { permissionBusy.current = false; }
   }
+  // Whoever placed the call connects as soon as it is answered; nobody should have to tap Join.
+  useEffect(() => {
+    const callId = callToAutoJoin(view, ended, autoJoined.current);
+    if (!callId) return;
+    autoJoined.current = callId;
+    void act('rejoin');
+  });
   const finish = () => { setEnded(true); owner.current?.end(); };
   const presentation = callPresentation({ view, ended });
   const who = counterpartLabel(role);
@@ -86,9 +94,8 @@ function CallScreen({ bookingId, accountId, role }: { bookingId: string; account
         <Text numberOfLines={1} style={styles.topTitle}>{who}</Text>
         {live ? <Text accessibilityLiveRegion="polite" style={styles.topStatus}>{presentation.status}</Text> : null}
       </View>
-      {!ended && !live ? <Pressable accessibilityRole="button" accessibilityLabel="Refresh call status" style={styles.iconButton} onPress={() => void owner.current?.refresh()}>
-        <AppSymbol name={{ android: 'refresh', ios: 'arrow.clockwise' }} size={22} tintColor={CALL.text} />
-      </Pressable> : <View style={styles.iconSpacer} />}
+      {/* Status stays live through call_state_changed, the ring deadline and foreground reads. */}
+      <View style={styles.iconSpacer} />
     </View>
     {!live ? <View style={styles.center}>
       <View style={styles.avatar}><AppSymbol name={{ android: 'person', ios: 'person.fill' }} size={56} tintColor={CALL.text} /></View>
@@ -166,7 +173,7 @@ function CallTracks({ room, counterpart, previewTop }: { room: Room; counterpart
   useLayoutEffect(() => {
     if (!sdk) return;
     const update = () => redraw(value => value + 1);
-    const events = [sdk.client.RoomEvent.TrackSubscribed, sdk.client.RoomEvent.TrackUnsubscribed, sdk.client.RoomEvent.LocalTrackPublished, sdk.client.RoomEvent.TrackMuted, sdk.client.RoomEvent.TrackUnmuted, sdk.client.RoomEvent.ParticipantDisconnected];
+    const events = [sdk.client.RoomEvent.TrackSubscribed, sdk.client.RoomEvent.TrackUnsubscribed, sdk.client.RoomEvent.LocalTrackPublished, sdk.client.RoomEvent.TrackMuted, sdk.client.RoomEvent.TrackUnmuted, sdk.client.RoomEvent.ParticipantConnected, sdk.client.RoomEvent.ParticipantDisconnected];
     for (const event of events) room.on(event, update);
     return () => { for (const event of events) room.off(event, update); };
   }, [room, sdk]);

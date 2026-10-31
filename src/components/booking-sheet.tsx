@@ -14,6 +14,8 @@ type BookingSheetProps = {
   children: ReactNode;
   /** Space kept clear above the expanded sheet (the floating header). */
   topReserve: number;
+  /** Space reserved for a stationary action dock below the sheet. */
+  bottomReserve?: number;
   /** Reports the visible collapsed height so the map can frame markers above it. */
   onCollapsedHeight?: (height: number) => void;
   refreshControl?: ReactElement<RefreshControlProps>;
@@ -34,7 +36,7 @@ const { duration, easing } = MotionTokens;
  * returns to the map. There is no visible arrow: swiping is the interaction, and
  * the handle itself is the accessible equivalent (a button that toggles the panel).
  */
-export function BookingSheet({ header, children, topReserve, onCollapsedHeight, refreshControl, panelName = 'Booking details panel', initialPosition = 'collapsed', onPositionChange }: BookingSheetProps) {
+export function BookingSheet({ header, children, topReserve, bottomReserve = 0, onCollapsedHeight, refreshControl, panelName = 'Booking details panel', initialPosition = 'collapsed', onPositionChange }: BookingSheetProps) {
   const ui = useUiTheme();
   const styles = createStyles(ui);
   const insets = useSafeAreaInsets();
@@ -103,7 +105,7 @@ export function BookingSheet({ header, children, topReserve, onCollapsedHeight, 
   const scrim = containerHeight > 0 && collapsedOffset > 0
     ? offset.interpolate({ inputRange: [0, collapsedOffset], outputRange: [0.32, 0], extrapolate: 'clamp' }) : 0;
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none" onLayout={event => setContainerHeight(event.nativeEvent.layout.height)}>
+    <View style={[StyleSheet.absoluteFill, { bottom: bottomReserve }]} pointerEvents="box-none" onLayout={event => setContainerHeight(event.nativeEvent.layout.height)}>
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.scrim, { opacity: scrim }]} />
       {/* Hidden until measured, so it never flashes open before the collapsed position is known. */}
       <Animated.View style={[styles.sheet, { height: sheetHeight, opacity: containerHeight > 0 && headerHeight > 0 ? 1 : 0, transform: [{ translateY: offset }] }]}

@@ -22,7 +22,7 @@ export function FindingCard({ title, id, time, payment, amount, children }: {
     <FactLine label="Date & time" value={time} />
     {children}
     <CardDivider />
-    <PaymentRow qr={payment.qr} method={payment.label} caption="Payment you will make" amount={amount} />
+    <PaymentRow qr={payment.qr} method={payment.label} amount={amount} />
   </View>;
 }
 

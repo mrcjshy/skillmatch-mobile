@@ -15,8 +15,8 @@ import { MARKER_LABEL_MAX_WIDTH } from '@/lib/location-map-view';
 /** Job location (dark) and the Worker's live position (blue); `group` when the two overlap. */
 export type MapPinKind = 'destination' | 'worker' | 'group';
 
-/** The pointed destination tip (or live-position dot) sits on the coordinate: Marker anchor="bottom". */
-export function MapPinLabel({ kind, label, stale = false }: { kind: MapPinKind; label: string; stale?: boolean }) {
+/** The pointed pin tip (or overlap dot) sits on the coordinate: Marker anchor="bottom". */
+export function MapPinLabel({ kind, label, stale = false, paused = false }: { kind: MapPinKind; label: string; stale?: boolean; paused?: boolean }) {
   const ui = useUiTheme();
   const styles = createStyles(ui);
   const fill = pinColor(ui, kind);
@@ -26,8 +26,9 @@ export function MapPinLabel({ kind, label, stale = false }: { kind: MapPinKind; 
       <View style={[styles.chip, { backgroundColor: stale ? ui.colors.surface : fill, borderColor: fill }]}>
         <Text style={[styles.label, { color: stale ? fill : ui.colors.onAccent }]} numberOfLines={2}>{label}</Text>
       </View>
-      {kind === 'destination' ? <DestinationPin ui={ui} stale={stale} />
-        : <View style={[styles.dot, { backgroundColor: fill, borderColor: ui.colors.surface }]} />}
+      {/* The Worker's live position uses the same turning pin as the job; the chip colour tells them apart. */}
+      {kind === 'group' ? <View style={[styles.dot, { backgroundColor: fill, borderColor: ui.colors.surface }]} />
+        : <DestinationPin ui={ui} stale={stale} paused={paused} />}
     </View>
   );
 }
@@ -37,9 +38,9 @@ export function MapPinLabel({ kind, label, stale = false }: { kind: MapPinKind; 
  * shared-progress/effect technique @366cc4d. The whole pin turns on its vertical axis, with its
  * tip anchored at the saved coordinate. The label and white centre size stay steady.
  */
-function DestinationPin({ ui, stale }: { ui: UiTheme; stale: boolean }) {
+function DestinationPin({ ui, stale, paused }: { ui: UiTheme; stale: boolean; paused: boolean }) {
   const styles = createStyles(ui);
-  const spin = useDestinationPinMotion(stale);
+  const spin = useDestinationPinMotion(stale, paused);
   return <MotionView style={[styles.destination, spin]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
     <View style={[styles.outerTail, { borderTopColor: ui.colors.surface }]} />
     <View style={[styles.outerHead, { backgroundColor: ui.colors.surface }]} />
@@ -49,8 +50,8 @@ function DestinationPin({ ui, stale }: { ui: UiTheme; stale: boolean }) {
   </MotionView>;
 }
 
-/** Stop off-screen, in the background, for stale data and for the live reduced-motion preference. */
-export function useDestinationPinMotion(stale: boolean) {
+/** Stop off-screen, under a covering sheet, in the background, for stale data and for the live reduced-motion preference. */
+export function useDestinationPinMotion(stale: boolean, paused = false) {
   const reduced = useReducedMotion();
   const [foreground, setForeground] = useState(AppState.currentState === 'active');
   const rotation = useSharedValue(0);
@@ -64,14 +65,14 @@ export function useDestinationPinMotion(stale: boolean) {
       rotation.set(0);
     };
     settle();
-    if (!foreground || reduced || stale) return settle;
+    if (!foreground || reduced || stale || paused) return settle;
     rotation.set(withRepeat(withTiming(360, {
       duration: MotionTokens.duration.emphasized * 10,
       easing: Easing.linear,
       reduceMotion: ReduceMotion.Never,
     }), -1, false, undefined, ReduceMotion.Never));
     return settle;
-  }, [rotation, foreground, reduced, stale]));
+  }, [rotation, foreground, reduced, stale, paused]));
   return useAnimatedStyle(() => ({ transform: [{ perspective: 500 }, { rotateY: `${rotation.get()}deg` }] }));
 }
 

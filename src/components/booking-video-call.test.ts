@@ -138,6 +138,14 @@ it('the participant who joined first renders a counterpart who subscribes later'
   expect(videoTracks(after)).toBe(2);
 });
 
+it('a counterpart joining with camera off replaces the waiting placeholder', () => {
+  const room = fakeRoom();
+  const view = compileCallTracks()(room);
+  room.remoteParticipants.set('client', room.participant('client', false));
+  room.emit('participantConnected');
+  expect(texts(view.rerenderIfScheduled())).toEqual(['Your Client: Camera off']);
+});
+
 it('a counterpart camera that stops shows a camera-off placeholder, and a departure shows waiting again', () => {
   const room = fakeRoom();
   const remote = room.participant('client', true);

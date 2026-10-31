@@ -28,6 +28,7 @@ import { loadClientBookings, type ClientBooking } from '@/lib/booking-records';
 import { listJobPhotos, type SignedJobPhoto } from '@/lib/job-photos';
 import { useAccount } from '@/providers/account-provider';
 import { useSession, type SessionLifetime } from '@/providers/session-provider';
+import { useSessionContinuationRestore } from '@/hooks/use-session-continuation-restore';
 import { useClientJobs, type PostedJob } from '@/providers/client-jobs-provider';
 import { useClientPostJobDraft } from '@/providers/client-post-job-draft-provider';
 
@@ -196,6 +197,10 @@ export default function ClientJobDetails({ jobId, postingWarning }: { jobId: str
   // Waiting for the first eligible acceptance (D-003): the reference "being connected" presentation. Same facts.
   const finding = Boolean(visible && !refreshing && !refreshError && job && job.status === 'open' && read?.bookingState === 'ready' && !read.booking);
   const budgetText = job?.budget == null ? 'Not set' : `₱${job.budget.toLocaleString()}`;
+  // Refresh continuation (Option B): parents are rebuilt only after this Job's own authorized reads settled;
+  // a Job that the fresh owner list no longer contains takes the own-role Home fallback.
+  useSessionContinuationRestore('client', visible && read?.bookingState === 'ready' ? 'ready'
+    : authorized && !isLoading && !loadError && (!jobId || !uuid.test(jobId) || !job) ? 'unavailable' : 'pending');
 
   // Same route, real participant Booking ID, existing role/payment/share logic.
   // Retain the sheet detent across the Job -> Booking presentation change.
@@ -222,7 +227,7 @@ export default function ClientJobDetails({ jobId, postingWarning }: { jobId: str
               <Text accessibilityRole="header" style={styles.findingTitle}>Hang tight! Your job is open to eligible workers.</Text>
               <FindingWorkerCarousel blendInto={colors.surfaceRaised} />
             </> : <>
-              <AppChip label={jobStatusLabel(job.status)} variant={jobStatusVariant(job.status)} />
+              <AppChip label={jobStatusLabel(job.status)} variant={jobStatusVariant(job.status)} style={styles.findingChip} />
               <Text accessibilityRole="header" style={styles.findingTitle}>{job.title}</Text>
               <InlineStatus variant={read?.bookingState === 'error' || refreshError ? 'error' : 'loading'}
                 message={read?.bookingState === 'error' ? 'Booking context is unavailable. Retry to check assignment.' : refreshError ? 'Could not refresh job status. Please retry.' : job.status !== 'open' && visible && read?.bookingState === 'ready' ? `Job status: ${jobStatusLabel(job.status)}. No current booking context.` : 'Checking job and booking status…'} />
@@ -231,8 +236,7 @@ export default function ClientJobDetails({ jobId, postingWarning }: { jobId: str
           {postingWarning ? <InlineStatus variant="error" message={postingWarning} /> : null}
           {finding ? <View style={styles.findingHead}>
             <AppChip label="Waiting for a worker" variant="info" />
-            <Text selectable style={styles.line}>Waiting for acceptance. The first eligible worker to accept books it, and you will be notified.</Text>
-          </View> : null}
+                      </View> : null}
           <FindingCard title={job.title} id={job.id} time={formatCardDateTime(job.scheduled_at) ?? 'No schedule'}
             payment={{ label: job.payment_method_readable && job.payment_method ? formatJobPaymentLabel(job.payment_method) : 'Cash / QR', qr: job.payment_method === 'qrph' }}
             amount={budgetText}>
@@ -249,8 +253,9 @@ export default function ClientJobDetails({ jobId, postingWarning }: { jobId: str
             {visible && read?.photoState === 'ready' && read.photos.length === 0 ? <Text selectable style={styles.line}>No job photos.</Text> : null}
           </View>
           {finding && read ? <AppButton label="View or edit location" variant="secondary" onPress={() => { if (read.operation.locationCurrent()) setLocationOpen(true); }} /> : null}
+          {/* Live via the Client's notification topic; a manual action appears only after a failed refresh. */}
           {refreshError ? <InlineStatus variant="error" message="Could not refresh. Displayed facts may be out of date. Please retry." /> : null}
-          <AppButton label="Refresh job" variant="ghost" loading={refreshing} disabled={isLoading} onPress={() => void reload()} />
+          {refreshError || read?.bookingState === 'error' ? <AppButton label="Refresh job" variant="ghost" loading={refreshing} disabled={isLoading} onPress={() => void reload()} /> : null}
           {finding && read ? <CancelOpenJob jobId={job.id} clientId={ownerId}
             isCurrent={read.operation.locationCurrent}
             onStatusChanged={() => void reload()}
@@ -272,7 +277,7 @@ export default function ClientJobDetails({ jobId, postingWarning }: { jobId: str
     </RefinementThemeProvider>;
   }
   return <View style={[styles.scroll, styles.container]}>
-    <InlineStatus variant={!authorized || !focused || !active || isLoading ? 'loading' : loadError ? 'error' : 'empty'}
+    <InlineStatus variant={!authorized || !focused || !active || isLoading ? 'loading' : loadError ? 'error' : 'empty'} skeleton="detail"
       message={!authorized || !focused || !active ? 'Job details are unavailable until access is current.' : isLoading ? 'Loading your job…' : loadError ?? 'This job is unavailable.'} />
     {refreshError ? <InlineStatus variant="error" message="Could not refresh. Please retry." /> : null}
     {authorized && focused && active ? <AppButton label="Refresh job" variant="ghost" loading={refreshing} onPress={() => void reload()} /> : null}
@@ -287,6 +292,7 @@ const styles = StyleSheet.create({
   line: { ...type.helper, color: colors.textSecondary },
   section: { gap: spacing.md },
   findingHead: { gap: spacing.sm, alignItems: 'flex-start' },
+  findingChip: { alignSelf: 'flex-start' },
   findingTitle: { ...type.sectionTitle, color: colors.textPrimary },
   mapScreen: { flex: 1, backgroundColor: colors.surfaceSunken },
   floatingHeader: { position: 'absolute', left: spacing.gutter, right: spacing.gutter, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

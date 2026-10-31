@@ -32,6 +32,11 @@ import { supabase } from '@/lib/supabase';
 export type SessionContextValue = {
   sessionRevision?: number;
   sessionLifetime?: SessionLifetime | null;
+  /**
+   * Advances on every real identity boundary (sign-out, or recovery taking over the session), even when React
+   * batches it with the next sign-in. Token refreshes, unrecognised session markers and restore errors never do.
+   */
+  identityBoundary?: number;
   isSessionRevisionCurrent?: (revision: number) => boolean;
   subscribeSessionLifecycle?: (listener: () => void) => () => void;
   /** The restored Supabase Auth session, or null when no session exists. */
@@ -77,18 +82,21 @@ export function extractSessionMarker(session: Session, expectedUrl: string | und
 
 /** Synchronous epoch/revision updates survive batched sign-out/sign-in. */
 export function createSessionLifecycle() {
-  let revision = 0, epoch = 0;
+  let revision = 0, epoch = 0, boundary = 0;
   let record: { marker: string | null; epoch: number; lifetime: SessionLifetime } | null = null;
   const listeners = new Set<() => void>();
   const changed = () => { for (const listener of listeners) listener(); };
   return {
     get revision() { return revision; },
     get lifetime() { return record?.lifetime ?? null; },
+    get boundary() { return boundary; },
     isRevisionCurrent: (candidate: number) => candidate === revision,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    terminate() { epoch++; revision++; record = null; changed(); },
+    terminate() { epoch++; revision++; boundary++; record = null; changed(); },
     replace(next: Session | null, expectedUrl: string | undefined, terminated = false) {
       revision++;
+      // A sign-out to no session is a boundary; refreshes inside an active recovery (also `terminated`) are not.
+      if (terminated && next === null) boundary++;
       if (terminated || next === null) { epoch++; record = null; }
       if (!next) { changed(); return; }
       const marker = extractSessionMarker(next, expectedUrl);
@@ -386,6 +394,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       value={{
         sessionRevision,
         sessionLifetime: lifecycle.lifetime,
+        identityBoundary: lifecycle.boundary,
         isSessionRevisionCurrent: lifecycle.isRevisionCurrent,
         subscribeSessionLifecycle: lifecycle.subscribe,
         session,

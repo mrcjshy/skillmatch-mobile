@@ -143,9 +143,9 @@ export function AdminAnalyticsDashboard({
           </View>
         </>
       ) : view.loading ? (
-        <InlineStatus variant="loading" message="Loading Admin analytics…" />
+        <InlineStatus variant="loading" skeleton="detail" message="Loading Admin analytics…" />
       ) : !view.error ? (
-        <InlineStatus variant="loading" message="Preparing Admin analytics…" />
+        <InlineStatus variant="loading" skeleton="detail" message="Preparing Admin analytics…" />
       ) : null}
 
       {footer}

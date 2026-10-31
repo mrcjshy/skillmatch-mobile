@@ -1,5 +1,5 @@
-import { Stack, useGlobalSearchParams, usePathname, type Href } from 'expo-router';
-import { useLayoutEffect } from 'react';
+import { Stack, useGlobalSearchParams, usePathname, useRootNavigationState, type Href } from 'expo-router';
+import { useLayoutEffect, useMemo } from 'react';
 import { TamaguiProvider } from 'tamagui';
 
 import { tamaguiConfig } from '../../tamagui.config';
@@ -12,7 +12,7 @@ import { SessionReconnectingScreen } from '@/components/session-reconnecting-scr
 import { StateScreen } from '@/components/state-screen';
 import { isRecoverySurfaceActive } from '@/lib/auth-recovery';
 import { isPhoneOtpEnabled } from '@/lib/phone-verification';
-import { sessionRouteContinuation } from '@/lib/session-route-continuation';
+import { sessionRouteContinuation, stackFromNavigationState } from '@/lib/session-route-continuation';
 import { canEnterWorkerApp } from '@/lib/worker-onboarding';
 import {
   AccountProvider,
@@ -138,9 +138,12 @@ function RootNavigator() {
   const pathname = usePathname();
   const params = useGlobalSearchParams();
   const ownerId = sessionValue.session?.user.id ?? null;
+  // The actual focused role stack, so a refresh re-entry can rebuild its allowlisted parents (Option B).
+  const navigationState = useRootNavigationState();
+  const stack = useMemo(() => stackFromNavigationState(navigationState), [navigationState]);
   useLayoutEffect(() => {
-    sessionRouteContinuation.observe({ access, ownerId, lifetime: sessionValue.sessionLifetime, pathname, params });
-  }, [access, ownerId, sessionValue.sessionLifetime, pathname, params]);
+    sessionRouteContinuation.observe({ access, ownerId, lifetime: sessionValue.sessionLifetime, pathname, params, stack });
+  }, [access, ownerId, sessionValue.sessionLifetime, pathname, params, stack]);
   useLayoutEffect(() => () => sessionRouteContinuation.clear(), []);
 
   // Inline-only states: no route tree.

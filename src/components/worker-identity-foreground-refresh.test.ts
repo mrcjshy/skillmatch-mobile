@@ -60,7 +60,7 @@ vi.mock('@/lib/supabase', () => ({ supabase: {
     if (name === 'get_my_consent') {
       return Promise.resolve({ data: {
         user_id: currentUserId(), terms_version: '2026-09-v1', terms_accepted_at: '2026-09-25T00:00:00Z',
-        privacy_version: '2026-09-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z',
+        privacy_version: '2026-10-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z',
       }, error: null });
     }
     if (name === 'get_my_identity_submission') {

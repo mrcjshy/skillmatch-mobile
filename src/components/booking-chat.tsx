@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -8,15 +7,19 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/app-button';
+import { KeyboardSpacer } from '@/components/skeleton';
 import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
 import { AppNotice } from '@/components/app-notice';
 import { AppSymbol } from '@/components/app-symbol';
 import {
+  chatAnchorAt,
   distanceFromBottom,
   initialChatScroll,
+  onAnchorPending,
   onContentMeasured,
   onJumpToLatest,
   onMessages,
@@ -61,7 +64,9 @@ import {
 } from '@/lib/realtime';
 import { supabase } from '@/lib/supabase';
 import { useAccount } from '@/providers/account-provider';
-import { useHeaderHeight } from 'expo-router/react-navigation';
+import { sessionRouteContinuation, type ChatAnchor } from '@/lib/session-route-continuation';
+import { useContinuationOwner, useSessionContinuationRestore, type ContinuationReadOutcome } from '@/hooks/use-session-continuation-restore';
+import { useIsFocused } from 'expo-router';
 import { XStack, YStack } from 'tamagui';
 
 const { colors, type, spacing, radius, size } = SkillMatchTheme.ui;
@@ -147,13 +152,13 @@ export default function BookingChat({
   bookingId: string | null;
 }) {
   const { account } = useAccount();
-  const headerHeight = useHeaderHeight();
   /** The authenticated user id, from the session — never from a row or a route
    *  parameter. The policy re-checks it as `auth.uid() = sender_id`. */
   const senderId = account?.id ?? null;
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const insets = useSafeAreaInsets();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [booking, setBooking] = useState<ChatBooking | null>(null);
   const [messages, setMessages] = useState<MessageRow[]>([]);
@@ -187,6 +192,44 @@ export default function BookingChat({
   }, [commitScroll]);
 
   /**
+   * Refresh continuation (Option B). The reading position is kept only as a message id and an offset in the
+   * session-lifetime continuation, scoped to this owner, role and conversation. It is restored at most once per
+   * mount, only after this screen's own fresh authorized read returned that message; the reader's first drag or
+   * Jump cancels a restore that has not happened yet. A missing anchor falls back to the normal first-open reveal.
+   * Only this Chat route, while focused, can take or record the anchor (a hidden instance never can). A take it
+   * could not own yet (rows arrived before its stack reported focus) is retried once focus arrives.
+   */
+  const continuationOwner = useContinuationOwner(role);
+  const rowLayouts = useRef(new Map<string, { y: number; height: number }>());
+  const pendingAnchor = useRef<ChatAnchor | null>(null);
+  const anchorTaken = useRef(false);
+  const anchorCancelled = useRef(false);
+  const applyAnchor = useCallback(() => {
+    const anchor = pendingAnchor.current;
+    const layout = anchor ? rowLayouts.current.get(anchor.messageId) : undefined;
+    if (!anchor || !layout) return;
+    pendingAnchor.current = null;
+    scrollRef.current?.scrollTo({ y: layout.y + anchor.offset, animated: false });
+  }, []);
+  const takeAnchor = useCallback((rows: readonly MessageRow[] | null) => {
+    if (anchorTaken.current || bookingId === null) return false;
+    // Not this screen's to take yet: the attempt stays open for focus acquisition.
+    const observation = continuationOwner();
+    if (!observation) return false;
+    anchorTaken.current = true;
+    const anchor = sessionRouteContinuation.takeChatAnchor(observation, bookingId);
+    if (anchorCancelled.current || !anchor || !rows?.some((row) => row.id === anchor.messageId)) return false;
+    pendingAnchor.current = anchor;
+    return true;
+  }, [bookingId, continuationOwner]);
+  /** The reader's own drag or Jump: permanent; a saved anchor is retired unused. */
+  const cancelAnchor = useCallback(() => {
+    anchorCancelled.current = true;
+    pendingAnchor.current = null;
+    takeAnchor(null);
+  }, [takeAnchor]);
+
+  /**
    * One authoritative round trip: status first, then history.
    *
    * Status is fetched before messages so a Booking that has left `confirmed`
@@ -218,6 +261,7 @@ export default function BookingChat({
       return;
     }
     if (!isBookingChatAvailable(found.status)) {
+      takeAnchor(null);
       setBooking(found);
       setMessages([]);
       setLoadedFor(requestKey);
@@ -227,12 +271,14 @@ export default function BookingChat({
     }
     const rows = await fetchBookingMessages(bookingId);
     if (sequence !== loadSequence.current) return;
+    const anchored = takeAnchor(rows);
     setBooking(found);
     setMessages(rows);
     setLoadedFor(requestKey);
     setLoadError(null);
-    commitScroll(onMessages(scrollState.current, requestKey, rows, senderId ?? ''));
-  }, [role, bookingId, senderId, commitScroll]);
+    const next = onMessages(scrollState.current, requestKey, rows, senderId ?? '');
+    commitScroll(anchored ? onAnchorPending(next) : next);
+  }, [role, bookingId, senderId, commitScroll, takeAnchor]);
 
   /**
    * Failure path. The raw database/network message is logged for developers
@@ -288,10 +334,26 @@ export default function BookingChat({
    * produces a new object, but this value only flips when the status genuinely
    * crosses the confirmed boundary.
    */
-  const visibleBooking = loadedFor === `${role}:${senderId}:${bookingId}` ? booking : null;
+  const loadedCurrent = loadedFor === `${role}:${senderId}:${bookingId}`;
+  const visibleBooking = loadedCurrent ? booking : null;
   const visibleMessages = visibleBooking === null ? [] : messages;
   const chatAvailable = visibleBooking !== null && isBookingChatAvailable(visibleBooking.status);
   const counterpart = counterpartPresentation(role, visibleBooking);
+  // Parents are rebuilt only once this Booking's own participant read found it; a Booking that is not the
+  // caller's (or no longer exists) takes the own-role Home fallback.
+  const readOutcome: ContinuationReadOutcome = !loadedCurrent || loadError !== null ? 'pending'
+    : visibleBooking !== null ? 'ready' : 'unavailable';
+  useSessionContinuationRestore(role, readOutcome);
+  // A take deferred for focus runs once this Chat owns focus, only with the still-current authorized read.
+  const focused = useIsFocused();
+  useEffect(() => {
+    if (!focused || anchorTaken.current || !loadedCurrent || loadError !== null || visibleBooking === null) return;
+    // With a visible Booking, its visible rows are exactly `messages`.
+    if (takeAnchor(chatAvailable ? messages : null)) {
+      commitScroll(onAnchorPending(scrollState.current));
+      applyAnchor();
+    }
+  }, [focused, loadedCurrent, loadError, visibleBooking, chatAvailable, messages, takeAnchor, commitScroll, applyAnchor]);
 
   /**
    * Subscribe only while this confirmed Booking's chat is actually on screen.
@@ -457,18 +519,26 @@ export default function BookingChat({
   const threadShown = !isLoading && !loadError && chatAvailable && visibleMessages.length > 0;
 
   function jumpToLatest() {
+    cancelAnchor();
     commitScroll(onJumpToLatest(scrollState.current));
     reveal();
   }
 
   function scrolled(e: { nativeEvent: Parameters<typeof distanceFromBottom>[0] }) {
     commitScroll(onScrolled(scrollState.current, distanceFromBottom(e.nativeEvent), e.nativeEvent.contentOffset.y));
+    if (!threadShown || pendingAnchor.current || bookingId === null) return;
+    const anchor = scrollState.current.nearBottom ? null : chatAnchorAt(visibleMessages.flatMap((message) => {
+      const layout = rowLayouts.current.get(message.id);
+      return layout ? [{ id: message.id, ...layout }] : [];
+    }), e.nativeEvent.contentOffset.y);
+    const observation = continuationOwner();
+    if (observation) sessionRouteContinuation.rememberChatAnchor(observation, anchor ? { bookingId, ...anchor } : null);
   }
 
   return (
-    // Edge-to-edge Android does not resize the window for the keyboard, so pad on every platform and
-    // subtract the native header; otherwise a docked keyboard covers the composer and Send.
-    <KeyboardAvoidingView style={styles.flex} behavior="padding" keyboardVerticalOffset={headerHeight}>
+    // Edge-to-edge Android does not resize the window for the keyboard: the spacer below rises with
+    // it, so a docked keyboard never covers the composer and Send.
+    <View style={[styles.flex, { paddingBottom: insets.bottom }]}>
       <View style={styles.thread}>
         <ScrollView
           ref={scrollRef}
@@ -476,9 +546,10 @@ export default function BookingChat({
           contentContainerStyle={styles.content}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
           scrollEventThrottle={64}
+          keyboardDismissMode="on-drag"
           onScroll={scrolled}
           // Throttling can drop the last onScroll; these unthrottled events report where the reader settled.
-          onScrollBeginDrag={() => commitScroll(onUserScroll(scrollState.current))}
+          onScrollBeginDrag={() => { cancelAnchor(); commitScroll(onUserScroll(scrollState.current)); }}
           onScrollEndDrag={scrolled}
           onMomentumScrollEnd={scrolled}
           // Content growth keeps a following reader on the latest message; a backreader is never moved.
@@ -486,6 +557,7 @@ export default function BookingChat({
             if (!threadShown) return;
             commitScroll(onContentMeasured(scrollState.current, height, viewportHeight.current));
             reveal();
+            applyAnchor();
           }}
           // The keyboard shrinks this viewport; stay on the latest message only if already there.
           onLayout={(e) => {
@@ -520,7 +592,7 @@ export default function BookingChat({
           {isLoading ? (
             // Rendered instead of, never before, the empty state.
             <View style={styles.center}>
-              <InlineStatus variant="loading" message={COPY.loading} />
+              <InlineStatus variant="loading" skeleton="chat" message={COPY.loading} />
             </View>
           ) : loadError ? (
             <View style={styles.center}>
@@ -560,7 +632,12 @@ export default function BookingChat({
               const sentAt = formatTimestamp(message.created_at);
 
               return (
-                <XStack key={message.id} style={mine ? styles.messageMine : styles.messageTheirs}>
+                <XStack key={message.id} style={mine ? styles.messageMine : styles.messageTheirs}
+                  onLayout={(e) => {
+                    const { y, height } = e.nativeEvent.layout;
+                    rowLayouts.current.set(message.id, { y, height });
+                    if (pendingAnchor.current?.messageId === message.id) applyAnchor();
+                  }}>
                   {!mine && counterpart !== null ? (
                     <InitialsAvatar
                       name={counterpart.name}
@@ -643,7 +720,8 @@ export default function BookingChat({
           </View>
         )
       ) : null}
-    </KeyboardAvoidingView>
+      <KeyboardSpacer bottomOffset={insets.bottom} />
+    </View>
   );
 }
 

@@ -10,6 +10,7 @@ import RootIndex from '@/app/index';
 import { sessionRouteContinuation } from '@/lib/session-route-continuation';
 
 const { colors } = SkillMatchTheme.ui;
+vi.mock('@/components/skeleton', () => ({ Skeleton: (props: any) => createElement(Native, { kind: 'Text', style: { color: '#59606B' } }, props.label), PulseDots: () => null, KeyboardSpacer: () => null }));
 vi.mock('@/components/refinement-theme', () => ({ useUiTheme: () => SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children }));
 
 const b = vi.hoisted(() => ({
@@ -20,6 +21,8 @@ const b = vi.hoisted(() => ({
   rpc: vi.fn(), list: vi.fn(), sign: vi.fn(), push: vi.fn(), jobsReply: null as any,
   invalidations: new Set<any>(), alert: vi.fn(), deleteJob: vi.fn(), replace: vi.fn(),
   pathname: '/client/job-details', params: {} as Record<string, string>, rootRouting: false, navigate: null as any,
+  // Option B: the root navigation state the RootNavigator reads, and the role Stack the Job screen resets.
+  rootNavState: undefined as any, stackState: undefined as any, reset: vi.fn(),
 }));
 const NativeParent = createContext<string | null>(null);
 function Native({ kind, children, ...props }: any) {
@@ -61,6 +64,13 @@ vi.mock('expo-router', () => {
   });
   return { useRouter: () => ({ push: b.push, back: vi.fn(), canGoBack: () => true, replace: b.replace }), Stack,
     usePathname: () => b.pathname, useGlobalSearchParams: () => b.params,
+    useRootNavigationState: () => b.rootNavState,
+    // Rework: the reset is applied to the scripted role stack (keys kept) and the Job screen owns its route key.
+    useNavigation: () => ({ getState: () => b.stackState, isFocused: () => b.focus, reset: (next: any) => {
+      b.reset(next);
+      b.stackState = { ...next, routes: next.routes.map((route: any, i: number) => route.key ? route : { ...route, key: `restored-${i}` }) };
+    } }),
+    useRoute: () => ({ key: 'job-route-key', name: 'client/job-details', params: b.params }), useIsFocused: () => b.focus,
     Redirect: ({ href }: any) => { useLayoutEffect(() => b.navigate(href), [href]); return null; },
     useFocusEffect: (fn: () => void | (() => void)) => { const focused = b.focus; useLayoutEffect(() => focused ? fn() : undefined, [fn, focused]); } };
 });
@@ -103,6 +113,7 @@ const roots: any[] = [];
 async function flush() { await act(async () => { for (let n = 0; n < 12; n++) await Promise.resolve(); }); }
 beforeEach(() => {
   sessionRouteContinuation.clear(); b.rootRouting = false; b.pathname = '/client/job-details'; b.params = { jobId: JOB };
+  b.rootNavState = undefined; b.stackState = undefined;
   vi.clearAllMocks(); b.deleteJob.mockResolvedValue({ data: [{ id: JOB }], error: null }); b.nodes.clear(); b.sessionEvents.clear(); b.terminationEvents.clear(); b.appEvents.clear(); b.invalidations.clear();
   vi.spyOn(console, 'error').mockImplementation(() => {}); vi.spyOn(console, 'warn').mockImplementation(() => {});
   b.focus = true; b.active = 'active'; b.listReply = b.signReply = b.bookingReply = b.jobsReply = null;
@@ -182,6 +193,99 @@ describe('actual owner-provider / detail / private-photo composition', () => {
     expect(nodes('BookingSheet')[0].initialPosition).toBe('expanded');
     expect(text()).toContain('Real provider description');
   });
+  // Option B: the actual RootLayout/dispatcher/continuation/Job screen, with expo-router's root state and the
+  // role Stack scripted. The Home tab beneath the Job is rebuilt only after the Job's own fresh reads.
+  async function refreshReentry(afterReentry?: () => void) {
+    const doc: any = { nodeType: 9, activeElement: null, documentElement: {}, addEventListener() {}, removeEventListener() {} };
+    const win = { document: doc, HTMLIFrameElement: class {}, event: undefined }; doc.defaultView = win;
+    vi.stubGlobal('document', doc); vi.stubGlobal('window', win); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const name: string = 'react-dom/client'; const renderer = await import(/* @vite-ignore */ name);
+    const root = renderer.createRoot({ nodeType: 1, tagName: 'DIV', ownerDocument: doc, firstChild: null, lastChild: null,
+      addEventListener() {}, removeEventListener() {}, appendChild() {}, removeChild() {}, insertBefore() {} }); roots.push(root);
+    b.rootRouting = true;
+    function MountedRoot() {
+      const [, rerender] = useState(0);
+      useLayoutEffect(() => {
+        b.navigate = (href: any) => {
+          b.pathname = typeof href === 'string' ? href : href.pathname;
+          b.params = typeof href === 'string' ? {} : href.params;
+          rerender(value => value + 1);
+        };
+      }, []);
+      return createElement(RootLayout);
+    }
+    const render = async () => { await act(async () => root.render(createElement(MountedRoot))); await flush(); };
+    const group = (routes: any[]) => ({ index: 1, routes: [{ name: 'index' }, { name: '(client)', state: { index: routes.length - 1, routes } }] });
+    b.rootNavState = group([{ name: '(tabs)', state: { index: 0, routes: [{ name: 'client/index' }] } }, { name: 'client/job-details', params: { jobId: JOB } }]);
+    await render();
+    await act(async () => nodes('BookingSheet')[0].onPositionChange('expanded'));
+    b.account = { ...b.account, status: 'pending', account: null };
+    b.session = { ...b.session, session: { user: { id: CLIENT } } };
+    await act(async () => b.session.advance()); await render();
+    // Pending: the protected route is gone and nothing is restored yet.
+    expect(nodes('BookingSheet')).toHaveLength(0); expect(text()).not.toContain('Real provider description');
+    expect(b.reset).not.toHaveBeenCalled();
+    // A new native Stack re-enters the Job alone.
+    b.rootNavState = group([{ name: 'client/job-details', params: { jobId: JOB } }]);
+    b.stackState = { index: 0, routes: [{ key: 'job-route-key', name: 'client/job-details', params: { jobId: JOB } }] };
+    afterReentry?.();
+    b.pathname = '/'; b.params = {};
+    b.account = { ...b.account, status: 'resolved', account: { id: CLIENT, role: 'client', is_active: true } };
+    await render();
+    return { render };
+  }
+  it('Option B rebuilds the actual Home tab beneath the re-entered Job after its fresh reads, keeping the detent', async () => {
+    const booking = deferred();
+    await refreshReentry(() => { b.bookingReply = booking.promise; });
+    expect(b.pathname).toBe('/client/job-details');
+    // The Job's booking read has not settled: no navigation state is rebuilt from metadata alone.
+    expect(b.reset).not.toHaveBeenCalled();
+    const jobRoute = b.stackState.routes[0];
+    await act(async () => booking.resolve({ data: [], error: null })); await flush();
+    expect(b.reset).toHaveBeenCalledTimes(1);
+    expect(b.reset).toHaveBeenCalledWith({ index: 1, routes: [{ name: '(tabs)', params: { screen: 'client/index' } }, jobRoute] });
+    expect(nodes('BookingSheet')[0].initialPosition).toBe('expanded');
+    // N-1 closeout: the reset is recorded as dispatched, not as a confirmed rebuild.
+    expect(sessionRouteContinuation.lastRestoreOutcome()).toBe('unconfirmed');
+  });
+  // Rework F1: once the waiting Job's restoration is complete, a later ordinary unavailability is the Job's own
+  // inline state, never a continuation reset to Home.
+  it('Option B rework: after a completed restoration, the Job leaving the owner list keeps its inline unavailable state', async () => {
+    const { render } = await refreshReentry();
+    expect(b.reset).toHaveBeenCalledTimes(1);
+    expect(sessionRouteContinuation.lastRestoreOutcome()).toBe('unconfirmed');
+    // The root's ordinary observation of the rebuilt stack (Home tab beneath the Job), then a later list change.
+    b.rootNavState = { index: 1, routes: [{ name: 'index' }, { name: '(client)', state: { index: 1, routes: [
+      { name: '(tabs)', state: { index: 0, routes: [{ name: 'client/index' }] } }, { name: 'client/job-details', params: { jobId: JOB } }] } }] };
+    await render();
+    b.jobs = [];
+    await act(async () => { [...b.invalidations][0].onInvalidate(); }); await flush();
+    expect(text()).toContain('This job is unavailable.');
+    expect(b.reset).toHaveBeenCalledTimes(1);
+  });
+  it('Option B rework: a preserved existing stack leaves no stale restore behind a later unavailability', async () => {
+    await refreshReentry(() => {
+      b.stackState = { index: 1, routes: [{ key: 'home', name: '(tabs)' }, { key: 'job-route-key', name: 'client/job-details', params: { jobId: JOB } }] };
+    });
+    expect(b.reset).not.toHaveBeenCalled();
+    expect(sessionRouteContinuation.lastRestoreOutcome()).toBe('preserved');
+    b.jobs = [];
+    await act(async () => { [...b.invalidations][0].onInvalidate(); }); await flush();
+    expect(text()).toContain('This job is unavailable.');
+    expect(b.reset).not.toHaveBeenCalled();
+  });
+  it('Option B: a Job the fresh owner list no longer contains takes the own-role Home fallback', async () => {
+    await refreshReentry(() => { b.jobs = []; });
+    expect(b.reset).toHaveBeenCalledWith({ index: 0, routes: [{ name: '(tabs)', params: { screen: 'client/index' } }] });
+    expect(sessionRouteContinuation.lastRestoreOutcome()).toBe('fallback');
+    expect(text()).not.toContain('Real provider description');
+  });
+  it('Option B never reorders an existing user stack (only a lone re-entered screen is rebuilt)', async () => {
+    await refreshReentry(() => {
+      b.stackState = { index: 1, routes: [{ key: 'home', name: '(tabs)' }, { key: 'job-route-key', name: 'client/job-details', params: { jobId: JOB } }] };
+    });
+    expect(b.reset).not.toHaveBeenCalled();
+  });
   it('keeps the map sheet during a pending booking read without claiming an open waiting state', async () => {
     b.bookingReply = deferred().promise;
     await mount(); expect(nodes('BookingSheet')).toHaveLength(1);
@@ -244,6 +348,9 @@ describe('actual owner-provider / detail / private-photo composition', () => {
     expect(nodes('BookingDetails')[0]).toMatchObject({ bookingId: 'confirmed-after-transport-error', initialSheetPosition: 'expanded' });
     expect(text()).not.toContain('Could not refresh');
   });
+  it('a healthy Job Details view has no manual refresh because it stays live', async () => {
+    await mount(); expect(nodes('BookingSheet')).toHaveLength(1); expect(button('Refresh job')).toBeUndefined();
+  });
   it('a failed acceptance reread hides waiting and offers refresh without inventing a Booking ID', async () => {
     await mount(); b.bookingReply = Promise.resolve({ data: null, error: { code: '42501' } });
     await act(async () => [...b.invalidations][0].onInvalidate()); await flush();
@@ -259,7 +366,7 @@ describe('actual owner-provider / detail / private-photo composition', () => {
     expect(nodes('BookingDetails')).toHaveLength(0);
   });
   it('renders provider description and only resolved open/no-booking waiting context', async () => {
-    await mount(); expect(text()).toContain('Real provider description\nUnicode ñ'); expect(text()).toContain('Waiting for acceptance');
+    await mount(); expect(text()).toContain('Real provider description\nUnicode ñ');
     expect(text()).toContain('1,500'); expect(text()).toContain('Date & time'); expect(text()).toContain('Hang tight! Your job is open to eligible workers.'); expect(text()).toContain('Waiting for a worker'); expect(text()).not.toContain('Booking ID'); expect(text()).not.toMatch(/being connected|assigned to you|selected/i); expect(text()).toContain('Job ID'); expect(nodes('FindingWorkerCarousel')).toHaveLength(1); expect(nodes('FindingJobMap')).toHaveLength(1); expect(nodes('BookingSheet')).toHaveLength(1); expect(nodes('ScrollView')).toHaveLength(0); expect(text()).toContain('Skills'); expect(text()).toContain('None');
     expect(b.rpc).toHaveBeenCalledWith('list_my_client_bookings'); expect(b.list).toHaveBeenCalledWith(CLIENT + '/' + JOB, expect.any(Object));
     expect(text()).toContain('No job photos'); expect(button('View or edit location')).toBeDefined();
@@ -345,7 +452,7 @@ describe('actual owner-provider / detail / private-photo composition', () => {
   });
   it('clears settled photos and actions when authoritative membership disappears', async () => {
     b.listReply = Promise.resolve({ data: [{ name: '1' }], error: null }); await mount(); expect(nodes('Image')).toHaveLength(1);
-    b.jobs = []; await act(async () => button('Refresh job').onPress()); await flush();
+    b.jobs = []; await act(async () => [...b.invalidations][0].onInvalidate()); await flush();
     expect(nodes('Image')).toHaveLength(0); expect(button('View or edit location')).toBeUndefined(); expect(text()).not.toContain('Real provider description');
   });
   it('shows partial signing as actual remaining photos without empty/error success', async () => {
@@ -388,7 +495,7 @@ describe('actual owner-provider / detail / private-photo composition', () => {
     checkMounted(); // Actual InlineStatus loading tint and status-chip nested surfaces.
     await act(async () => pending.resolve({ data: [], error: null })); await flush(); checkMounted();
     const refresh = deferred(); b.jobsReply = refresh.promise;
-    await act(async () => button('Refresh job').onPress()); checkMounted(); // Actual loading button.
+    await act(async () => [...b.invalidations][0].onInvalidate()); checkMounted(); // Live reread; the manual button appears only after failure.
     await act(async () => refresh.resolve({ data: [], error: { code: '503', message: 'private' } })); await flush(); checkMounted(); // Actual error tint.
     for (const state of [{ disabled: true }, { loading: true }, {}]) {
       const element = AppButton({ label: 'Refresh job', variant: 'secondary', ...state });

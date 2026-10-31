@@ -6,6 +6,7 @@ import { SkillMatchTheme } from '../constants/theme';
 import AdminHome from '../app/(admin)/(tabs)/admin/index';
 import type { AdminAnalyticsSummary, AdminAnalyticsView } from './admin-analytics';
 
+vi.mock('@/components/skeleton', () => ({ Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' }));
 vi.mock('@/components/refinement-theme', () => ({
   useUiTheme: () => SkillMatchTheme.ui,
   RefinementThemeProvider: ({ children }: { children: ReactNode }) => children,
@@ -178,7 +179,7 @@ describe('Admin navigation configuration (static composition, not native layout)
   });
   it('keeps the attention rows reachable while the first snapshot loads, without an empty snapshot', () => {
     const nodes = home();
-    expect(text(nodes)).toContain('Loading Admin analytics…');
+    expect(JSON.stringify(nodes)).toContain('Loading Admin analytics…');
     expect(text(nodes)).not.toContain('Platform summary');
     expect(text(nodes).filter((line) => line === 'Count loading')).toHaveLength(2);
     expect(text(nodes)).not.toContain('2 waiting');

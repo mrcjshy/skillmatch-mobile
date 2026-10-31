@@ -49,12 +49,13 @@ describe('Post Job structure', () => {
     expect((source.match(/validatePostJobWizardStep\(/g) ?? []).length).toBe(1);
   });
 
-  it('docks the budget summary beside one Post job action and keeps the keyboard offset', () => {
+  it('docks the budget summary beside one Post job action and rises with the keyboard', () => {
     const dock = source.slice(source.indexOf('{showDock ? ('));
     before(dock, 'styles.dockSummary', '<AppButton');
     expect((dock.slice(0, dock.indexOf('<Modal')).match(/<AppButton/g) ?? []).length).toBe(1);
-    expect(source).toContain('keyboardVerticalOffset={headerHeight}');
+    expect(source).toContain('<KeyboardSpacer />');
     expect(source).toContain('keyboardShouldPersistTaps="handled"');
+    expect(source).toContain('keyboardDismissMode="on-drag"');
   });
 
   it('keeps manual skill choice authoritative and ships no AI control, copy or request', () => {
@@ -77,9 +78,10 @@ describe('Post Job structure', () => {
 
 describe('Chat keeps its composer above a docked keyboard', () => {
   const source = code('src/components/booking-chat.tsx');
-  it('pads on every platform and subtracts the native header', () => {
-    expect(source).toContain('const headerHeight = useHeaderHeight();');
-    expect(source).toMatch(/<KeyboardAvoidingView[^>]*behavior="padding"[^>]*keyboardVerticalOffset=\{headerHeight\}/);
+  it('keeps the composer clear of the navigation bar, and rises with the keyboard without counting it twice', () => {
+    expect(source).toContain('paddingBottom: insets.bottom');
+    expect(source.indexOf('<KeyboardSpacer bottomOffset={insets.bottom} />')).toBeGreaterThan(source.indexOf('styles.composer'));
+    expect(source).not.toContain('KeyboardAvoidingView');
   });
 });
 
