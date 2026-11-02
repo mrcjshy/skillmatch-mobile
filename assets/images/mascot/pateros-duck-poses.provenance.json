@@ -1,0 +1,40 @@
+{
+  "generator": "built-in image_gen",
+  "date": "2026-11-02",
+  "prompt": "Production sprite sheet, 3x3 equal square grid. Preserve these exact nine original cream soft clay 3D duck poses with cobalt scarf and amber bill/feet. Change ONLY the backdrop: make the ENTIRE background perfectly flat solid pure white #FFFFFF, no gradient, no halo, no ground shadow, no speckle/noise, no confetti. Completely opaque image. Each duck crisp and opaque with clean antialiased edges against pure white. Keep fixed character proportions, camera and scale. Center every duck in its grid cell, same feet baseline. Pose order: idle, blink, wave high / wave low, thinking, celebrate / concerned, sleeping, point. No gridlines, no labels or text. White margins between every duck. Soft matte dimensional render. This will be cropped into animation frames on a pure white illustration stage.",
+  "character": "Original Pateros duck: cream clay plumage, amber bill and feet, cobalt scarf",
+  "grid": [
+    3,
+    3
+  ],
+  "pixels": [
+    1254,
+    1254
+  ],
+  "cellPixels": [
+    418,
+    418
+  ],
+  "poseOrder": [
+    "idle",
+    "blink",
+    "waveHigh",
+    "waveLow",
+    "think",
+    "celebrate",
+    "concern",
+    "sleep",
+    "point"
+  ],
+  "background": "true alpha transparency; no white frame",
+  "sha256": "f77b029f9a2b5536f533133f347ad42a674f5233c04c3a4167741b0a476af8d1",
+  "reference": "Earlier original duck generated in this task; archive catalogue inspected for material/motion reference only. No archive installer/runtime executed.",
+  "processing": {
+    "tool": "local Python/Pillow",
+    "authorizedByUser": true,
+    "instruction": "please remove the whitebackround of the duck",
+    "sourceSha256": "0f485ea5179dc66fffec3eb3f953d8bebdee67f40f1fd74aab202f911c70a6be",
+    "method": "Local Python/Pillow cutout, user explicitly approved; retained original RGB in opaque core and unmatted antialiased boundary",
+    "script": "C:\\Users\\JOSH\\Documents\\SkillMatch-Two-Phone-QA-20261028\\duck-background-removal-20261102\\remove_background.py"
+  }
+}

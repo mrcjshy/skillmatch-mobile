@@ -38,6 +38,14 @@ function load(file: string): Props {
   const exports: Props = {}; cache[file] = exports;
   const require = (name: string): any => {
       if (name === '@/components/refinement-theme') return { ...load('src/components/refinement-theme.tsx'), RefinementThemeProvider: 'RefinementThemeProvider' };
+    if (name === '@/components/cancellation-sheet') return { CancellationSheet: (props: Props) => props.visible ? {
+      type: 'Modal', props: { visible: true, children: [
+        { type: 'ScrollView', props: { keyboardShouldPersistTaps: 'handled', children: [props.children,
+          props.error ? jsx(load('src/components/app-notice.tsx').AppNotice, { variant: 'danger', message: props.error }) : null] } },
+        jsx(load('src/components/app-button.tsx').AppButton, { label: props.confirmLabel, variant: props.reviewing ? 'primary' : 'destructive', disabled: props.busy || props.confirmDisabled, loading: props.busy, onPress: props.onConfirm }),
+        jsx(load('src/components/app-button.tsx').AppButton, { label: props.keepLabel, variant: props.reviewing ? 'ghost' : 'primary', disabled: props.busy, onPress: props.onClose }),
+      ] } } : null };
+    if (name === '@/components/skillmatch-mascot') return { SkillMatchMascot: 'SkillMatchMascot' };
     if (name === 'react-native') return native;
     if (name === 'react-native-worklets') return { scheduleOnRN: (fn: any) => fn() };
     if (name === 'react-native-reanimated') return { __esModule: true, default: { View: 'Reanimated.View' }, cancelAnimation() {}, ReduceMotion: { System: 'system', Never: 'never' }, Extrapolation: { CLAMP: 'clamp' }, Easing: { bezier: () => 'curve' }, interpolate: () => 1, withTiming: (value: number) => value, withDelay: (_ms: number, value: any) => value, withSequence: (...steps: any[]) => steps.at(-1), withRepeat: (value: any) => value, withSpring: (value: number) => value,
@@ -263,7 +271,7 @@ it('offers cancellation to either party directly while completion remains Client
     expect(visibleText(tree)).not.toContain('Either party may cancel.'); // UI-V3: removed by owner direction
     expect(all(tree, 'Collapsible')).toHaveLength(0);
   }
-  const busy = render(Lifecycle, { role: 'client', bookingId: ID, showCompletion: true, showCancellation: true, onChanged: async () => {} }, ['complete', null, false, null, '']);
+  const busy = render(Lifecycle, { role: 'client', bookingId: ID, showCompletion: true, showCancellation: true, onChanged: async () => {} }, ['complete', null, false, 'reason', null, '']);
   expect(all(busy, 'Pressable').every(x => x.props.disabled)).toBe(true);
 });
 it('preserves Active/History filtering, supplied ordering and route callbacks with grouped list headers',()=>{for(const role of ['client','worker'])for(const segment of ['active','history']) {pushCalls.length=0;const rows=[booking(role,'completed','history-a'),booking(role,'confirmed','active-b'),booking(role,'pending','active-c'),booking(role,'cancelled','history-d')];const tree=render(List,{role},[{},segment,rows,false,false,null]);expect(text(tree)).toContain(segment==='active'?'Active bookings':'Booking history');const cards=all(tree,'Pressable').filter(x=>x.props.accessibilityLabel?.includes('View booking details')); cards.forEach(x=>x.props.onPress());expect(pushCalls.map(x=>x.params.bookingId)).toEqual(segment==='active'?['active-b','active-c']:['history-a','history-d']);expect(pushCalls.every(x=>x.pathname===`/${role}/booking-details`)).toBe(true);}});
@@ -274,7 +282,7 @@ it('uses effective contrast in populated shared details at rest and pressed, wit
 
 it('orders lifecycle children before separated cancellation and retains validated cancellation drafts',()=>{
   const props={role:'client',bookingId:ID,showCompletion:true,showCancellation:true,onChanged:async()=>{},children:{type:'Text',props:{children:'COMMUNICATION SLOT'}}};
-  const seeds=[null,null,true,null,'']; let tree=render(Lifecycle,props,seeds);
+  const seeds=[null,null,true,'reason',null,'']; let tree=render(Lifecycle,props,seeds);
   expect(text(tree).indexOf('Finish Booking')).toBeLessThan(text(tree).indexOf('COMMUNICATION SLOT'));
   expect(text(tree).indexOf('COMMUNICATION SLOT')).toBeLessThan(text(tree).indexOf('Cancel booking'));
   const radios=all(tree,'Pressable').filter(x=>x.props.accessibilityRole==='radio'); expect(radios.length).toBeGreaterThan(0);
@@ -286,7 +294,7 @@ it('orders lifecycle children before separated cancellation and retains validate
   contrast(tree);contrast(tree,theme.colors.canvas,true);
 });
 it('keeps composed disabled/loading and failed payment/lifecycle text readable',()=>{
-  const tree=render(Lifecycle,{role:'client',bookingId:ID,showCompletion:true,showCancellation:true,onChanged:async()=>{}},['complete','Safe failure',true,'other','Long retained detail']); contrast(tree);contrast(tree,theme.colors.canvas,true);expect(all(tree,'Pressable').filter(x=>x.props.accessibilityState?.expanded===undefined).every(x=>x.props.disabled)).toBe(true);expect(visibleText(tree)).toContain('Safe failure');
+  const tree=render(Lifecycle,{role:'client',bookingId:ID,showCompletion:true,showCancellation:true,onChanged:async()=>{}},['complete','Safe failure',true,'reason','other','Long retained detail']); contrast(tree);contrast(tree,theme.colors.canvas,true);expect(all(tree,'Pressable').filter(x=>x.props.accessibilityState?.expanded===undefined).every(x=>x.props.disabled)).toBe(true);expect(visibleText(tree)).toContain('Safe failure');
   for(const role of ['client','worker']) { const tree=render(Payment,{role,bookingId:ID,payment:{id:'p',payment_method:'cod',payment_status:'pending'},jobPaymentMethod:'cash',onChanged:async()=>{}},[true,'Safe failure',null,null]);contrast(tree);contrast(tree,theme.colors.canvas,true); }
 });
 

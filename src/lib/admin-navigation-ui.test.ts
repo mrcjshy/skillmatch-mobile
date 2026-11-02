@@ -6,6 +6,7 @@ import { SkillMatchTheme } from '../constants/theme';
 import AdminHome from '../app/(admin)/(tabs)/admin/index';
 import type { AdminAnalyticsSummary, AdminAnalyticsView } from './admin-analytics';
 
+vi.mock('@/components/skillmatch-mascot', () => ({ SkillMatchMascot: () => null }));
 vi.mock('@/components/skeleton', () => ({ Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' }));
 vi.mock('@/components/refinement-theme', () => ({
   useUiTheme: () => SkillMatchTheme.ui,

@@ -1,9 +1,9 @@
 import { type ReactNode, useRef, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppNotice } from '@/components/app-notice';
 import { AppButton } from '@/components/app-button';
-import { AppChip } from '@/components/app-chip';
+import { CancellationSheet } from '@/components/cancellation-sheet';
 import { AppField } from '@/components/app-field';
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import {
@@ -82,6 +82,7 @@ export default function BookingLifecycle({
   const [busyAction, setBusyAction] = useState<LifecycleAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelStep, setCancelStep] = useState<'reason' | 'review'>('reason');
   const [reasonCode, setReasonCode] = useState<CancellationReasonCode | null>(null);
   const [reasonDetail, setReasonDetail] = useState('');
   const actionInFlight = useRef(false);
@@ -102,7 +103,7 @@ export default function BookingLifecycle({
     call: () => Promise<void>,
     copyFor: (e: unknown) => string
   ) {
-    if (actionInFlight.current) return;
+    if (actionInFlight.current) return false;
     actionInFlight.current = true;
     setBusyAction(action);
     setError(null);
@@ -115,11 +116,13 @@ export default function BookingLifecycle({
         // must never read as a failed lifecycle action.
         setError(COPY.refreshFailed);
       }
+      return true;
     } catch (e: unknown) {
       if (e instanceof Error && e.message) {
         console.warn('[BL-01A-UI] lifecycle action failed:', action, e.message);
       }
       setError(copyFor(e));
+      return false;
     } finally {
       actionInFlight.current = false;
       setBusyAction(null);
@@ -149,43 +152,33 @@ export default function BookingLifecycle({
    * user to discover it.
    */
   function openCancelModal() {
-    if (isBusy) return;
+    if (isBusy || actionInFlight.current) return;
     setError(null);
+    setCancelStep('reason');
     setCancelModalOpen(true);
   }
 
   function closeCancelModal() {
-    if (isBusy) return;
+    if (isBusy || actionInFlight.current) return;
     setCancelModalOpen(false);
     setReasonCode(null);
     setReasonDetail('');
   }
 
   function reviewCancellation() {
-    if (isBusy || !cancellationInput.ok) return;
-    const selectedReason = cancellationInput.reasonCode;
-    Alert.alert(
-      COPY.cancelConfirmTitle,
-      `${COPY.cancelConfirmBody}\n\nReason: ${
-        CANCELLATION_REASON_OPTIONS.find((option) => option.value === selectedReason)?.label ??
-        selectedReason
-      }`,
-      [
-        { text: COPY.dismiss, style: 'cancel' },
-        {
-          text: COPY.cancelConfirmAction,
-          style: 'destructive',
-          onPress: () => {
-            setCancelModalOpen(false);
-            void run(
-              'cancel',
-              () => cancelBooking(bookingId, selectedReason, reasonDetail),
-              cancelErrorCopy
-            );
-          },
-        },
-      ]
-    );
+    if (isBusy || actionInFlight.current || !cancellationInput.ok) return;
+    setCancelStep('review');
+  }
+
+  async function confirmCancellation() {
+    if (isBusy || actionInFlight.current || !cancellationInput.ok || cancelStep !== 'review') return;
+    const committed = await run('cancel',
+      () => cancelBooking(bookingId, cancellationInput.reasonCode, reasonDetail), cancelErrorCopy);
+    if (committed) {
+      setCancelModalOpen(false);
+      setReasonCode(null);
+      setReasonDetail('');
+    }
   }
 
   if (!showCompletion && !showCancellation) return null;
@@ -213,7 +206,7 @@ export default function BookingLifecycle({
         Offered to both participants, and deliberately the quietest control on
         the card: cancelling is terminal and never rematches, so it must not
         sit at the same weight as the action the participant actually came to
-        perform. The confirmation dialog is unchanged.
+        perform. The shared sheet supplies the explicit final confirmation.
       */}
       {children}
 
@@ -224,71 +217,55 @@ export default function BookingLifecycle({
         </View>
       ) : null}
 
-      {error ? <AppNotice variant="danger" message={error} /> : null}
+      {error && !cancelModalOpen ? <AppNotice variant="danger" message={error} /> : null}
 
-      <Modal visible={cancelModalOpen} transparent animationType="fade" onRequestClose={closeCancelModal}>
-        <View style={styles.overlay}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Close cancellation reason"
-            style={StyleSheet.absoluteFill}
-            onPress={closeCancelModal}
-            disabled={isBusy}
-          />
-          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalCard} keyboardShouldPersistTaps="handled">
-            <Text style={styles.modalTitle}>{COPY.cancelReasonTitle}</Text>
-            <Text style={styles.modalBody}>{COPY.cancelReasonBody}</Text>
+      <CancellationSheet visible={cancelModalOpen}
+        title={cancelStep === 'reason' ? COPY.cancelReasonTitle : 'Cancel this booking?'}
+        description={cancelStep === 'reason' ? COPY.cancelReasonBody : COPY.cancelConfirmBody}
+        keepLabel="Keep booking"
+        confirmLabel={cancelStep === 'reason' ? COPY.cancelReview : COPY.cancelConfirmAction}
+        reviewing={cancelStep === 'reason'} busy={isBusy} error={error}
+        confirmDisabled={!cancellationInput.ok}
+        onClose={closeCancelModal}
+        onConfirm={cancelStep === 'reason' ? reviewCancellation : confirmCancellation}
+        onBack={cancelStep === 'review' ? () => { if (!isBusy && !actionInFlight.current) setCancelStep('reason'); } : undefined}>
+        {cancelStep === 'reason' ? (
+          <View style={styles.reasonForm}>
             <View style={styles.reasonOptions} accessibilityRole="radiogroup">
               {CANCELLATION_REASON_OPTIONS.map((option) => {
                 const selected = reasonCode === option.value;
                 return (
-                  <Pressable
-                    key={option.value}
-                    style={({ pressed }) => [styles.reasonOption, pressed && styles.reasonOptionPressed]}
-                    accessibilityRole="radio"
-                    accessibilityLabel={option.label}
-                    accessibilityState={{ selected, disabled: isBusy }}
-                    disabled={isBusy}
-                    onPress={() => setReasonCode(option.value)}
-                  >
-                    <AppChip label={option.label} variant={selected ? 'selected' : 'neutral'} />
+                  <Pressable key={option.value}
+                    style={({ pressed }) => [styles.reasonOption, selected && styles.reasonSelected, pressed && styles.reasonOptionPressed]}
+                    accessibilityRole="radio" accessibilityLabel={option.label}
+                    accessibilityState={{ selected, disabled: isBusy }} disabled={isBusy}
+                    onPress={() => setReasonCode(option.value)}>
+                    <Text style={[styles.reasonLabel, selected && styles.reasonLabelSelected]}>{option.label}</Text>
+                    <View accessible={false} style={[styles.radio, selected && styles.radioSelected]}>
+                      {selected ? <View style={styles.radioDot} /> : null}
+                    </View>
                   </Pressable>
                 );
               })}
             </View>
-            <AppField
-              label={COPY.cancelDetailLabel}
-              accessibilityLabel={COPY.cancelDetailLabel}
-              value={reasonDetail}
-              onChangeText={setReasonDetail}
-              placeholder={
-                reasonCode === 'other'
-                  ? COPY.cancelDetailOtherPlaceholder
-                  : COPY.cancelDetailPlaceholder
-              }
-              multiline
-              editable={!isBusy}
-              errorText={
-                cancellationInput.ok || cancellationInput.reason === 'reason_required'
-                  ? undefined
-                  : cancellationInput.reason === 'detail_required'
-                    ? COPY.cancelDetailRequired
-                    : COPY.cancelDetailTooLong
-              }
-            />
+            <AppField label={COPY.cancelDetailLabel} accessibilityLabel={COPY.cancelDetailLabel}
+              value={reasonDetail} onChangeText={setReasonDetail}
+              placeholder={reasonCode === 'other' ? COPY.cancelDetailOtherPlaceholder : COPY.cancelDetailPlaceholder}
+              multiline editable={!isBusy}
+              errorText={cancellationInput.ok || cancellationInput.reason === 'reason_required'
+                ? undefined : cancellationInput.reason === 'detail_required' ? COPY.cancelDetailRequired : COPY.cancelDetailTooLong} />
             <Text style={remainingDetailCharacters < 0 ? styles.counterOver : styles.counter}>
               {remainingDetailCharacters} / {CANCELLATION_DETAIL_MAX}
             </Text>
-            {reasonCode === null ? <Text style={styles.helper}>{COPY.cancelReasonRequired}</Text> : null}
-            <AppButton
-              label={COPY.cancelReview}
-              onPress={reviewCancellation}
-              disabled={!cancellationInput.ok || isBusy}
-            />
-            <AppButton label={COPY.dismiss} variant="ghost" onPress={closeCancelModal} disabled={isBusy} />
-          </ScrollView>
-        </View>
-      </Modal>
+          </View>
+        ) : (
+          <View style={styles.review}>
+            <Text style={styles.reviewLabel}>Cancellation reason</Text>
+            <Text style={styles.reasonLabel}>{CANCELLATION_REASON_OPTIONS.find(option => option.value === reasonCode)?.label}</Text>
+            {reasonDetail.trim() ? <Text selectable style={styles.reviewDetail}>{reasonDetail.trim()}</Text> : null}
+          </View>
+        )}
+      </CancellationSheet>
     </View>
   );
 }
@@ -304,30 +281,24 @@ const styles = StyleSheet.create({
     ...type.sectionTitle,
     color: colors.textPrimary,
   },
-  overlay: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.gutter,
-    backgroundColor: colors.scrim,
-  },
-  modalScroll: { maxHeight: '90%', width: '100%', flexGrow: 0 },
+  reasonForm: { gap: spacing.md },
+  reasonOptions: { gap: spacing.sm },
   reasonOption: {
-    minHeight: size.compactButton,
-    minWidth: size.compactButton,
-    maxWidth: '100%',
-    justifyContent: 'center',
-    borderRadius: radius.control,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md,
+    minHeight: size.secondaryButton, minWidth: size.secondaryButton, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderRadius: radius.control, borderWidth: 1, borderColor: colors.controlBorder,
   },
+  reasonSelected: { backgroundColor: colors.accentSubtle, borderColor: colors.accent },
   reasonOptionPressed: { backgroundColor: colors.surfaceSunken },
-  modalCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.control,
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  modalTitle: { ...type.sectionTitle, color: colors.textPrimary },
-  modalBody: { ...type.body, color: colors.textSecondary },
-  reasonOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  reasonLabel: { ...type.bodyEmphasis, color: colors.textPrimary, flexShrink: 1 },
+  reasonLabelSelected: { color: colors.accent },
+  radio: { width: size.icon, height: size.icon, borderRadius: radius.pill, borderWidth: 1.5,
+    borderColor: colors.controlBorder, alignItems: 'center', justifyContent: 'center' },
+  radioSelected: { borderColor: colors.accent },
+  radioDot: { width: spacing.sm, height: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.accent },
+  review: { gap: spacing.sm, padding: spacing.lg, borderRadius: radius.card, backgroundColor: colors.surfaceSunken },
+  reviewLabel: { ...type.helper, color: colors.textSecondary },
+  reviewDetail: { ...type.body, color: colors.textSecondary },
   counter: { ...type.caption, color: colors.textSecondary },
   counterOver: { ...type.caption, color: colors.error, fontWeight: '600' },
   helper: { ...type.helper, color: colors.error },

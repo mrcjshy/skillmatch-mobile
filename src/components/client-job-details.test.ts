@@ -10,7 +10,11 @@ import RootIndex from '@/app/index';
 import { sessionRouteContinuation } from '@/lib/session-route-continuation';
 
 const { colors } = SkillMatchTheme.ui;
+vi.mock('@/components/skillmatch-mascot', () => ({ SkillMatchMascot: () => null }));
 vi.mock('@/components/skeleton', () => ({ Skeleton: (props: any) => createElement(Native, { kind: 'Text', style: { color: '#59606B' } }, props.label), PulseDots: () => null, KeyboardSpacer: () => null }));
+vi.mock('@/components/cancellation-sheet', () => ({ CancellationSheet: ({ visible, error, children, ...props }: any) => visible
+  ? createElement(Native, { ...props, error, kind: 'CancellationSheet' }, children,
+    error ? createElement(Native, { kind: 'Text' }, error) : null) : null }));
 vi.mock('@/components/refinement-theme', () => ({ useUiTheme: () => SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children }));
 
 const b = vi.hoisted(() => ({
@@ -518,10 +522,10 @@ describe('open Job cancellation', () => {
     await mount();
     await act(async () => button('Cancel').onPress());
     expect(b.deleteJob).not.toHaveBeenCalled();
-    const actions = b.alert.mock.calls.at(-1)![2];
-    expect(actions[0]).toMatchObject({ text: 'Keep job', style: 'cancel' });
-    expect(actions[1]).toMatchObject({ text: 'Cancel', style: 'destructive' });
-    await act(async () => actions[1].onPress()); await flush();
+    const sheet = nodes('CancellationSheet')[0];
+    expect(sheet).toMatchObject({ keepLabel: 'Keep job', confirmLabel: 'Cancel job' });
+    expect(b.alert).not.toHaveBeenCalled();
+    await act(async () => sheet.onConfirm()); await flush();
     expect(b.deleteJob).toHaveBeenCalledWith('job_postings', [['id', JOB], ['client_id', CLIENT], ['status', 'open']]);
     expect(b.replace).toHaveBeenCalledWith('/client');
   });
@@ -530,7 +534,7 @@ describe('open Job cancellation', () => {
     await act(async () => nodes('BookingSheet')[0].onPositionChange('expanded'));
     const freshJobs = deferred(); b.jobsReply = freshJobs.promise;
     await act(async () => button('Cancel').onPress());
-    await act(async () => b.alert.mock.calls.at(-1)![2][1].onPress()); await flush();
+    await act(async () => nodes('CancellationSheet')[0].onConfirm()); await flush();
     expect(b.replace).not.toHaveBeenCalled();
     expect(nodes('FindingWorkerCarousel')).toHaveLength(0);
     expect(button('Cancel')).toBeUndefined();
@@ -543,7 +547,7 @@ describe('open Job cancellation', () => {
     b.deleteJob.mockResolvedValue({ data: [], error: null }); await mount();
     b.jobsReply = Promise.resolve({ data: null, error: { code: '503' } });
     await act(async () => button('Cancel').onPress());
-    await act(async () => b.alert.mock.calls.at(-1)![2][1].onPress()); await flush();
+    await act(async () => nodes('CancellationSheet')[0].onConfirm()); await flush();
     expect(nodes('FindingWorkerCarousel')).toHaveLength(0); expect(button('Cancel')).toBeUndefined();
     expect(button('Refresh job')).toBeDefined(); expect(text()).toContain('Could not refresh');
     expect(b.replace).not.toHaveBeenCalled();
@@ -552,7 +556,7 @@ describe('open Job cancellation', () => {
     b.deleteJob.mockResolvedValue({ data: null, error: { message: 'private-server-detail' } });
     await mount();
     await act(async () => button('Cancel').onPress());
-    await act(async () => b.alert.mock.calls.at(-1)![2][1].onPress()); await flush();
+    await act(async () => nodes('CancellationSheet')[0].onConfirm()); await flush();
     expect(text()).toContain('Could not confirm cancellation');
     expect(text()).not.toContain('private-server-detail');
     expect(b.replace).not.toHaveBeenCalled();
@@ -560,7 +564,7 @@ describe('open Job cancellation', () => {
   it('rejects a confirmation retained after leaving the screen', async () => {
     const h = await mount();
     await act(async () => button('Cancel').onPress());
-    const confirm = b.alert.mock.calls.at(-1)![2][1].onPress;
+    const confirm = nodes('CancellationSheet')[0].onConfirm;
     b.focus = false; await h.render();
     await act(async () => confirm()); await flush();
     expect(b.deleteJob).not.toHaveBeenCalled();

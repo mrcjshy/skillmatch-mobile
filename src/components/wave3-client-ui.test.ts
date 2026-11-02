@@ -49,9 +49,10 @@ describe('Post Job structure', () => {
     expect((source.match(/validatePostJobWizardStep\(/g) ?? []).length).toBe(1);
   });
 
-  it('docks the budget summary beside one Post job action and rises with the keyboard', () => {
+  it('docks one full-width Post job action and keeps the budget in the review summary', () => {
     const dock = source.slice(source.indexOf('{showDock ? ('));
-    before(dock, 'styles.dockSummary', '<AppButton');
+    expect(dock).not.toContain('styles.dockSummary');
+    expect(source).toContain('label="Budget" value={budgetLabel} strong inline');
     expect((dock.slice(0, dock.indexOf('<Modal')).match(/<AppButton/g) ?? []).length).toBe(1);
     expect(source).toContain('<KeyboardSpacer />');
     expect(source).toContain('keyboardShouldPersistTaps="handled"');

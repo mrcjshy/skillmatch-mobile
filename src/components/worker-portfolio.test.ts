@@ -28,6 +28,7 @@ function harness() {
   function load(file: string): Props {
     if (cache[file]) return cache[file]; const exports: Props = {}; cache[file] = exports;
     const seams: Record<string, unknown> = {
+    '@/components/skillmatch-mascot': { SkillMatchMascot: 'SkillMatchMascot' },
     '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
 
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },

@@ -576,10 +576,6 @@ export function ClientPostJobScreen() {
         <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, spacing.md) }]} accessibilityLabel="Post job">
           {postError ? <InlineStatus variant="error" message={postError} /> : null}
           <View style={styles.dockRow}>
-            <View style={styles.dockSummary} accessible accessibilityLabel={`Budget: ${budgetLabel}`}>
-              <Text style={styles.dockCaption}>Budget</Text>
-              <Text style={styles.dockAmount}>{budgetLabel}</Text>
-            </View>
             <View style={styles.dockAction}>
               <AppButton
                 variant="primary"
@@ -857,17 +853,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     gap: spacing.lg,
-  },
-  dockSummary: {
-    gap: spacing.xxs,
-  },
-  dockCaption: {
-    ...type.helper,
-    color: colors.textSecondary,
-  },
-  dockAmount: {
-    ...type.money,
-    color: colors.textPrimary,
   },
   dockAction: {
     flex: 1,

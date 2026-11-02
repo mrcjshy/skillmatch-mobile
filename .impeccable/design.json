@@ -1,0 +1,417 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-02T12:36:30Z",
+  "title": "Design System: SkillMatch native",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Accent",
+        "tonalRamp": [
+          "oklch(15.00% 0.17666 266.11)",
+          "oklch(26.43% 0.17666 266.11)",
+          "oklch(37.86% 0.17666 266.11)",
+          "oklch(49.29% 0.17666 266.11)",
+          "oklch(60.71% 0.17666 266.11)",
+          "oklch(72.14% 0.17666 266.11)",
+          "oklch(83.57% 0.17666 266.11)",
+          "oklch(95.00% 0.17666 266.11)"
+        ]
+      },
+      "accentPressed": {
+        "role": "primary",
+        "displayName": "Accent pressed",
+        "tonalRamp": [
+          "oklch(15.00% 0.14428 266.31)",
+          "oklch(26.43% 0.14428 266.31)",
+          "oklch(37.86% 0.14428 266.31)",
+          "oklch(49.29% 0.14428 266.31)",
+          "oklch(60.71% 0.14428 266.31)",
+          "oklch(72.14% 0.14428 266.31)",
+          "oklch(83.57% 0.14428 266.31)",
+          "oklch(95.00% 0.14428 266.31)"
+        ]
+      },
+      "accentSubtle": {
+        "role": "primary",
+        "displayName": "Accent subtle",
+        "tonalRamp": [
+          "oklch(15.00% 0.01959 270.21)",
+          "oklch(26.43% 0.01959 270.21)",
+          "oklch(37.86% 0.01959 270.21)",
+          "oklch(49.29% 0.01959 270.21)",
+          "oklch(60.71% 0.01959 270.21)",
+          "oklch(72.14% 0.01959 270.21)",
+          "oklch(83.57% 0.01959 270.21)",
+          "oklch(95.00% 0.01959 270.21)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Canvas",
+        "tonalRamp": [
+          "oklch(15.00% 0.00412 91.45)",
+          "oklch(26.43% 0.00412 91.45)",
+          "oklch(37.86% 0.00412 91.45)",
+          "oklch(49.29% 0.00412 91.45)",
+          "oklch(60.71% 0.00412 91.45)",
+          "oklch(72.14% 0.00412 91.45)",
+          "oklch(83.57% 0.00412 91.45)",
+          "oklch(95.00% 0.00412 91.45)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "tonalRamp": [
+          "oklch(15.00% 0.00000 89.88)",
+          "oklch(26.43% 0.00000 89.88)",
+          "oklch(37.86% 0.00000 89.88)",
+          "oklch(49.29% 0.00000 89.88)",
+          "oklch(60.71% 0.00000 89.88)",
+          "oklch(72.14% 0.00000 89.88)",
+          "oklch(83.57% 0.00000 89.88)",
+          "oklch(95.00% 0.00000 89.88)"
+        ]
+      },
+      "surfaceSunken": {
+        "role": "neutral",
+        "displayName": "Surface sunken",
+        "tonalRamp": [
+          "oklch(15.00% 0.00544 95.10)",
+          "oklch(26.43% 0.00544 95.10)",
+          "oklch(37.86% 0.00544 95.10)",
+          "oklch(49.29% 0.00544 95.10)",
+          "oklch(60.71% 0.00544 95.10)",
+          "oklch(72.14% 0.00544 95.10)",
+          "oklch(83.57% 0.00544 95.10)",
+          "oklch(95.00% 0.00544 95.10)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "tonalRamp": [
+          "oklch(15.00% 0.00838 91.49)",
+          "oklch(26.43% 0.00838 91.49)",
+          "oklch(37.86% 0.00838 91.49)",
+          "oklch(49.29% 0.00838 91.49)",
+          "oklch(60.71% 0.00838 91.49)",
+          "oklch(72.14% 0.00838 91.49)",
+          "oklch(83.57% 0.00838 91.49)",
+          "oklch(95.00% 0.00838 91.49)"
+        ]
+      },
+      "controlBorder": {
+        "role": "neutral",
+        "displayName": "Control border",
+        "tonalRamp": [
+          "oklch(15.00% 0.01867 259.42)",
+          "oklch(26.43% 0.01867 259.42)",
+          "oklch(37.86% 0.01867 259.42)",
+          "oklch(49.29% 0.01867 259.42)",
+          "oklch(60.71% 0.01867 259.42)",
+          "oklch(72.14% 0.01867 259.42)",
+          "oklch(83.57% 0.01867 259.42)",
+          "oklch(95.00% 0.01867 259.42)"
+        ]
+      },
+      "textPrimary": {
+        "role": "neutral",
+        "displayName": "Text primary",
+        "tonalRamp": [
+          "oklch(15.00% 0.01132 254.06)",
+          "oklch(26.43% 0.01132 254.06)",
+          "oklch(37.86% 0.01132 254.06)",
+          "oklch(49.29% 0.01132 254.06)",
+          "oklch(60.71% 0.01132 254.06)",
+          "oklch(72.14% 0.01132 254.06)",
+          "oklch(83.57% 0.01132 254.06)",
+          "oklch(95.00% 0.01132 254.06)"
+        ]
+      },
+      "textSecondary": {
+        "role": "neutral",
+        "displayName": "Text secondary",
+        "tonalRamp": [
+          "oklch(15.00% 0.01970 259.42)",
+          "oklch(26.43% 0.01970 259.42)",
+          "oklch(37.86% 0.01970 259.42)",
+          "oklch(49.29% 0.01970 259.42)",
+          "oklch(60.71% 0.01970 259.42)",
+          "oklch(72.14% 0.01970 259.42)",
+          "oklch(83.57% 0.01970 259.42)",
+          "oklch(95.00% 0.01970 259.42)"
+        ]
+      },
+      "textMuted": {
+        "role": "neutral",
+        "displayName": "Text muted",
+        "tonalRamp": [
+          "oklch(15.00% 0.01935 259.42)",
+          "oklch(26.43% 0.01935 259.42)",
+          "oklch(37.86% 0.01935 259.42)",
+          "oklch(49.29% 0.01935 259.42)",
+          "oklch(60.71% 0.01935 259.42)",
+          "oklch(72.14% 0.01935 259.42)",
+          "oklch(83.57% 0.01935 259.42)",
+          "oklch(95.00% 0.01935 259.42)"
+        ]
+      },
+      "success": {
+        "role": "secondary",
+        "displayName": "Success",
+        "tonalRamp": [
+          "oklch(15.00% 0.11814 153.01)",
+          "oklch(26.43% 0.11814 153.01)",
+          "oklch(37.86% 0.11814 153.01)",
+          "oklch(49.29% 0.11814 153.01)",
+          "oklch(60.71% 0.11814 153.01)",
+          "oklch(72.14% 0.11814 153.01)",
+          "oklch(83.57% 0.11814 153.01)",
+          "oklch(95.00% 0.11814 153.01)"
+        ]
+      },
+      "successTint": {
+        "role": "secondary",
+        "displayName": "Success tint",
+        "tonalRamp": [
+          "oklch(15.00% 0.01734 159.12)",
+          "oklch(26.43% 0.01734 159.12)",
+          "oklch(37.86% 0.01734 159.12)",
+          "oklch(49.29% 0.01734 159.12)",
+          "oklch(60.71% 0.01734 159.12)",
+          "oklch(72.14% 0.01734 159.12)",
+          "oklch(83.57% 0.01734 159.12)",
+          "oklch(95.00% 0.01734 159.12)"
+        ]
+      },
+      "warning": {
+        "role": "secondary",
+        "displayName": "Warning",
+        "tonalRamp": [
+          "oklch(15.00% 0.10925 66.91)",
+          "oklch(26.43% 0.10925 66.91)",
+          "oklch(37.86% 0.10925 66.91)",
+          "oklch(49.29% 0.10925 66.91)",
+          "oklch(60.71% 0.10925 66.91)",
+          "oklch(72.14% 0.10925 66.91)",
+          "oklch(83.57% 0.10925 66.91)",
+          "oklch(95.00% 0.10925 66.91)"
+        ]
+      },
+      "warningTint": {
+        "role": "secondary",
+        "displayName": "Warning tint",
+        "tonalRamp": [
+          "oklch(15.00% 0.03359 86.31)",
+          "oklch(26.43% 0.03359 86.31)",
+          "oklch(37.86% 0.03359 86.31)",
+          "oklch(49.29% 0.03359 86.31)",
+          "oklch(60.71% 0.03359 86.31)",
+          "oklch(72.14% 0.03359 86.31)",
+          "oklch(83.57% 0.03359 86.31)",
+          "oklch(95.00% 0.03359 86.31)"
+        ]
+      },
+      "error": {
+        "role": "secondary",
+        "displayName": "Error",
+        "tonalRamp": [
+          "oklch(15.00% 0.17832 28.70)",
+          "oklch(26.43% 0.17832 28.70)",
+          "oklch(37.86% 0.17832 28.70)",
+          "oklch(49.29% 0.17832 28.70)",
+          "oklch(60.71% 0.17832 28.70)",
+          "oklch(72.14% 0.17832 28.70)",
+          "oklch(83.57% 0.17832 28.70)",
+          "oklch(95.00% 0.17832 28.70)"
+        ]
+      },
+      "errorTint": {
+        "role": "secondary",
+        "displayName": "Error tint",
+        "tonalRamp": [
+          "oklch(15.00% 0.01985 25.17)",
+          "oklch(26.43% 0.01985 25.17)",
+          "oklch(37.86% 0.01985 25.17)",
+          "oklch(49.29% 0.01985 25.17)",
+          "oklch(60.71% 0.01985 25.17)",
+          "oklch(72.14% 0.01985 25.17)",
+          "oklch(83.57% 0.01985 25.17)",
+          "oklch(95.00% 0.01985 25.17)"
+        ]
+      }
+    },
+    "shadows": [
+      {
+        "name": "floating",
+        "value": "shadowColor #1B1F24; offset 0 4dp; opacity 0.14; radius 12dp; Android elevation 6",
+        "purpose": "Existing floating native layers."
+      },
+      {
+        "name": "sheet",
+        "value": "shadowColor #1B1F24; offset 0 -4dp; opacity 0.12; radius 16dp; Android elevation 12",
+        "purpose": "Existing sheets."
+      }
+    ],
+    "motion": [
+      {
+        "name": "duration",
+        "value": "micro 120ms; exit 160ms; standard 200ms; large 240ms; emphasized 320ms",
+        "purpose": "Existing MotionTokens.duration."
+      },
+      {
+        "name": "easing",
+        "value": "standard cubic-bezier(0.2,0,0,1); decelerate cubic-bezier(0.05,0.7,0.1,1); accelerate cubic-bezier(0.3,0,0.8,0.15)",
+        "purpose": "Existing MotionTokens.easing."
+      },
+      {
+        "name": "duck-wave",
+        "value": "delay 320ms; 6 alternating wing changes at 260ms intervals; idle at 2150ms",
+        "purpose": "Hello expression; no action waits."
+      },
+      {
+        "name": "duck-blink",
+        "value": "at 2600ms, 5800ms, 9200ms; each 140ms",
+        "purpose": "Idle and hello only."
+      },
+      {
+        "name": "duck-breath",
+        "value": "scaleY 1 to 1.025; 1800ms per leg; 6 alternating legs",
+        "purpose": "Finite breathing ending at rest."
+      },
+      {
+        "name": "duck-expression",
+        "value": "tilt -3deg, +3deg, 0; celebrate translateY -10dp, 0; 320ms per leg; standard easing",
+        "purpose": "Hello/concern tilt; one celebration hop. All timers and transforms reset when inactive, blurred, backgrounded, reduced or unmounted."
+      }
+    ],
+    "typographyMeta": {
+      "screenTitle": {
+        "displayName": "Native screen title",
+        "purpose": "Android baseline in frontmatter; iOS uses System. Existing platform title typography retained, not a new display identity."
+      }
+    }
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Native AppButton translated for a browser preview; minimum height grows with text. Keyboard focus outline is a preview affordance, not a new native token.",
+      "html": "<button class=\"ds-btn-primary\">Continue</button>",
+      "css": ".ds-btn-primary { display:flex; align-items:center; justify-content:center; min-width:48px; min-height:52px; padding:8px 24px; border:1px solid #1C3AA6; border-radius:12px; background:#1C3AA6; color:#FFFFFF; font:600 16px/1.5 sans-serif; } .ds-btn-primary:hover { cursor:pointer; } .ds-btn-primary:active { background:#142B7F; } .ds-btn-primary:focus-visible { outline:2px solid currentColor; outline-offset:2px; } .ds-btn-primary:disabled { background:#EFEEEA; color:#59606B; border-color:#7A818C; }"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Native AppButton translated for a browser preview; minimum height grows with text. Keyboard focus outline is a preview affordance, not a new native token.",
+      "html": "<button class=\"ds-btn-secondary\">Continue</button>",
+      "css": ".ds-btn-secondary { display:flex; align-items:center; justify-content:center; min-width:48px; min-height:48px; padding:8px 24px; border:1px solid #7A818C; border-radius:12px; background:transparent; color:#1C3AA6; font:600 16px/1.5 sans-serif; } .ds-btn-secondary:hover { cursor:pointer; } .ds-btn-secondary:active { background:#E9EEFC; } .ds-btn-secondary:focus-visible { outline:2px solid currentColor; outline-offset:2px; } .ds-btn-secondary:disabled { background:#EFEEEA; color:#59606B; border-color:#7A818C; }"
+    },
+    {
+      "name": "Ghost button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Native AppButton translated for a browser preview; minimum height grows with text. Keyboard focus outline is a preview affordance, not a new native token.",
+      "html": "<button class=\"ds-btn-ghost\">Continue</button>",
+      "css": ".ds-btn-ghost { display:flex; align-items:center; justify-content:center; min-width:48px; min-height:48px; padding:8px 8px; border:1px solid transparent; border-radius:12px; background:transparent; color:#1C3AA6; font:600 14px/1.5 sans-serif; } .ds-btn-ghost:hover { cursor:pointer; } .ds-btn-ghost:active { background:#E9EEFC; } .ds-btn-ghost:focus-visible { outline:2px solid currentColor; outline-offset:2px; } .ds-btn-ghost:disabled { background:#EFEEEA; color:#59606B; border-color:#7A818C; }"
+    },
+    {
+      "name": "Destructive button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Native AppButton translated for a browser preview; minimum height grows with text. Keyboard focus outline is a preview affordance, not a new native token.",
+      "html": "<button class=\"ds-btn-destructive\">Continue</button>",
+      "css": ".ds-btn-destructive { display:flex; align-items:center; justify-content:center; min-width:48px; min-height:48px; padding:8px 24px; border:1px solid #B3261E; border-radius:12px; background:transparent; color:#B3261E; font:600 16px/1.5 sans-serif; } .ds-btn-destructive:hover { cursor:pointer; } .ds-btn-destructive:active { background:#E9EEFC; } .ds-btn-destructive:focus-visible { outline:2px solid currentColor; outline-offset:2px; } .ds-btn-destructive:disabled { background:#EFEEEA; color:#59606B; border-color:#7A818C; }"
+    },
+    {
+      "name": "Compact button",
+      "kind": "button",
+      "refersTo": "button-compact",
+      "description": "Native AppButton translated for a browser preview; minimum height grows with text. Keyboard focus outline is a preview affordance, not a new native token.",
+      "html": "<button class=\"ds-btn-compact\">Continue</button>",
+      "css": ".ds-btn-compact { display:flex; align-items:center; justify-content:center; min-width:48px; min-height:48px; padding:8px 16px; border:1px solid #1C3AA6; border-radius:12px; background:#1C3AA6; color:#FFFFFF; font:600 14px/1.5 sans-serif; } .ds-btn-compact:hover { cursor:pointer; } .ds-btn-compact:active { background:#142B7F; } .ds-btn-compact:focus-visible { outline:2px solid currentColor; outline-offset:2px; } .ds-btn-compact:disabled { background:#EFEEEA; color:#59606B; border-color:#7A818C; }"
+    },
+    {
+      "name": "Inverse button",
+      "kind": "button",
+      "refersTo": "button-inverse",
+      "description": "Native AppButton translated for a browser preview; minimum height grows with text. Keyboard focus outline is a preview affordance, not a new native token.",
+      "html": "<button class=\"ds-btn-inverse\">Continue</button>",
+      "css": ".ds-btn-inverse { display:flex; align-items:center; justify-content:center; min-width:48px; min-height:52px; padding:8px 24px; border:1px solid #FFFFFF; border-radius:12px; background:#FFFFFF; color:#1C3AA6; font:600 16px/1.5 sans-serif; } .ds-btn-inverse:hover { cursor:pointer; } .ds-btn-inverse:active { background:#E9EEFC; } .ds-btn-inverse:focus-visible { outline:2px solid currentColor; outline-offset:2px; } .ds-btn-inverse:disabled { background:#EFEEEA; color:#59606B; border-color:#7A818C; }"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Default AppField; search uses pill corners.",
+      "html": "<label class=\"ds-field-label\">Name<input class=\"ds-field\" placeholder=\"Your name\"></label>",
+      "css": ".ds-field-label { display:flex; flex-direction:column; gap:8px; color:#1B1F24; font:600 14px/20px sans-serif; } .ds-field { min-height:52px; padding:0 12px; border:1px solid #7A818C; border-radius:12px; background:#FFFFFF; color:#1B1F24; font:400 16px/24px sans-serif; } .ds-field::placeholder { color:#636A75; } .ds-field:focus-visible { border-color:#1C3AA6; outline:none; } .ds-field:disabled { background:#EFEEEA; color:#59606B; }"
+    },
+    {
+      "name": "Selected chip",
+      "kind": "chip",
+      "refersTo": "chip-selected",
+      "description": "Noninteractive AppChip status or category label.",
+      "html": "<span class=\"ds-chip\">Selected</span>",
+      "css": ".ds-chip { display:inline-flex; align-items:center; justify-content:center; min-height:28px; padding:4px 12px; border-radius:999px; background:#E9EEFC; color:#1C3AA6; font:600 13px/18px sans-serif; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat AppCard; browser border approximates the native device hairline.",
+      "html": "<article class=\"ds-card\"><strong>Portfolio item</strong><span>Supporting details</span></article>",
+      "css": ".ds-card { display:flex; flex-direction:column; gap:12px; padding:16px; border:0.5px solid #E1DFD9; border-radius:16px; background:#FFFFFF; color:#1B1F24; font:400 16px/24px sans-serif; } .ds-card span { color:#59606B; }"
+    },
+    {
+      "name": "Selected tab",
+      "kind": "nav",
+      "description": "TabIcon and TabLabel appearance; preview icon is inline SVG, not a glyph. Native bar grows with font scale and safe area.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Example\"><button class=\"ds-tab\" aria-current=\"page\"><span class=\"ds-indicator\"><svg viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M3 10 12 2l9 8v11h-6v-7H9v7H3Z\"/></svg></span><span>Home</span></button></nav>",
+      "css": ".ds-nav { padding:4px 20px 24px; border-top:1px solid #E1DFD9; background:#FFFFFF; } .ds-tab { display:flex; flex-direction:column; align-items:center; gap:4px; min-height:48px; border:0; background:transparent; color:#1C3AA6; font:700 14px/20px sans-serif; } .ds-indicator { display:flex; align-items:center; justify-content:center; width:52px; height:32px; border-radius:32px; background:#1C3AA6; color:#FFFFFF; } .ds-tab:hover { cursor:pointer; } .ds-tab:focus-visible { outline:2px solid #1C3AA6; outline-offset:2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Original Pateros duck within SkillMatch",
+    "overview": "The existing native interface combines a warm canvas, white surfaces and a single cobalt accent. The approved mascot replacement adds an original soft matte 3D cream duck with amber bill and feet and a cobalt scarf. It represents Pateros while the surrounding words continue to explain the task.\n\nThis is a record of the existing app and the completed mascot implementation, not a new screen or navigation identity. Source authority remains `src/constants/theme.ts`, `src/constants/motion.ts`, and the shared components. Portable frontmatter sizes represent React Native dp/sp at 100% text as px; native code remains authoritative for platform behavior and text scaling.",
+    "keyCharacteristics": [
+      "Warm, light-only surfaces with cobalt actions.",
+      "Existing scalable native typography and generous control targets.",
+      "Original dimensional duck cutouts with true alpha transparency, directly on the surrounding surface.",
+      "Finite expressions with a static semantic pose when motion is reduced."
+    ],
+    "rules": [
+      {
+        "name": "The Status Color Rule.",
+        "body": "Status colors explain state; cobalt remains the action accent.",
+        "section": "colors"
+      },
+      {
+        "name": "The Words Carry State Rule.",
+        "body": "The duck is decorative, excluded from accessibility traversal and pointer input; adjacent words and controls carry meaning and action.",
+        "section": "components"
+      },
+      {
+        "name": "The Finite Expression Rule.",
+        "body": "Motion starts only after image load and while active, foregrounded and route-focused; it stops and resets on blur, background, hiding, cleanup or live reduced-motion preference. Optional navigation context lets bootstrap states work outside a navigator. No action waits for animation.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "**Do** retain the incumbent palette, type scale, controls and role navigation.",
+      "**Do** use the original transparent duck atlas directly on the surrounding surface.",
+      "**Do** keep semantic wording and actions readable alongside decorative artwork.",
+      "**Do** use centralized finite motion with live reduced-motion and visibility handling."
+    ],
+    "donts": [
+      "**Don't** turn the duck's amber material into a new UI brand accent.",
+      "**Don't** replace skeletons or explicit semantic cues indiscriminately with artwork.",
+      "**Don't** put cancellation-specific artwork on cancelled-history cards.",
+      "**Don't** delay controls for animation or play duck motion on hidden/background routes."
+    ]
+  }
+}

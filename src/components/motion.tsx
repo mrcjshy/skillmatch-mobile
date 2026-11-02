@@ -9,11 +9,13 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 
 import { MotionTokens, staggerDelay, type MotionCurve } from '@/constants/motion';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { duckPosePlan, restingDuckPose, type DuckExpression } from '@/lib/mascot-motion';
 
 /**
  * The SkillMatch motion primitives. Every authored animation goes through this file: it reads the
@@ -105,6 +107,37 @@ export function useLoadingPulse() {
     return () => cancelAnimation(opacity);
   }, [opacity, reduced]);
   return useAnimatedStyle(() => ({ opacity: opacity.get() }));
+}
+
+/** Animated duck body and finite expression changes. Inactive/reduced motion cancels immediately. */
+export function useDuckMotion(expression: DuckExpression, active: boolean) {
+  const reduced = useReducedMotion();
+  const [frame, setFrame] = useState({ expression, pose: restingDuckPose(expression) });
+  const breath = useSharedValue(1);
+  const turn = useSharedValue(0);
+  const lift = useSharedValue(0);
+  useEffect(() => {
+    const reset = () => {
+      for (const value of [breath, turn, lift]) cancelAnimation(value);
+      breath.set(1); turn.set(0); lift.set(0);
+    };
+    reset();
+    if (!active || reduced) return reset;
+    const timers = duckPosePlan(expression).map(({ at, pose }) => setTimeout(() => setFrame({ expression, pose }), at));
+    const duck = MotionTokens.duck;
+    const timing = { duration: duration.emphasized, easing: curve(easing.standard), reduceMotion: NEVER };
+    breath.set(withRepeat(withTiming(duck.breathScale, { ...timing, duration: duck.breathLeg }), duck.breathLegs, true, undefined, NEVER));
+    if (expression === 'celebrate') {
+      lift.set(withSequence(withTiming(-duck.hop, timing), withTiming(0, timing)));
+    } else if (expression === 'hello' || expression === 'concern') {
+      turn.set(withSequence(withTiming(-duck.tilt, timing), withTiming(duck.tilt, timing), withTiming(0, timing)));
+    }
+    return () => { timers.forEach(clearTimeout); reset(); };
+  }, [active, breath, expression, lift, reduced, turn]);
+  const style = useAnimatedStyle(() => ({ transform: [
+    { translateY: lift.get() }, { rotate: `${turn.get()}deg` }, { scaleY: breath.get() },
+  ] }));
+  return { pose: reduced || !active || frame.expression !== expression ? restingDuckPose(expression) : frame.pose, style };
 }
 
 /** The strength of one dot as a sweep (0..3) passes it. */

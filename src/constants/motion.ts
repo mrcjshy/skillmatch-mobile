@@ -57,7 +57,10 @@ export const MotionTokens = {
   loading: { leg: 720, legs: 14, dim: 0.5 },
   /** Button-sized wait: one sweep across the three dots (ms), how many sweeps, and the resting strength. */
   dots: { sweep: 900, sweeps: 14, rest: 0.35 },
-  /** The swipe control invites a drag: how far the thumb leans (dp), for how long (ms), and how many times. */
+  /** Owner-directed duck expressions: finite playback; never delays a control. */
+  duck: { helloDelay: 320, waveLeg: 260, waveEnd: 2150, blinkAt: [2600, 5800, 9200], blinkLength: 140,
+    breathLeg: 1800, breathLegs: 6, breathScale: 1.025, tilt: 3, hop: 10 },
+  /** The swipe control invites a drag: distance (dp), timing (ms), repetitions. */
   swipeHint: { lean: 14, leg: 260, delay: 500, times: 2 },
 } as const;
 

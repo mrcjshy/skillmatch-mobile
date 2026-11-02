@@ -37,6 +37,7 @@ const base = {
   '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
 
   '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
+      '@/components/skillmatch-mascot': { SkillMatchMascot: 'SkillMatchMascot' },
   'expo-symbols': {},
   'expo-status-bar': { StatusBar: 'StatusBar' },
   'expo-router': { Link: 'Link' },
@@ -170,16 +171,16 @@ describe('StateScreen', () => {
     expect(flat(column.props.style).backgroundColor).toBeUndefined();
   });
 
-  it('shows pulsing dots instead of an icon while loading and keeps the message announced', () => {
+  it('shows a thinking duck while loading and keeps the message announced', () => {
     const tree = StateScreen({ loading: true, title: 'Loading', message: 'Restoring your session…' });
-    expect(ofType(tree, 'PulseDots')).toHaveLength(1);
+    expect(ofType(tree, 'SkillMatchMascot')[0].props.expression).toBe('think');
     expect(ofType(tree, 'AppSymbol')).toHaveLength(0);
     expect(ofType(tree, 'Text').find((node) => node.props.children === 'Restoring your session…')!.props.accessibilityLiveRegion).toBe('polite');
   });
 
   it('tints the cue by meaning and hides it from TalkBack (the title carries the meaning)', () => {
     for (const [tone, fill, ink] of [['error', ui.colors.errorTint, ui.colors.error], ['warning', ui.colors.warningTint, ui.colors.warning], ['success', ui.colors.successTint, ui.colors.success], ['neutral', ui.colors.accentSubtle, ui.colors.accent]]) {
-      const tree = StateScreen({ tone, title: 'T' });
+      const tree = StateScreen({ tone, title: 'T', icon: { android: 'info' } });
       const cue = ofType(tree, 'View').find((node) => node.props.importantForAccessibility === 'no-hide-descendants')!;
       expect(flat(cue.props.style).backgroundColor).toBe(fill);
       expect(ofType(tree, 'AppSymbol')[0].props.tintColor).toBe(ink);

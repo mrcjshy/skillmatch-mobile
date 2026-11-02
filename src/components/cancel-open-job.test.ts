@@ -8,7 +8,6 @@ import { describe, expect, it, vi } from 'vitest';
 function harness(result: { data: { id: string }[] | null; error: unknown }, current = true) {
   let cursor = 0;
   const slots: any[] = [], effects: (() => void)[] = [], filters: unknown[] = [];
-  let confirmation: any[] = [];
   const selected = vi.fn(async () => result);
   const query: any = { delete: () => query, eq: (key: string, value: string) => { filters.push([key, value]); return query; }, select: selected };
   const onCancelled = vi.fn(), onStatusChanged = vi.fn();
@@ -21,7 +20,8 @@ function harness(result: { data: { id: string }[] | null; error: unknown }, curr
       useEffect: (effect: () => void) => effects.push(effect),
     };
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
-    if (name === 'react-native') return { View: 'View', Alert: { alert: (_title: string, _message: string, buttons: any[]) => { confirmation = buttons; } } };
+    if (name === 'react-native') return { View: 'View' };
+    if (name === '@/components/cancellation-sheet') return { CancellationSheet: 'CancellationSheet' };
     if (name === '@/components/app-button') return { AppButton: 'AppButton' };
     if (name === '@/components/inline-status') return { InlineStatus: 'InlineStatus' };
     if (name === '@/lib/supabase') return { supabase: { from: (table: string) => { expect(table).toBe('job_postings'); return query; } } };
@@ -35,9 +35,11 @@ function harness(result: { data: { id: string }[] | null; error: unknown }, curr
   };
   let tree = render(); effects.splice(0).forEach(effect => effect());
   const cancelButton = tree.props.children.find((child: any) => child?.type === 'AppButton');
-  return { filters, selected, onCancelled, onStatusChanged, render, async confirm() {
+  const sheet = () => render().props.children.find((child: any) => child?.type === 'CancellationSheet');
+  return { filters, selected, onCancelled, onStatusChanged, render, sheet, open() { cancelButton.props.onPress(); }, async confirm() {
     cancelButton.props.onPress();
-    confirmation.find(button => button.text === 'Cancel')?.onPress();
+    expect(sheet(), 'cancellation must use the branded sheet').toBeDefined();
+    sheet().props.onConfirm();
     for (let turn = 0; turn < 5; turn++) await Promise.resolve();
   } };
 }
@@ -60,5 +62,24 @@ describe('open-job withdrawal result', () => {
   it('does not report success for an error result', async () => {
     const h = harness({ data: null, error: { code: '42501' } }); await h.confirm();
     expect(h.onCancelled).not.toHaveBeenCalled(); expect(h.onStatusChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe('open-job cancellation confirmation', () => {
+  it('opening and choosing Keep job never submits a deletion', () => {
+    const h = harness({ data: [{ id: 'job-a' }], error: null });
+    h.open();
+    expect(h.sheet(), 'a branded cancellation sheet is required').toBeDefined();
+    expect(h.sheet().props.visible).toBe(true);
+    expect(h.selected).not.toHaveBeenCalled();
+    h.sheet().props.onClose();
+    expect(h.sheet().props.visible).toBe(false);
+    expect(h.selected).not.toHaveBeenCalled();
+  });
+  it('keeps a refused cancellation visible with a recoverable error', async () => {
+    const h = harness({ data: null, error: { code: '42501' } });
+    await h.confirm();
+    expect(h.sheet().props.visible).toBe(true);
+    expect(h.sheet().props.error).toContain('Refresh');
   });
 });

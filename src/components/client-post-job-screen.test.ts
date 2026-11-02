@@ -305,6 +305,8 @@ it('preserves fee presets and custom value matching, payment options, populated 
   h.press('Next'); const review = h.render(); const text = [...all(review, node => node.type === 'Text').map(node => node.props.children).flat(), ...all(review, node => node.type === 'FactRow').map(node => node.props.value)].join(' ');
   expect(text).toContain('Plumbing, Electrical'); expect(text).toContain('Very long work description'); expect(text).toContain('Confirmed address');
   expect(text).toContain('QR Ph'); expect(text).toContain('500');
+  expect(all(review, node => node.type === 'FactRow' && node.props.label === 'Budget').map(node => node.props.value)).toEqual(['₱500']);
+  expect(all(review, node => node.type === 'Text' && node.props.children === '₱500')).toHaveLength(0);
 });
 it('retains final posting readiness protection and disables the form while posting', () => {
   const h = harness(); h.owner.updateDraft({ ...valid, wizardStep: 4 }); h.jobs.isLoading = true;

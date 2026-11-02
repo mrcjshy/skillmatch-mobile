@@ -17,6 +17,7 @@ function compile(path: string, seams: Record<string, Props>): Props {
   const requireSeam = (id: string): Props => {
     if (id in seams) return seams[id];
     if (id === 'react/jsx-runtime') return { jsx: node, jsxs: node, Fragment: 'Fragment' };
+    if (id === '@/lib/mascot-motion') return compile('src/lib/mascot-motion.ts', {});
     if (id === '@/constants/motion') return compile('src/constants/motion.ts', {});
     if (id === '@/constants/theme') return compile('src/constants/theme.ts', { 'react-native': { Platform: { OS: 'android', select: (x: Props) => x.android ?? x.default } } });
     if (id === '@/global.css') return {};
@@ -290,8 +291,8 @@ describe('M2 call sites', () => {
       'src/app/(admin)/admin/report-details.tsx', 'src/app/(admin)/admin/verification-details.tsx',
     ];
     for (const file of excluded) expect(source(file), file).not.toMatch(/@\/components\/motion|react-native-reanimated/);
-    // M6: the mascot is never placed on these surfaces either (mascot.test.ts holds the allowlist).
-    for (const file of excluded) expect(source(file), file).not.toMatch(/@\/components\/skillmatch-mascot/);
+    // Owner November 2: whole-screen states may use the duck; transactional inline errors retain their cues.
+    for (const file of excluded.filter((file) => file !== 'src/components/state-screen.tsx')) expect(source(file), file).not.toMatch(/@\/components\/skillmatch-mascot/);
     // Only the motion module talks to Reanimated directly.
     expect(source('src/components/motion.tsx')).toContain("from 'react-native-reanimated'");
   });

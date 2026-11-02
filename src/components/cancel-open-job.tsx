@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
 import { InlineStatus } from '@/components/inline-status';
+import { CancellationSheet } from '@/components/cancellation-sheet';
 import { supabase } from '@/lib/supabase';
 
 /** N9 permits withdrawal of the owning active Client's still-open post only. */
@@ -12,6 +13,7 @@ export function CancelOpenJob({ jobId, clientId, isCurrent, onCancelled, onStatu
   onStatusChanged?: () => void;
 }) {
   const mounted = useRef(false), running = useRef(false);
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [pending, setPending] = useState(false), [error, setError] = useState<string | null>(null);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const current = () => {
@@ -27,7 +29,10 @@ export function CancelOpenJob({ jobId, clientId, isCurrent, onCancelled, onStatu
         .eq('id', jobId).eq('client_id', clientId).eq('status', 'open').select('id');
       if (!current()) return;
       if (result.error) throw result.error;
-      if (result.data?.length === 1 && result.data[0].id === jobId) onCancelled();
+      if (result.data?.length === 1 && result.data[0].id === jobId) {
+        setConfirmationOpen(false);
+        onCancelled();
+      }
       else {
         setError('This job could not be cancelled. Its status may have changed. Refresh to check it.');
         onStatusChanged?.();
@@ -41,13 +46,15 @@ export function CancelOpenJob({ jobId, clientId, isCurrent, onCancelled, onStatu
   }
   function confirm() {
     if (!current() || running.current) return;
-    Alert.alert('Cancel this job?', 'This removes your posted job before a Worker accepts it. You can post a new job later.', [
-      { text: 'Keep job', style: 'cancel' },
-      { text: 'Cancel', style: 'destructive', onPress: () => void withdraw() },
-    ]);
+    setError(null);
+    setConfirmationOpen(true);
   }
   return <View>
-    {error ? <InlineStatus variant="error" message={error} /> : null}
+    {error && !confirmationOpen ? <InlineStatus variant="error" message={error} /> : null}
     <AppButton label="Cancel" variant="destructive" loading={pending} onPress={confirm} />
+    <CancellationSheet visible={confirmationOpen} title="Cancel this job?"
+      description="Your posted job will be removed. You can post a new job later."
+      keepLabel="Keep job" confirmLabel="Cancel job" busy={pending} error={error}
+      onClose={() => { if (!running.current) setConfirmationOpen(false); }} onConfirm={withdraw} />
   </View>;
 }

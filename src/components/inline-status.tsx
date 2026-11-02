@@ -5,6 +5,7 @@ import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-na
 
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import { Skeleton, type SkeletonShape } from '@/components/skeleton';
+import { SkillMatchMascot } from '@/components/skillmatch-mascot';
 
 
 
@@ -14,7 +15,7 @@ type InlineStatusProps = {
   variant?: InlineStatusVariant;
   message: string;
   headline?: string;
-  /** Empty-state glyph; defaults to the existing briefcase. */
+  /** Optional semantic empty-state glyph. The default is the decorative duck. */
   icon?: SymbolViewProps['name'];
   /** Decorative empty-state artwork shown in place of the glyph tile (empty variant only). */
   illustration?: ReactNode;
@@ -28,7 +29,7 @@ export function InlineStatus({
   variant = 'note',
   message,
   headline,
-  icon = { android: 'work_outline', ios: 'briefcase' },
+  icon,
   illustration,
   skeleton = 'lines',
   action,
@@ -45,9 +46,11 @@ export function InlineStatus({
 
   return (
     <View style={[styles.wrap, variant === 'error' && styles.error, style]}>
-      {variant === 'empty' && illustration ? illustration : variant === 'empty' ? <View style={styles.emptyIcon} accessible={false} importantForAccessibility="no-hide-descendants">
-        <SymbolView name={icon} size={24} tintColor={colors.accent} />
-      </View> : null}
+      {variant === 'empty' ? illustration ?? (icon ? (
+        <View style={styles.emptyIcon} accessible={false} importantForAccessibility="no-hide-descendants">
+          <SymbolView name={icon} size={24} tintColor={colors.accent} />
+        </View>
+      ) : <SkillMatchMascot />) : null}
       {headline ? <Text style={styles.headline}>{headline}</Text> : null}
       {/* An error is an alert in a polite live region: Android announces it when it appears or its
           words change, once, and an unmounted (cleared) error leaves nothing behind. */}
