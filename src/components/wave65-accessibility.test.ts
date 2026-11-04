@@ -32,6 +32,7 @@ function load(path: string): Props {
     'react/jsx-runtime': { jsx: node, jsxs: node, Fragment: 'Fragment' },
     react: { Component: class {}, useState: (initial: unknown) => [typeof initial === 'function' ? initial() : initial, noop], useRef: (value: unknown) => ({ current: value }), useCallback: (fn: unknown) => fn, useEffect: noop, useMemo: (fn: () => unknown) => fn() },
     'react-native': { ...hosts, StyleSheet: { create: (value: unknown) => value }, Platform: { OS: 'android', select: (choices: Props) => choices.android ?? choices.default } },
+    '@/components/skillmatch-mascot': { SkillMatchMascot: 'SkillMatchMascot' },
     '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
 
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },

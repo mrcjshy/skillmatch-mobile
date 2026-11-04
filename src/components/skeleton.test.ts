@@ -17,6 +17,7 @@ vi.mock('@/components/refinement-theme', () => ({ useUiTheme: () => ({
   colors: new Proxy({}, { get: (_t, name) => `#${String(name)}` }), type: { helper: {}, screenTitle: {} },
   spacing: { xxs: 2, xs: 4, sm: 8, md: 12, lg: 16, gutter: 20, xl: 24 }, radius: { sm: 8, control: 12, card: 16, pill: 999 }, size: {},
 }) }));
+vi.mock('@/components/skillmatch-mascot', () => ({ SkillMatchMascot: () => null }));
 vi.mock('@/components/app-symbol', () => ({ AppSymbol: () => null }));
 vi.mock('@/hooks/use-reduced-motion', () => ({ useReducedMotion: () => native.reduced }));
 vi.mock('react-native-reanimated', () => {

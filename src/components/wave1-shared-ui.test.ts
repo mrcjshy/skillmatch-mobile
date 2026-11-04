@@ -97,10 +97,10 @@ describe('AuthScreen shell', () => {
     expect(order.indexOf('Child')).toBeLessThan(order.indexOf('Footer'));
   });
 
-  it('shows the Itik brand tile alone, centred, by default and omits it for later steps (owner, 2026-11-05)', () => {
+  it('shows Itik alone (no tile, no name), centred, by default and omits it for later steps (owner, 2026-11-05)', () => {
     const withBrand = AuthScreen({ title: 'T' });
     expect(ofType(withBrand, 'Image')[0].props.source).toBe('logo');
-    expect(flat(ofType(withBrand, 'Image')[0].props.style)).toMatchObject({ width: 64, height: 64 });
+    expect(flat(ofType(withBrand, 'Image')[0].props.style)).toMatchObject({ width: 80, height: 80 });
     const brand = ofType(withBrand, 'View').find((node: any) => node.props.accessibilityLabel === 'SkillMatch')!;
     expect(flat(brand.props.style)).toMatchObject({ alignSelf: 'center' });
     expect(ofType(withBrand, 'Text').some((node: any) => node.props.children === 'SkillMatch')).toBe(false);

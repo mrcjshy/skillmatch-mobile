@@ -101,8 +101,8 @@ export function AuthScreen({ scrollRef, title, description, brand = true, childr
 }
 
 /**
- * The brand: Itik's launcher tile alone, centred (owner, 2026-11-05: minimal, no name). It is the same
- * mark as the home screen icon and the splash; screen readers still hear "SkillMatch".
+ * The brand: Itik alone on a transparent background, centred (owner, 2026-11-05: minimal, no name, no
+ * tile). The same Itik as the splash; screen readers still hear "SkillMatch".
  */
 function BrandMark() {
   const styles = createStyles(useUiTheme());
@@ -157,7 +157,7 @@ function createStyles(ui: UiTheme) {
       gap: spacing.xl,
     },
     brand: { alignSelf: 'center' },
-    brandLogo: { width: 64, height: 64 },
+    brandLogo: { width: 80, height: 80 },
     header: { gap: spacing.sm },
     title: { ...type.screenTitle, color: colors.textPrimary },
     description: { ...type.body, color: colors.textSecondary },
