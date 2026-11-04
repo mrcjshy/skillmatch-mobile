@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import * as cobaltMaterial from '../constants/cobalt-material';
 
 type Props = Record<string, any>;
 type Element = { type: string; props: Props };
@@ -22,6 +23,7 @@ function controls() {
     }).outputText;
     runInNewContext(code, { exports, require: (name: string) => {
       if (name === '@/components/refinement-theme') return { useUiTheme: () => modules['@/constants/theme'].SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children };
+      if (name === '@/constants/cobalt-material') return cobaltMaterial;
       if (!(name in modules)) throw Error(`Unexpected import: ${name}`);
       return modules[name];
     } });
@@ -42,7 +44,7 @@ describe('Shared control dimensions', () => {
     const { theme } = controls();
     expect(theme.SkillMatchTheme.ui.size).toMatchObject({ primaryButton: 52, fieldHeight: 52,
       secondaryButton: 48, searchHeight: 52, ghostButton: 48, compactButton: 48,
-      segmentHeight: 40, chipHeight: 28 });
+      segmentHeight: 40, chipHeight: 32 }); // M3 chip height
     expect(theme.SkillMatchTheme).not.toHaveProperty('size');
   });
 });
@@ -75,25 +77,25 @@ describe('AppButton blocked presentation', () => {
         const style = flatten(button.props.style({ pressed }));
         expect(style.opacity).toBeUndefined();
         // A blocked text action is flat and borderless; every other blocked control keeps the grey surface.
-        expect(style.backgroundColor).toBe(variant === 'ghost' ? 'transparent' : '#EFEEEA');
-        expect(style.borderColor).toBe('#7A818C');
+        expect(style.backgroundColor).toBe(variant === 'ghost' ? 'transparent' : '#E9E7EF');
+        expect(style.borderColor).toBe('#757682');
         if (variant === 'ghost') expect(style.borderWidth).toBe(0);
       }
-      expect(flatten(button.props.children.props.style).color).toBe('#59606B');
+      expect(flatten(button.props.children.props.style).color).toBe('#454651');
     });
     it(`${variant} loading surface has no opacity and a contrasting spinner`, () => {
       const button = controls().render({ label: 'Continue', variant, loading: true });
       expect(flatten(button.props.style({ pressed: true })).opacity).toBeUndefined();
-      expect(flatten(button.props.style({ pressed: false })).backgroundColor).toBe(variant === 'ghost' ? 'transparent' : '#EFEEEA');
+      expect(flatten(button.props.style({ pressed: false })).backgroundColor).toBe(variant === 'ghost' ? 'transparent' : '#E9E7EF');
       expect(button.props.children.type).toBe('PulseDots');
-      expect(button.props.children.props.color).toBe(variant === 'destructive' ? '#B3261E' : '#1C3AA6');
+      expect(button.props.children.props.color).toBe(variant === 'destructive' ? '#BA1A1A' : '#1C3AA6');
     });
   }
 });
 
 describe('AppButton essential boundaries', () => {
-  for (const [variant, borderColor] of Object.entries({ primary: '#1C3AA6', secondary: '#7A818C',
-    ghost: '#7A818C', destructive: '#B3261E', compact: '#1C3AA6' })) {
+  for (const [variant, borderColor] of Object.entries({ primary: '#1C3AA6', secondary: '#757682',
+    ghost: '#757682', destructive: '#BA1A1A', compact: '#1C3AA6' })) {
     it(`${variant} has a visible boundary or text-action affordance`, () => {
       const button = controls().render({ label: 'Action', variant });
       const style = flatten(button.props.style({ pressed: false }));
@@ -124,7 +126,7 @@ describe('AppButton pressed contrast', () => {
       const button = controls().render({ label: 'Action', variant });
       const style = flatten(button.props.style({ pressed: true }));
       const text = flatten(button.props.children.props.style).color;
-      for (const surface of ['#FFFFFF', '#EFEEEA']) {
+      for (const surface of ['#FFFFFF', '#E9E7EF']) {
         const background = style.backgroundColor === 'transparent' ? surface : style.backgroundColor;
         const alpha = style.opacity ?? 1;
         expect(ratio(composite(style.borderColor, surface, alpha), surface)).toBeGreaterThanOrEqual(3);
@@ -134,6 +136,34 @@ describe('AppButton pressed contrast', () => {
   }
 });
 
+describe('AppButton cobalt material (owner 2026-11-04: Worker and every filled cobalt button match Post a job)', () => {
+  for (const variant of ['primary', 'compact']) {
+    it(`${variant} is lit from above on the cobalt shadow, deeper when pressed, flat grey when blocked`, () => {
+      const rest = flatten(controls().render({ label: 'Go', variant }).props.style({ pressed: false }));
+      expect(rest.experimental_backgroundImage).toBe(cobaltMaterial.COBALT_LIT);
+      expect(rest.boxShadow).toBe(cobaltMaterial.COBALT_SHADOW);
+      expect(rest.backgroundColor).toBe('#1C3AA6'); // the solid layer under the gradient stays the brand cobalt
+      const pressed = flatten(controls().render({ label: 'Go', variant }).props.style({ pressed: true }));
+      expect(pressed.experimental_backgroundImage).toBe(cobaltMaterial.COBALT_LIT_PRESSED);
+      expect(pressed.backgroundColor).toBe('#142B7F');
+      for (const blocked of [{ disabled: true }, { loading: true }]) {
+        const style = flatten(controls().render({ label: 'Go', variant, ...blocked }).props.style({ pressed: false }));
+        expect(style.experimental_backgroundImage).toBeUndefined();
+        expect(style.boxShadow).toBeUndefined();
+        expect(style.opacity).toBeUndefined();
+      }
+    });
+  }
+  it('leaves outlined, text, destructive and inverse buttons without a gradient', () => {
+    for (const variant of ['secondary', 'ghost', 'destructive', 'inverse']) {
+      for (const pressed of [false, true]) {
+        const style = flatten(controls().render({ label: 'Go', variant }).props.style({ pressed }));
+        expect(style.experimental_backgroundImage, variant).toBeUndefined();
+      }
+    }
+  });
+});
+
 describe('AppButton preserved interaction contract', () => {
   it('keeps exact primary normal/pressed colors, destructive text and compact enabled text', () => {
     const { render } = controls();
@@ -141,7 +171,7 @@ describe('AppButton preserved interaction contract', () => {
     expect(flatten(primary.props.style({ pressed: false })).backgroundColor).toBe('#1C3AA6');
     expect(flatten(primary.props.style({ pressed: true })).backgroundColor).toBe('#142B7F');
     expect(flatten(primary.props.children.props.style).color).toBe('#FFFFFF');
-    expect(flatten(render({ label: 'Delete', variant: 'destructive' }).props.children.props.style).color).toBe('#B3261E');
+    expect(flatten(render({ label: 'Delete', variant: 'destructive' }).props.children.props.style).color).toBe('#BA1A1A');
     expect(flatten(render({ label: 'Next', variant: 'compact' }).props.children.props.style).color).toBe('#FFFFFF');
   });
   it('retains action identity, accessible names and accurate disabled/busy state through transitions', () => {

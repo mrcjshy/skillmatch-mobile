@@ -1,0 +1,8 @@
+{
+  "asset": "itik-megaphone.png",
+  "character": "Itik (SkillMatch worker duck)",
+  "pose": "announce: holds a cobalt megaphone to the beak and points outward",
+  "made_with": "Mascot Designer 1.0 make.mjs poses --only point --note (megaphone), drawn through Codex on the owner account, 2026-11-04",
+  "source": "Documents/SkillMatch-Mascots/Itik-megaphone-work/poses/point.png (1024 px), resized to 448 px; same frame and ground line as the pose atlas",
+  "sha256": "b98c9ccdf6b11e0941997b0c758ea37a52b6ec437966c0a24d871cb1612dc304"
+}

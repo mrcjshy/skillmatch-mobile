@@ -117,6 +117,16 @@ describe('Login', () => {
     expect(h.push).toHaveBeenCalledExactlyOnceWith('/register');
   });
 
+  it('stays minimal (owner, 2026-11-04): no guide line, no placeholder or helper in a field, no lead above Create an account', () => {
+    const tree = login().render();
+    expect(tree.props.description).toBeUndefined();
+    for (const field of nodes(tree).filter((node) => node.type === 'AppField' || node.type === 'PasswordField')) {
+      expect(field.props.placeholder, field.props.label).toBeUndefined();
+      expect(field.props.helperText, field.props.label).toBeUndefined();
+    }
+    expect(ofType(tree.props.footer, 'Text')).toHaveLength(0);
+  });
+
   it('puts a missing email or password beside its field and focuses it, without calling Auth', async () => {
     const h = login();
     const focusEmail = focusable(h, 'Email');
@@ -219,6 +229,23 @@ describe('Login by SMS code (flagged)', () => {
     return { ...h, push, signInWithPassword, signInWithOtp, verifyOtp, labels };
   }
   const toPhone = (h: ReturnType<typeof phoneLogin>) => h.button('Sign in with a text message code').props.onPress();
+
+  it('stays minimal in SMS-code mode too: no guide line, no placeholder or helper in the number or code field', async () => {
+    const h = phoneLogin();
+    toPhone(h);
+    const bare = (tree: El) => {
+      expect(tree.props.description).toBeUndefined();
+      for (const field of ofType(tree, 'AppField')) {
+        expect(field.props.placeholder, field.props.label).toBeUndefined();
+        expect(field.props.helperText, field.props.label).toBeUndefined();
+      }
+    };
+    bare(h.render());
+    h.type('Mobile number', '0917 123 4567');
+    await h.button('Send code').props.onPress();
+    expect(h.field('SMS code')).toBeDefined();
+    bare(h.render());
+  });
 
   it('keeps email and password as the default and only adds a quiet SMS option', () => {
     const h = phoneLogin();

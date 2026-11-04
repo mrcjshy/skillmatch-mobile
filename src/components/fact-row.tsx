@@ -15,27 +15,30 @@ type FactRowProps = {
   strong?: boolean;
   /** Short values (amounts, methods): label left, value right. Long text drops below the label. */
   inline?: boolean;
+  /** 'cobalt': on the lit cobalt Review ticket (Post a job): white value and icon, onAccentSecondary label. */
+  tone?: 'surface' | 'cobalt';
 };
 
 /**
  * One labelled fact: quiet label above a full-weight value, wrapping freely (nothing truncates).
  * Returns null when there is no value so callers never render an empty row.
  */
-export function FactRow({ icon, label, value, selectable = false, strong = false, inline = false }: FactRowProps) {
+export function FactRow({ icon, label, value, selectable = false, strong = false, inline = false, tone = 'surface' }: FactRowProps) {
   const ui = useUiTheme();
   const { colors, size } = ui;
   const styles = createStyles(ui);
   if (value === null || value === '') return null;
+  const onCobalt = tone === 'cobalt';
   return (
     <View style={styles.row} accessible accessibilityLabel={`${label}: ${value}`}>
       {icon ? (
         <View style={styles.icon} accessible={false} importantForAccessibility="no-hide-descendants">
-          <AppSymbol name={icon} size={size.icon} tintColor={colors.accent} />
+          <AppSymbol name={icon} size={size.icon} tintColor={onCobalt ? colors.onAccent : colors.accent} />
         </View>
       ) : null}
       <View style={[styles.copy, inline ? styles.copyInline : null]}>
-        <Text style={[styles.label, inline ? styles.labelInline : null]}>{label}</Text>
-        <Text selectable={selectable} style={[styles.value, strong ? styles.strong : null, inline ? styles.valueInline : null, inline && strong ? styles.amount : null]}>{value}</Text>
+        <Text style={[styles.label, inline ? styles.labelInline : null, onCobalt ? styles.labelOnCobalt : null]}>{label}</Text>
+        <Text selectable={selectable} style={[styles.value, strong ? styles.strong : null, inline ? styles.valueInline : null, inline && strong ? styles.amount : null, onCobalt ? styles.valueOnCobalt : null]}>{value}</Text>
       </View>
     </View>
   );
@@ -54,5 +57,7 @@ function createStyles(ui: UiTheme) {
     labelInline: { flexShrink: 1 },
     amount: { ...type.money },
     valueInline: { textAlign: 'right', flexShrink: 1 },
+    labelOnCobalt: { color: colors.onAccentSecondary },
+    valueOnCobalt: { color: colors.onAccent },
   });
 }

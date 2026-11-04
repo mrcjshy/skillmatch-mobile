@@ -27,6 +27,8 @@ export type AppFieldProps = TextInputProps & {
   /**
    * Optional control drawn inside the right edge of the input (e.g. a password
    * visibility toggle). It reserves a 48dp target; when absent the layout is unchanged.
+   * In a multiline field it sits at the bottom edge, beside the last line (a chat
+   * composer's send), and taps above it still reach the input.
    */
   trailing?: ReactNode;
 };
@@ -112,7 +114,7 @@ export function AppField({
       {trailing ? (
         <View style={styles.inputWrap}>
           {inputNode}
-          <View style={styles.trailing}>{trailing}</View>
+          <View style={[styles.trailing, multiline ? styles.trailingBottom : null]} pointerEvents="box-none">{trailing}</View>
         </View>
       ) : (
         inputNode
@@ -176,6 +178,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  trailingBottom: { justifyContent: 'flex-end' },
   helper: {
     ...type.helper,
     color: colors.textSecondary,

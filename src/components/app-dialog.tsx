@@ -70,7 +70,7 @@ function createStyles(ui: UiTheme) {
     cardScroll: { maxHeight: '90%', width: '100%', maxWidth: 420, flexGrow: 0 },
     card: {
       backgroundColor: colors.surfaceRaised,
-      borderRadius: radius.card,
+      borderRadius: radius.sheet, // M3 dialog: extra-large (28dp)
       borderCurve: 'continuous',
       padding: spacing.xl,
       gap: spacing.md,

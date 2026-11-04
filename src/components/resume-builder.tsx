@@ -203,7 +203,7 @@ export default function ResumeBuilder() {
               {model.skills.map((s) => (
                 <Text key={s.name} style={styles.line}>
                   {s.name}
-                  {s.proficiency === null ? '' : ` — ${capitalize(s.proficiency)}`}
+                  {s.years === undefined || s.years === null ? '' : ` — ${s.years === 1 ? '1 year' : `${s.years} years`}`}
                 </Text>
               ))}
             </View>

@@ -13,6 +13,7 @@ import { InlineStatus } from '@/components/inline-status';
 import { RefinementThemeProvider } from '@/components/refinement-theme';
 import { SectionHeader } from '@/components/section-header';
 import { SurfaceGroup } from '@/components/surface-group';
+import { AdminAccountProfileSection } from '@/components/admin-account-profile-section';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatDetailDateTime } from '@/lib/date-time';
 import {
@@ -280,6 +281,9 @@ function AdminVerificationDetailsContent() {
           </View>
         </SurfaceGroup>
       </View>
+
+      {/* 3b. REG-01 resume: name, birth date, address, contact, education, skills with years, past jobs. */}
+      <AdminAccountProfileSection userId={worker.userId} />
 
       {/* 4. Skills the Worker offers. */}
       <View style={styles.section}>

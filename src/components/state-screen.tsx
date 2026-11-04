@@ -6,13 +6,13 @@ import { type SymbolViewProps } from 'expo-symbols';
 
 import { AppSymbol } from '@/components/app-symbol';
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
-import { PulseDots } from '@/components/skeleton';
+import { SkillMatchMascot } from '@/components/skillmatch-mascot';
 
 export type StateScreenTone = 'neutral' | 'error' | 'warning' | 'success';
 
 type StateScreenProps = {
   tone?: StateScreenTone;
-  /** State cue. Ignored while `loading` (the pulsing dots are the cue). */
+  /** Optional semantic cue. Loading uses the thinking duck. */
   icon?: SymbolViewProps['name'];
   loading?: boolean;
   title: string;
@@ -28,7 +28,7 @@ type StateScreenProps = {
  */
 export function StateScreen({
   tone = 'neutral',
-  icon = { android: 'info', ios: 'info.circle' },
+  icon,
   loading = false,
   title,
   message,
@@ -46,13 +46,9 @@ export function StateScreen({
       <StatusBar style="dark" />
       <ScrollView style={styles.viewport} contentContainerStyle={styles.content}>
         <View style={styles.column}>
-          <View style={[styles.cue, cueFills[tone]]} accessible={false} importantForAccessibility="no-hide-descendants">
-            {loading ? (
-              <PulseDots color={colors.accent} />
-            ) : (
-              <AppSymbol synchronousGlyph name={icon} size={28} tintColor={cueInk} />
-            )}
-          </View>
+          {icon && !loading ? <View style={[styles.cue, cueFills[tone]]} accessible={false} importantForAccessibility="no-hide-descendants">
+            <AppSymbol synchronousGlyph name={icon} size={28} tintColor={cueInk} />
+          </View> : <SkillMatchMascot size={128} expression={loading ? 'think' : tone === 'success' ? 'celebrate' : tone === 'error' || tone === 'warning' ? 'oops' : 'idle'} />}
           <Text accessibilityRole="header" style={styles.title}>
             {title}
           </Text>

@@ -10,6 +10,7 @@
     "@livekit/react-native-webrtc": "144.2.0",
     "@maplibre/maplibre-react-native": "11.4.0",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@shopify/react-native-skia": "2.6.2",
     "@supabase/supabase-js": "^2.112.4",
     "@tamagui/config": "2.7.7",
     "expo": "~57.0.16",
@@ -19,8 +20,10 @@
     "expo-device": "~57.0.1",
     "expo-font": "~57.0.1",
     "expo-glass-effect": "~57.0.1",
+    "expo-haptics": "~57.0.3",
     "expo-image": "~57.0.3",
     "expo-image-picker": "~57.0.17",
+    "expo-linear-gradient": "~57.0.2",
     "expo-linking": "~57.0.7",
     "expo-location": "~57.0.17",
     "expo-notifications": "~57.0.18",
@@ -40,6 +43,7 @@
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
     "react-native-url-polyfill": "^4.0.0",
     "react-native-web": "~0.21.0",
     "react-native-worklets": "0.10.1",
@@ -59,7 +63,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "eas-build-post-install": "node cloud-build/verify-and-patch.cjs"
   },
   "private": true
 }

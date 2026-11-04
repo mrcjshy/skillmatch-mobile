@@ -373,7 +373,7 @@ export default function BookingPayment({
         <>
           <Text style={styles.line}>{COPY.awaitingWorker}</Text>
           {/* Offered only for an eligible COD Booking still awaiting cash, and
-              never for qrph/gcash/maya — the server refuses those too. */}
+              never for QR Ph — the server refuses those too. */}
           <AppButton
             label={isBusy ? COPY.confirming : COPY.confirmCash}
             onPress={() => run(() => confirmCashReceived(bookingId), confirmErrorCopy, {

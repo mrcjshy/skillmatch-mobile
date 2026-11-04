@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, type Href, useRouter } from 'expo-router';
 import { AppSymbol as SymbolView } from '@/components/app-symbol';
@@ -14,7 +14,9 @@ import { isClientBooking, loadClientBookings, type ClientBooking } from '@/lib/b
 import { createClientHomeBookingFocus, type ClientHomeBookingFocus } from '@/lib/client-home-booking-focus';
 import { formatCardDateTime } from '@/lib/date-time';
 import { firstNameFromFullName } from '@/lib/initials';
+import { CLIENT_ONBOARDING_PATH, takeClientOnboardingPending } from '@/lib/client-onboarding';
 import { useAccount } from '@/providers/account-provider';
+import { useProfileGate } from '@/providers/profile-gate-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
 import { useClientPostJobDraft } from '@/providers/client-post-job-draft-provider';
 import { postingRecoveryNotice } from '@/lib/client-post-job-navigation';
@@ -34,8 +36,14 @@ function ClientHomeContent() {
   const styles = createStyles(ui);
 
   const { account } = useAccount();
+  // The saved first name is the greeting name (REG-01); older accounts fall back to the full name.
+  const savedFirstName = useProfileGate().firstName;
   const clientId = account?.id;
   const router = useRouter();
+  // The how-to-post walkthrough, once, right after the profile step (lib/client-onboarding).
+  useEffect(() => {
+    if (takeClientOnboardingPending(clientId)) router.push(CLIENT_ONBOARDING_PATH as Href);
+  }, [clientId, router]);
   const { isLoading, loadError, jobs, refresh: refreshJobs } = useClientJobs();
   const { isOwnerCurrent, takePendingCreatedJob, draft: postDraft } = useClientPostJobDraft();
   const [bookings, setBookings] = useState<ClientBooking[]>([]);
@@ -89,7 +97,7 @@ function ClientHomeContent() {
   return (
     <View style={styles.screen}>
       {/* Post a job is the bottom bar's central action (Wave 7); the current booking stays in view. */}
-      <HomeStickyHeader name={firstNameFromFullName(account?.full_name ?? '')} role="client">
+      <HomeStickyHeader name={savedFirstName ?? firstNameFromFullName(account?.full_name ?? '')} role="client">
       </HomeStickyHeader>
 
       <ScrollView

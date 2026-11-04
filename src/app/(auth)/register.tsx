@@ -5,6 +5,7 @@ import { Keyboard, StyleSheet, View, type TextInput } from 'react-native';
 import { AppButton } from '@/components/app-button';
 import { AppDivider } from '@/components/app-divider';
 import { AppField } from '@/components/app-field';
+import { AppSymbol } from '@/components/app-symbol';
 import { AuthLink, AuthScreen, AuthSection, useAuthScroll } from '@/components/auth-screen';
 import { ConsentCheck } from '@/components/consent-check';
 import { FormMessage } from '@/components/form-message';
@@ -13,7 +14,10 @@ import { RadioRow } from '@/components/radio-row';
 import { useUiTheme, type UiTheme, RefinementThemeProvider } from '@/components/refinement-theme';
 import { StepList, type Step } from '@/components/step-list';
 import { supabase } from '@/lib/supabase';
-import { formatPhilippineMobileInput, normalizePhilippineMobile } from '@/lib/philippine-phone';
+import {
+  PHILIPPINE_MOBILE_COPY, checkPhilippineMobile, formatPhilippineMobileInput, normalizePhilippineMobile,
+} from '@/lib/philippine-phone';
+import { NAME_MAX, tidy } from '@/lib/profile-details';
 import {
   CONSENT_COPY,
   hasRequiredLegalAcceptance,
@@ -37,7 +41,8 @@ const ROLE_OPTIONS: { value: RegistrationRoleIntent; label: string; meaning: str
 ];
 
 type RegisterField =
-  | 'fullName'
+  | 'firstName'
+  | 'lastName'
   | 'phone'
   | 'email'
   | 'password'
@@ -51,6 +56,7 @@ type RegisterError = { field: RegisterField; message: string };
 const WORKER_PATH: readonly Step[] = [
   { label: 'Create your account', detail: 'Name, phone, email and password.', state: 'current' },
   { label: 'Confirm your email', detail: 'Enter the six-digit code we send you.', state: 'upcoming' },
+  { label: 'Build your resume', detail: 'Home address, education, skills with years, and past jobs.', state: 'upcoming' },
   { label: 'Submit a valid ID', detail: 'An administrator reviews it before you can use the Worker app.', state: 'upcoming' },
   { label: 'Set up your work profile', detail: 'Add your skills in the Worker app.', state: 'upcoming' },
 ];
@@ -65,8 +71,11 @@ function RegisterContent() {
 
   const router = useRouter();
   const { scrollRef, focusField } = useAuthScroll();
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
+  /** Set once the person leaves the phone field, so an unfinished number is only flagged after that. */
+  const [phoneLeft, setPhoneLeft] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -77,7 +86,8 @@ function RegisterContent() {
   const [acknowledgedPrivacy, setAcknowledgedPrivacy] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<RegisterError | null>(null);
-  const fullNameRef = useRef<TextInput>(null);
+  const firstNameRef = useRef<TextInput>(null);
+  const lastNameRef = useRef<TextInput>(null);
   const phoneRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
@@ -99,11 +109,17 @@ function RegisterContent() {
 
     setError(null);
 
-    const trimmedFullName = fullName.trim();
+    const trimmedFirstName = tidy(firstName);
+    const trimmedLastName = tidy(lastName);
+    const trimmedFullName = `${trimmedFirstName} ${trimmedLastName}`.trim();
     const normalizedPhone = normalizePhilippineMobile(phone);
     const trimmedEmail = email.trim();
-    if (!trimmedFullName) {
-      fail('fullName', 'Please enter your full name.', fullNameRef);
+    if (!trimmedFirstName || trimmedFirstName.length > NAME_MAX) {
+      fail('firstName', trimmedFirstName ? `Keep your first name to ${NAME_MAX} characters.` : 'Please enter your first name.', firstNameRef);
+      return;
+    }
+    if (!trimmedLastName || trimmedLastName.length > NAME_MAX) {
+      fail('lastName', trimmedLastName ? `Keep your last name to ${NAME_MAX} characters.` : 'Please enter your last name.', lastNameRef);
       return;
     }
     if (!normalizedPhone) {
@@ -143,6 +159,9 @@ function RegisterContent() {
         options: {
           data: {
             registration_full_name: trimmedFullName,
+            // Prefill hints for the profile step only; never authority (see account-provider).
+            registration_first_name: trimmedFirstName,
+            registration_last_name: trimmedLastName,
             registration_phone: normalizedPhone,
             registration_role_intent: selectedRole,
           },
@@ -165,23 +184,52 @@ function RegisterContent() {
   }
 
   const nameField = (
-    <AppField
-      inputRef={fullNameRef}
-      returnKeyType="next"
-      submitBehavior="submit"
-      onSubmitEditing={() => focusField(phoneRef)}
-      label="Full name"
-      value={fullName}
-      onChangeText={edit('fullName', setFullName)}
-      autoCapitalize="words"
-      autoCorrect={false}
-      autoComplete="name"
-      textContentType="name"
-      disabled={isSubmitting}
-      errorText={errorFor('fullName')}
-      accessibilityLabel="Full name"
-    />
+    <>
+      <AppField
+        inputRef={firstNameRef}
+        returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => focusField(lastNameRef)}
+        label="First name"
+        value={firstName}
+        onChangeText={edit('firstName', setFirstName)}
+        autoCapitalize="words"
+        autoCorrect={false}
+        autoComplete="name-given"
+        textContentType="givenName"
+        disabled={isSubmitting}
+        errorText={errorFor('firstName')}
+        accessibilityLabel="First name"
+      />
+      <AppField
+        inputRef={lastNameRef}
+        returnKeyType="next"
+        submitBehavior="submit"
+        onSubmitEditing={() => focusField(phoneRef)}
+        label="Last name"
+        value={lastName}
+        onChangeText={edit('lastName', setLastName)}
+        autoCapitalize="words"
+        autoCorrect={false}
+        autoComplete="name-family"
+        textContentType="familyName"
+        disabled={isSubmitting}
+        errorText={errorFor('lastName')}
+        accessibilityLabel="Last name"
+        helperText="You can add a middle name and suffix in the next steps."
+      />
+    </>
   );
+  // Live check while typing (owner, 2026-11-05): wrong start, letters or too many digits show at once;
+  // an unfinished number shows once the person leaves the field; a valid one gets a check mark.
+  const phoneCheck = checkPhilippineMobile(phone);
+  const phoneLiveError = phoneCheck.state === 'invalid'
+    ? phoneCheck.message
+    : phoneCheck.state === 'incomplete' && phoneLeft ? PHILIPPINE_MOBILE_COPY.incomplete : undefined;
+  const phoneHelper = phoneCheck.state === 'valid'
+    ? PHILIPPINE_MOBILE_COPY.valid
+    : phoneCheck.state === 'incomplete' ? PHILIPPINE_MOBILE_COPY.remaining(phoneCheck.remaining)
+      : 'A Philippine mobile number, such as 0917 123 4567.';
   const phoneField = (
     <AppField
       inputRef={phoneRef}
@@ -191,15 +239,20 @@ function RegisterContent() {
       label="Phone number"
       value={phone}
       onChangeText={edit('phone', setPhone)}
-      onBlur={() => setPhone(formatPhilippineMobileInput(phone))}
+      onBlur={() => { setPhoneLeft(true); setPhone(formatPhilippineMobileInput(phone)); }}
+      maxLength={20}
       placeholder="+63 | 917 123 4567"
       keyboardType="phone-pad"
       autoCorrect={false}
       autoComplete="tel"
       textContentType="telephoneNumber"
       disabled={isSubmitting}
-      helperText="A Philippine mobile number, such as 0917 123 4567."
-      errorText={errorFor('phone')}
+      helperText={phoneHelper}
+      errorText={errorFor('phone') ?? phoneLiveError}
+      trailing={phoneCheck.state === 'valid' ? (
+        <AppSymbol name={{ android: 'check_circle', ios: 'checkmark.circle.fill' }} size={22} tintColor={ui.colors.success}
+          accessibilityLabel={PHILIPPINE_MOBILE_COPY.valid} />
+      ) : undefined}
       accessibilityLabel="Phone number"
     />
   );

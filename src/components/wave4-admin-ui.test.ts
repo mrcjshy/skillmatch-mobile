@@ -299,7 +299,7 @@ describe('Admin compositions (rendered from source)', () => {
     expect(flat(tree.props.style).flexWrap).toBe('wrap');
     expect(texts(tree)).toEqual(['Bookings', '3 completed', '1,234,567']);
   });
-  it('account details are read-only sections with the state explained, Worker verification included', () => {
+  it('account details explain the state, include Worker verification and place moderation after Account', () => {
     const { AdminUserDetailView } = load('src/components/admin-user-detail-view.tsx');
     const worker = render(node(AdminUserDetailView, { detail: {
       user_id: 'w', full_name: 'Juan dela Cruz', is_active: true, created_at: '2026-09-30T07:00:00Z',
@@ -309,8 +309,16 @@ describe('Admin compositions (rendered from source)', () => {
     expect(lines.indexOf('Account')).toBeLessThan(lines.indexOf('Verification'));
     expect(lines.indexOf('Verification')).toBeLessThan(lines.indexOf('Activity'));
     expect(lines).toEqual(expect.arrayContaining(['Juan dela Cruz', 'Worker account', 'Active', 'Verified', 'Available', '12']));
-    expect(lines.some((line) => line.includes('it is not changed from this screen'))).toBe(true);
+    expect(lines).toContain('This account can sign in and use SkillMatch.');
+    expect(lines.some((line) => line.includes('it is not changed from this screen'))).toBe(false);
     expect(all(worker, 'Pressable')).toHaveLength(0);
+    const moderated = texts(render(node(AdminUserDetailView, {
+      detail: { user_id: 'w', full_name: 'Juan dela Cruz', is_active: true, created_at: null, has_profile: true, is_verified: true, availability_status: 'available', completed_bookings_count: 0 },
+      moderation: node('Text', { children: 'Moderation slot' }), notice: 'Account banned.',
+    })));
+    expect(moderated.indexOf('Account banned.')).toBeLessThan(moderated.indexOf('Account'));
+    expect(moderated.indexOf('Account')).toBeLessThan(moderated.indexOf('Moderation slot'));
+    expect(moderated.indexOf('Moderation slot')).toBeLessThan(moderated.indexOf('Verification'));
     const client = texts(render(node(AdminUserDetailView, { detail: {
       user_id: 'c', full_name: 'Ana Santos', is_active: false, created_at: null, posted_jobs_count: 4,
     } })));

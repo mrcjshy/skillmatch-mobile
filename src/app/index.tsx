@@ -12,6 +12,7 @@ import {
   hasPendingNotificationsInboxIntent,
 } from '@/lib/push-notifications';
 import { useAccount } from '@/providers/account-provider';
+import { useProfileGate } from '@/providers/profile-gate-provider';
 import { useSession } from '@/providers/session-provider';
 
 /**
@@ -23,7 +24,8 @@ import { useSession } from '@/providers/session-provider';
 export default function RootIndex() {
   const sessionValue = useSession();
   const accountValue = useAccount();
-  const access = deriveAccessState(sessionValue, accountValue);
+  const { profileGate } = useProfileGate();
+  const access = deriveAccessState(sessionValue, { ...accountValue, profileGate });
   const home = ACCESS_ROUTE[access];
   const inbox = decidePendingInboxNavigation({
     hasPendingInboxIntent: hasPendingNotificationsInboxIntent(),

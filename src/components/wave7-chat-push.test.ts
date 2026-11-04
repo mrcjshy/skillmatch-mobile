@@ -56,11 +56,12 @@ describe('W7 notification channel and Tugma sound (native config)', () => {
 });
 
 describe('W7 branding slots keep the existing product palette', () => {
-  it('keeps the warm canvas behind the adaptive icon and splash', () => {
+  it('keeps the warm canvas behind the adaptive icon; the splash is Itik on the app canvas', () => {
     expect(appJson.expo.android.adaptiveIcon.backgroundColor).toBe('#F5F3EF');
     const splash = plugin('expo-splash-screen')?.[1] ?? {};
-    expect(splash.backgroundColor).toBe('#F5F3EF');
-    expect(splash.image).toBe('./assets/images/skillmatch-splash-icon.png');
+    expect(splash.backgroundColor).toBe('#FBF8FF');
+    expect(splash.image).toBe('./assets/images/itik-splash.png');
+    expect(existsSync(splash.image)).toBe(true);
   });
 
   it('keeps every referenced brand asset present', () => {
@@ -69,7 +70,7 @@ describe('W7 branding slots keep the existing product palette', () => {
       appJson.expo.android.adaptiveIcon.foregroundImage,
       appJson.expo.android.adaptiveIcon.monochromeImage,
       appJson.expo.web.favicon,
-      './assets/images/skillmatch-logo.png',
+      './assets/images/skillmatch-mark.png',
     ]) {
       expect(existsSync(path)).toBe(true);
     }

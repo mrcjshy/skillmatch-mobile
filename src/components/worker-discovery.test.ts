@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { expect, it } from 'vitest';
+import * as cobaltMaterial from '../constants/cobalt-material';
 import { createWorkerAcceptHandoff } from '@/lib/worker-accept-handoff-focus';
 
 type P = Record<string, any>;
@@ -23,6 +24,7 @@ function harness(file: string, overrides: P = {}) {
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ bottom: 24 }) },
     'expo-router': { useNavigation: () => ({ addListener: (name: string, fn: any) => { transitions[name] = fn; return () => { delete transitions[name]; }; } }), useRouter: () => ({ push: (target: any) => navigation.push(target), replace: (target: any) => navigation.push(target) }), useFocusEffect: (fn: any) => focuses.push(fn) },
     '@/providers/account-provider': { useAccount: () => ({ account }) },
+    '@/providers/profile-gate-provider': { useProfileGate: () => ({ profileGate: undefined, firstName: null, refreshProfileGate: async () => undefined }) },
     '@/providers/session-provider': { useSession: () => ({ session: { user: { id: account.id } } }) },
     '@/providers/worker-profile-provider': { useWorkerProfile: () => ({ availability: 'available', isVerified: true, isLoading: false, refreshPersistedAvailability: async () => undefined }) },
     '@/constants/theme': leaf('src/constants/theme.ts'),
@@ -79,6 +81,7 @@ function leaf(file: string): P {
       if (id === '@/components/app-symbol') return { AppSymbol: 'SymbolView' };
     if (id === '@/constants/theme') return leaf('src/constants/theme.ts');
     if (id === '@/components/skeleton') return { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' };
+    if (id === '@/constants/cobalt-material') return cobaltMaterial;
     throw Error('Unexpected leaf dependency ' + id);
   };
   new Function('require', 'exports', ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText)(require, exports);

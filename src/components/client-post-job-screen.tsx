@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import {
   AppState,
   KeyboardAvoidingView,
@@ -24,6 +24,12 @@ import { InlineStatus } from '@/components/inline-status';
 import { JobPhotoPicker } from '@/components/job-photo-picker';
 import { JobSkillSuggestionsPanel } from '@/components/job-skill-suggestions-panel';
 import { JobLocationPicker } from '@/components/job-location-picker';
+import { CheckBadge, COBALT, CobaltButton, CobaltTicket, GlowWell, LiftCard, StepStage } from '@/components/cobalt-ui';
+import { PostJobSteps } from '@/components/post-job-steps';
+import { PostingProgressOverlay } from '@/components/posting-progress-overlay';
+import { waitForPostedChecklist } from '@/lib/posting-hold';
+import { loadMyHomeLocation } from '@/lib/profile-details';
+import type { CanonicalJobLocation } from '@/lib/canonical-job-location';
 import { JobSchedulePicker } from '@/components/job-schedule-picker';
 import { RadioRow } from '@/components/radio-row';
 import { SectionHeader } from '@/components/section-header';
@@ -106,6 +112,10 @@ export function ClientPostJobScreen() {
   const owner = useClientPostJobDraft();
   const session = useSession();
   const { draft, isPosting } = owner;
+  // Finished posting stages (0…5) while the posting checklist covers the screen; null when hidden.
+  const [postStages, setPostStages] = useState<number | null>(null);
+  // The field wearing the focus glow (premium cobalt, owner 2026-11-04).
+  const [glowField, setGlowField] = useState<'description' | 'budget' | null>(null);
   const { description, address, pin, locationNote, scheduleDate, scheduleTime, budgetText, feePreset, paymentMethod, primarySkillId, additionalSkillIds, modalQuery, modalPrimaryId, modalAdditionalIds, jobPhotos, wizardStep, postError, postSuccess, photoError } = draft;
   const navigation = useNavigation();
   const router = useRouter();
@@ -121,6 +131,17 @@ export function ClientPostJobScreen() {
   const [suggestionAuthority] = useState(() => ({ revision: 0 }));
   const [presetChooser, setPresetChooser] = useState<{ skillId: string; pending: string | null } | null>(null);
   const [locationAuthority] = useState(() => ({ focused: true, generation: 0, pickerGeneration: 0, pickerOpen: false, owner, session }));
+  // REG-02: the Client's sign-up home pin, offered as a one-tap Job location and as a Saved place.
+  const [home, setHome] = useState<{ ownerId: string; location: CanonicalJobLocation } | null>(null);
+  useEffect(() => {
+    const ownerId = owner.ownerId;
+    if (!ownerId) return undefined;
+    let cancelled = false;
+    void loadMyHomeLocation(ownerId).then((location) => { if (!cancelled && location) setHome({ ownerId, location }); });
+    return () => { cancelled = true; };
+  }, [owner.ownerId]);
+  const homeLocation = home && home.ownerId === owner.ownerId ? home.location : null;
+  const pinIsHome = !!homeLocation && !!pin && pin.latitude === homeLocation.pin.latitude && pin.longitude === homeLocation.pin.longitude;
   useLayoutEffect(() => { locationAuthority.focused = isFocused; locationAuthority.owner = owner; locationAuthority.session = session; }, [locationAuthority, isFocused, owner, session]);
   function invalidateSuggestions() { suggestionAuthority.revision++; }
   function setField<K extends keyof ClientPostJobDraft>(key: K, value: ClientPostJobDraft[K] | ((previous: ClientPostJobDraft[K]) => ClientPostJobDraft[K])) {
@@ -279,7 +300,14 @@ export function ClientPostJobScreen() {
   async function handlePost() {
     if (!skillsReady || locationAuthority.pickerOpen || skillsModalVisible || !isFocused || !owner.isOwnerCurrent()) return;
     invalidateSuggestions();
-    await submitClientPostJob({ owner, skills, refresh });
+    // The wizard's Post a job checklist takes the screen and its fifth step follows the real posting
+    // stages; it holds briefly on "Job posted" so the last check lands, then the Job map (and the Itik
+    // celebration) take over.
+    let finished = 0;
+    setPostStages(0);
+    await submitClientPostJob({ owner, skills, refresh, onStage: (n) => { finished = n; setPostStages(n); } });
+    if (finished >= 5) await waitForPostedChecklist();
+    setPostStages(null);
     // Settlement publishes a server-confirmed Job ID after photo/refresh outcomes.
     // A lost screen lifetime retains that receipt for Home instead of navigating late.
     openPostedJobMap({
@@ -287,7 +315,7 @@ export function ClientPostJobScreen() {
       takePendingCreatedJob: owner.takePendingCreatedJob,
       navigate: jobId => {
         const postingWarning = postingRecoveryNotice(owner.draft);
-        router.replace({ pathname: '/client/job-details', params: { jobId, ...(postingWarning ? { postingWarning } : {}) } });
+        router.replace({ pathname: '/client/job-details', params: { jobId, posted: '1', ...(postingWarning ? { postingWarning } : {}) } });
       },
     });
   }
@@ -339,26 +367,36 @@ export function ClientPostJobScreen() {
             {postError ? null : <SkillMatchMascot pose="success" />}
           </View> : null}
               <View style={styles.progressBand}>
-                <View style={styles.progressTrack} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-                  {[1, 2, 3, 4].map(step => <View key={step} style={[styles.progressSegment, step <= wizardStep && styles.progressSegmentComplete]} />)}
+                {/* Recruiter Steps checklist (owner request): Location, Details, Schedule, Review, then Post. */}
+                <PostJobSteps step={wizardStep} />
+                <View style={styles.stepHeading}>
+                  <Text accessibilityRole="header" style={styles.stepTitle}>{STEP_TITLES[wizardStep]}</Text>
+                  {/* Step 1's section repeated this title; the step heading carries it, with the access note beneath. */}
+                  {wizardStep === 1 ? <Text style={styles.stepLead}>Shared only with workers who qualify for this job.</Text> : null}
                 </View>
-                <Text style={styles.wizardProgress}>Step {wizardStep} of 4</Text>
-                <Text accessibilityRole="header" style={styles.stepTitle}>{STEP_TITLES[wizardStep]}</Text>
               </View>
+
+              {/* Steps travel on one horizontal axis: Next in from the right, Previous from the left. */}
+              <StepStage step={wizardStep}>
 
               {/* Step 2 retains manual skill authority after optional reviewed suggestions. */}
               {wizardStep === 2 ? <View style={styles.section} accessibilityLabel="Job details">
                 <SectionHeader title="Describe the job" />
-                <AppField
-                  inputStyle={styles.descriptionInput}
-                  value={description}
-                  onChangeText={setDescription}
-                  placeholder="Describe the work needed."
-                  multiline
-                  numberOfLines={3}
-                  disabled={busy}
-                  accessibilityLabel="Description"
-                />
+                <GlowWell focused={glowField === 'description'}>
+                  <AppField
+                    inputStyle={styles.descriptionInput}
+                    value={description}
+                    onChangeText={setDescription}
+                    placeholder="Describe the work needed."
+                    multiline
+                    numberOfLines={3}
+                    disabled={busy}
+                    accessibilityLabel="Description"
+                    cursorColor={colors.accent}
+                    onFocus={() => setGlowField('description')}
+                    onBlur={() => setGlowField((field) => (field === 'description' ? null : field))}
+                  />
+                </GlowWell>
               </View> : null}
 
               {JOB_SKILL_SUGGESTIONS_ENABLED ? photosSection : null}
@@ -370,11 +408,13 @@ export function ClientPostJobScreen() {
                 {isLoading || retryingSkills ? <InlineStatus variant="loading" skeleton="lines" message="Loading skills…" /> : loadError ? <InlineStatus variant="error" message={loadError} /> : null}
                 {loadError ? <AppButton label="Retry skills" variant="secondary" onPress={retrySkills} disabled={busy || retryingSkills} /> : null}
                 {/* One group and one picker: the chosen skills in order, then the single way to change them. */}
-                <SurfaceGroup>
+                <LiftCard>
+                <SurfaceGroup style={styles.cardGroup}>
                   {selectedSkills.map((skill) => {
                     const role = postJobSkillRole({ primarySkillId, additionalSkillIds }, skill.id);
                     return (
                       <View key={skill.id} style={styles.skillRow} accessible accessibilityLabel={`${skill.skill_name}, ${role} skill`}>
+                        <CheckBadge />
                         <Text style={styles.skillName}>{skill.skill_name}</Text>
                         {role ? <AppChip label={role} variant={role === 'Primary' ? 'selected' : 'neutral'} /> : null}
                       </View>
@@ -395,6 +435,7 @@ export function ClientPostJobScreen() {
                     <AppSymbol name={{ android: 'chevron_right', ios: 'chevron.right' }} size={size.icon} tintColor={colors.textSecondary} />
                   </Pressable>
                 </SurfaceGroup>
+                </LiftCard>
                 {presetSkillId === null ? null : presetsOpen ? <View style={styles.section} accessibilityLabel="Description presets">
                   <Text style={styles.help}>Edit the parts in [brackets].</Text>
                   <SurfaceGroup>
@@ -422,8 +463,8 @@ export function ClientPostJobScreen() {
               </View> : null}
 
               {wizardStep === 1 ? <View style={styles.section} accessibilityLabel="Service location">
-                <SectionHeader title="Service location" subtitle="Shared only with workers who qualify for this job." />
-                <SurfaceGroup>
+                <LiftCard>
+                <SurfaceGroup style={styles.cardGroup}>
                   <Pressable
                     style={({ pressed }) => [styles.choiceRow, pressed && styles.choiceRowPressed]}
                     onPress={openLocationPicker}
@@ -435,7 +476,9 @@ export function ClientPostJobScreen() {
                     accessibilityValue={{ text: address ? `${address === JOB_LOCATION_DISPLAY_FALLBACK ? 'General area' : 'Confirmed address'}: ${address}` : 'No location selected' }}
                     accessibilityState={{ disabled: busy }}
                   >
-                    <AppSymbol name={{ android: 'location_on', ios: 'mappin' }} size={size.icon} tintColor={colors.accent} />
+                    <View style={[styles.lead, pin && address ? cobaltStyles.leadCobalt : null]}>
+                      <AppSymbol name={{ android: 'location_on', ios: 'mappin' }} size={size.icon} tintColor={pin && address ? COBALT.text : colors.accent} />
+                    </View>
                     <View style={styles.choiceCopy}>
                       <Text style={styles.choiceLabel}>{address === JOB_LOCATION_DISPLAY_FALLBACK ? 'General area (selected pin confirmed)' : 'Confirmed address'}</Text>
                       <Text style={address ? styles.choiceValue : styles.choicePlaceholder}>
@@ -444,7 +487,29 @@ export function ClientPostJobScreen() {
                     </View>
                     <Text style={styles.choiceAction}>{pin && address ? 'Change' : 'Choose'}</Text>
                   </Pressable>
+                  {homeLocation && !pinIsHome ? (
+                    <Pressable
+                      style={({ pressed }) => [styles.choiceRow, pressed && styles.choiceRowPressed]}
+                      onPress={() => { if (!busy && owner.isOwnerCurrent()) owner.updateDraft({ pin: homeLocation.pin, address: homeLocation.address }); }}
+                      disabled={busy}
+                      accessibilityRole="button"
+                      accessibilityLabel="Use my home location"
+                      accessibilityValue={{ text: `Saved at sign-up: ${homeLocation.address}` }}
+                      accessibilityState={{ disabled: busy }}
+                    >
+                      <View style={styles.lead}>
+                        <AppSymbol name={{ android: 'home', ios: 'house' }} size={size.icon} tintColor={colors.accent} />
+                      </View>
+                      <View style={styles.choiceCopy}>
+                        <Text style={styles.choiceLabel}>Use my home location</Text>
+                        <Text style={styles.choiceValue}>{homeLocation.address}</Text>
+                      </View>
+                      <Text style={styles.choiceAction}>Use</Text>
+                    </Pressable>
+                  ) : null}
                 </SurfaceGroup>
+                </LiftCard>
+                {pinIsHome ? <Text style={styles.homeNote}>Using your home location from sign-up. Tap Change to pick another place.</Text> : null}
               </View> : null}
 
               {JOB_SKILL_SUGGESTIONS_ENABLED ? null : photosSection}
@@ -472,31 +537,33 @@ export function ClientPostJobScreen() {
                     return (
                       <Pressable
                         key={preset.value}
-                        style={[styles.feePreset, on && styles.feePresetSelected]}
+                        style={[styles.feePreset, on && cobaltStyles.feePresetSelected]}
                         onPress={() => applyFeePreset(preset.value)}
                         disabled={busy}
                         accessibilityRole="radio"
                         accessibilityState={{ selected: on, disabled: busy }}
                         accessibilityLabel={preset.label}
                       >
-                        <Text style={[styles.feePresetLabel, on && styles.feePresetLabelSelected]}>
+                        {on ? <CheckBadge diameter={18} tone="white" /> : null}
+                        <Text style={[styles.feePresetLabel, on && cobaltStyles.feePresetLabelSelected]}>
                           {preset.label}
                         </Text>
                       </Pressable>
                     );
                   })}
                   <Pressable
-                    style={[styles.feePreset, feePreset === 'custom' && styles.feePresetSelected]}
+                    style={[styles.feePreset, feePreset === 'custom' && cobaltStyles.feePresetSelected]}
                     onPress={() => applyFeePreset('custom')}
                     disabled={busy}
                     accessibilityRole="radio"
                     accessibilityState={{ selected: feePreset === 'custom', disabled: busy }}
                     accessibilityLabel="Custom"
                   >
+                    {feePreset === 'custom' ? <CheckBadge diameter={18} tone="white" /> : null}
                     <Text
                       style={[
                         styles.feePresetLabel,
-                        feePreset === 'custom' && styles.feePresetLabelSelected,
+                        feePreset === 'custom' && cobaltStyles.feePresetLabelSelected,
                       ]}
                     >
                       Custom
@@ -504,7 +571,8 @@ export function ClientPostJobScreen() {
                   </Pressable>
                 </View>
                 {showBudgetField ? (
-                  <View style={styles.budgetField}>
+                  <GlowWell focused={glowField === 'budget'}>
+                  <View style={[styles.budgetField, glowField === 'budget' ? styles.budgetFieldFocused : null]}>
                     <Text style={styles.budgetPrefix}>₱</Text>
                     <TextInput
                       style={styles.budgetInput}
@@ -516,8 +584,12 @@ export function ClientPostJobScreen() {
                       editable={!busy}
                       underlineColorAndroid="transparent"
                       accessibilityLabel="Budget in pesos"
+                      cursorColor={colors.accent}
+                      onFocus={() => setGlowField('budget')}
+                      onBlur={() => setGlowField((field) => (field === 'budget' ? null : field))}
                     />
                   </View>
+                  </GlowWell>
                 ) : null}
               </View> : null}
 
@@ -535,6 +607,7 @@ export function ClientPostJobScreen() {
                       selected={paymentMethod === option.value}
                       disabled={busy}
                       accessibilityLabel={option.label}
+                      appearance="cobalt"
                       onPress={() => setPaymentMethod(option.value)}
                     />
                   ))}
@@ -544,25 +617,27 @@ export function ClientPostJobScreen() {
               {wizardStep === 4 ? (
                 <View style={styles.section} accessibilityLabel="Review and Post">
                   <SectionHeader title="Job summary" />
-                  <SurfaceGroup>
-                    <FactRow icon={{ android: 'location_on', ios: 'mappin' }} label="Location" value={address.trim()} />
-                    <FactRow icon={{ android: 'handyman', ios: 'wrench.and.screwdriver' }} label="Skills" value={selectedSkills.map((skill) => skill.skill_name).join(', ')} strong />
-                    <FactRow icon={{ android: 'description', ios: 'text.alignleft' }} label="Description" value={description.trim()} />
-                    <FactRow icon={{ android: 'schedule', ios: 'clock' }} label="Schedule" value={formatDetailDateTime(combineJobSchedule(scheduleDate, scheduleTime)) ?? 'Not selected'} strong />
-                    <FactRow icon={{ android: 'photo_library', ios: 'photo' }} label="Photos" value={`${jobPhotos.length} selected`} />
-                    <FactRow icon={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} label="Budget" value={budgetLabel} strong inline />
-                    <FactRow icon={{ android: 'receipt_long', ios: 'doc.plaintext' }} label="Payment" value={formatJobPaymentReviewValue(paymentMethod)} inline />
-                  </SurfaceGroup>
+                  <CobaltTicket>
+                    <FactRow tone="cobalt" icon={{ android: 'location_on', ios: 'mappin' }} label="Location" value={address.trim()} />
+                    <FactRow tone="cobalt" icon={{ android: 'handyman', ios: 'wrench.and.screwdriver' }} label="Skills" value={selectedSkills.map((skill) => skill.skill_name).join(', ')} strong />
+                    <FactRow tone="cobalt" icon={{ android: 'description', ios: 'text.alignleft' }} label="Description" value={description.trim()} />
+                    <FactRow tone="cobalt" icon={{ android: 'schedule', ios: 'clock' }} label="Schedule" value={formatDetailDateTime(combineJobSchedule(scheduleDate, scheduleTime)) ?? 'Not selected'} strong />
+                    <FactRow tone="cobalt" icon={{ android: 'photo_library', ios: 'photo' }} label="Photos" value={`${jobPhotos.length} selected`} />
+                    <FactRow tone="cobalt" icon={{ android: 'account_balance_wallet', ios: 'wallet.pass' }} label="Budget" value={budgetLabel} strong inline />
+                    <FactRow tone="cobalt" icon={{ android: 'receipt_long', ios: 'doc.plaintext' }} label="Payment" value={formatJobPaymentReviewValue(paymentMethod)} inline />
+                  </CobaltTicket>
                   <AppButton label="Edit location" variant="secondary" onPress={openLocationPicker} disabled={busy} />
                 </View>
               ) : null}
 
+              </StepStage>
+
               <View style={styles.wizardActions}>
                 {wizardStep > 1 ? (
-                  <AppButton style={styles.wizardAction} variant="secondary" label="Previous step" onPress={goToPreviousStep} disabled={busy} />
+                  <AppButton style={wizardStep < 4 ? styles.wizardBack : styles.wizardBackAlone} variant="secondary" label="Previous step" onPress={goToPreviousStep} disabled={busy} />
                 ) : null}
                 {wizardStep < 4 ? (
-                  <AppButton style={styles.wizardAction} variant="primary" label="Next" onPress={goToNextStep} disabled={busy || (wizardStep === 2 && !skillsReady)} />
+                  <CobaltButton style={styles.wizardNext} label="Next" onPress={goToNextStep} disabled={busy || (wizardStep === 2 && !skillsReady)} />
                 ) : null}
               </View>
 
@@ -575,28 +650,21 @@ export function ClientPostJobScreen() {
       {showDock ? (
         <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, spacing.md) }]} accessibilityLabel="Post job">
           {postError ? <InlineStatus variant="error" message={postError} /> : null}
-          <View style={styles.dockRow}>
-            <View style={styles.dockSummary} accessible accessibilityLabel={`Budget: ${budgetLabel}`}>
-              <Text style={styles.dockCaption}>Budget</Text>
-              <Text style={styles.dockAmount}>{budgetLabel}</Text>
-            </View>
-            <View style={styles.dockAction}>
-              <AppButton
-                variant="primary"
-                label="Post job"
-                onPress={() => {
-                  void handlePost();
-                }}
-                loading={isPosting}
-                disabled={busy || locationPickerVisible || skillsModalVisible}
-                accessibilityLabel="Post job"
-              />
-            </View>
-          </View>
+          <CobaltButton
+            label="Post job"
+            onPress={() => {
+              void handlePost();
+            }}
+            loading={isPosting}
+            disabled={busy || locationPickerVisible || skillsModalVisible}
+            accessibilityLabel="Post job"
+          />
         </View>
       ) : null}
 
       <KeyboardSpacer />
+
+      {postStages !== null ? <PostingProgressOverlay finished={postStages} /> : null}
 
       <Modal visible={locationPickerVisible} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => { if (locationPickerBackHandlerRef.current) locationPickerBackHandlerRef.current(); else closeLocationPicker(); }}>
         {locationPickerVisible ? (
@@ -607,6 +675,7 @@ export function ClientPostJobScreen() {
             note={locationNote}
             onNote={setLocationNote}
             onCancel={closeLocationPicker}
+            savedPlaces={homeLocation ? [{ label: 'Home (saved at sign-up)', location: homeLocation }] : []}
             onConfirm={(location) => {
               if (!isFocused || !locationAuthority.focused || !locationAuthority.pickerOpen || locationAuthority.pickerGeneration !== locationGeneration || AppState.currentState !== 'active' ||
                 locationAuthority.owner.updateDraft !== owner.updateDraft || locationAuthority.session.sessionLifetime !== session.sessionLifetime ||
@@ -704,41 +773,50 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   progressBand: {
-    gap: spacing.sm,
+    // Room for the checklist panel's shadow above the step title.
+    gap: spacing.lg,
   },
-  progressTrack: {
-    flexDirection: 'row',
+  stepHeading: {
     gap: spacing.xs,
   },
-  progressSegment: {
-    flex: 1,
-    height: spacing.xs,
-    backgroundColor: colors.hairline,
-    borderRadius: radius.pill,
+  stepTitle: {
+    ...type.display,
+    letterSpacing: -0.4,
+    color: colors.textPrimary,
   },
-  progressSegmentComplete: {
-    backgroundColor: colors.accent,
-  },
-  wizardProgress: {
+  stepLead: {
     ...type.helper,
     color: colors.textSecondary,
   },
-  stepTitle: {
-    ...type.screenTitle,
-    color: colors.textPrimary,
+  // White groups lift off the canvas on LiftCard's shadow instead of a hairline edge.
+  cardGroup: {
+    borderWidth: 0,
+    borderRadius: radius.sheet - spacing.xs,
+  },
+  lead: {
+    width: size.iconCircle,
+    height: size.iconCircle,
+    borderRadius: size.iconCircle / 2,
+    backgroundColor: colors.surfaceSunken,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   descriptionInput: {
     minHeight: 140,
   },
   wizardActions: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: spacing.sm,
   },
-  wizardAction: {
+  wizardBack: {
+    flexShrink: 0,
+  },
+  wizardBackAlone: {
     flexGrow: 1,
-    flexBasis: 120,
-    flexShrink: 1,
+  },
+  wizardNext: {
+    flex: 1,
   },
   choiceRow: {
     minHeight: size.listRowMinHeight,
@@ -776,17 +854,15 @@ const styles = StyleSheet.create({
   skillRow: {
     minHeight: size.listRowMinHeight,
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
+    gap: spacing.md,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
   },
   skillName: {
     ...type.bodyEmphasis,
     color: colors.textPrimary,
-    flexShrink: 1,
+    flex: 1,
   },
   feePresetGroup: {
     flexDirection: 'row',
@@ -795,25 +871,22 @@ const styles = StyleSheet.create({
   },
   feePreset: {
     minHeight: size.ghostButton,
-    borderRadius: radius.control,
+    borderRadius: radius.pill,
+    borderCurve: 'continuous',
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderWidth: 1,
     borderColor: colors.controlBorder,
-    justifyContent: 'center',
-  },
-  feePresetSelected: {
-    backgroundColor: colors.accentSubtle,
-    borderWidth: 2,
-    borderColor: colors.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm - 2,
+    boxShadow: '0px 2px 6px rgba(13, 22, 41, 0.06)',
   },
   feePresetLabel: {
     ...type.label,
     color: colors.textPrimary,
-  },
-  feePresetLabelSelected: {
-    color: colors.accentPressed,
+    fontVariant: ['tabular-nums'],
   },
   budgetField: {
     flexDirection: 'row',
@@ -826,6 +899,9 @@ const styles = StyleSheet.create({
     borderColor: colors.controlBorder,
     borderCurve: 'continuous',
   },
+  budgetFieldFocused: {
+    borderColor: colors.accent,
+  },
   budgetPrefix: {
     ...type.body,
     color: colors.textSecondary,
@@ -834,6 +910,7 @@ const styles = StyleSheet.create({
     flex: 1,
     ...type.body,
     color: colors.textPrimary,
+    fontVariant: ['tabular-nums'],
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.md,
   },
@@ -849,34 +926,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.gutter,
     paddingTop: spacing.md,
     backgroundColor: colors.canvas,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.hairline,
-  },
-  dockRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: spacing.lg,
-  },
-  dockSummary: {
-    gap: spacing.xxs,
-  },
-  dockCaption: {
-    ...type.helper,
-    color: colors.textSecondary,
-  },
-  dockAmount: {
-    ...type.money,
-    color: colors.textPrimary,
-  },
-  dockAction: {
-    flex: 1,
-    minWidth: 148,
+    // Lifted by an upward shadow rather than a hairline.
+    boxShadow: '0px -10px 24px rgba(13, 22, 41, 0.06)',
   },
   success: {
     ...type.helper,
     color: colors.success,
   },
+  homeNote: { ...type.helper, color: colors.textSecondary, paddingTop: spacing.sm },
   successRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -902,5 +959,24 @@ const styles = StyleSheet.create({
   modalContent: {
     gap: spacing.md,
     paddingBottom: spacing.xl,
+  },
+});
+
+// Chosen things turn lit cobalt, like the Recruiter Steps panel (components/cobalt-ui.tsx). Kept
+// apart from `styles`, which holds only theme tokens.
+const cobaltStyles = StyleSheet.create({
+  leadCobalt: {
+    backgroundColor: COBALT.base,
+    experimental_backgroundImage: COBALT.sheen,
+  },
+  // Same 1dp edge as an unchosen chip, so nothing shifts.
+  feePresetSelected: {
+    backgroundColor: COBALT.base,
+    borderColor: COBALT.base,
+    experimental_backgroundImage: COBALT.sheen,
+    boxShadow: '0px 8px 18px rgba(28, 58, 166, 0.28)',
+  },
+  feePresetLabelSelected: {
+    color: COBALT.text,
   },
 });

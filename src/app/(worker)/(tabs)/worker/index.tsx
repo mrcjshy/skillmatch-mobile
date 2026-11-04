@@ -44,6 +44,7 @@ import {
   type WorkerJobSort,
 } from '@/lib/worker-opportunity-sort';
 import { useAccount } from '@/providers/account-provider';
+import { useProfileGate } from '@/providers/profile-gate-provider';
 import { useSession } from '@/providers/session-provider';
 import { useWorkerProfile } from '@/providers/worker-profile-provider';
 
@@ -217,7 +218,9 @@ function WorkerHomeContent() {
     }
   };
 
-  const firstName = firstNameFromFullName(account?.full_name ?? '');
+  // The saved first name is the greeting name (REG-01); older accounts fall back to the full name.
+  const savedFirstName = useProfileGate().firstName;
+  const firstName = savedFirstName ?? firstNameFromFullName(account?.full_name ?? '');
   const identityNotice = workerHomeIdentityNotice(isVerified, identityStatus);
   const profileReady = !isLoading && !loadError;
   // Authoritative rows from list_my_job_opportunities; nothing is shown while a read is unsettled.

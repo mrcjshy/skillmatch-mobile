@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
+import * as cobaltMaterial from '../constants/cobalt-material';
 import { SkillMatchTheme } from '@/constants/theme';
 import * as portfolio from '@/lib/portfolio';
 import * as portfolioImages from '@/lib/portfolio-images';
@@ -28,6 +29,7 @@ function harness() {
   function load(file: string): Props {
     if (cache[file]) return cache[file]; const exports: Props = {}; cache[file] = exports;
     const seams: Record<string, unknown> = {
+    '@/components/skillmatch-mascot': { SkillMatchMascot: 'SkillMatchMascot' },
     '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
 
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },
@@ -38,6 +40,7 @@ function harness() {
     };
     new Function('require', 'exports', ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText)((name: string) => {
       if (name === '@/components/refinement-theme') return { useUiTheme: () => SkillMatchTheme.ui };
+      if (name === '@/constants/cobalt-material') return cobaltMaterial;
       if (name in seams) return seams[name]; if (name.startsWith('@/components/')) return load('src/' + name.slice(2) + '.tsx'); throw new Error('Unexpected component dependency: ' + name);
     }, exports); return exports;
   }

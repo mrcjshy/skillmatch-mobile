@@ -61,15 +61,15 @@ describe('AppField essential boundary and event identity', () => {
       const props = { variant, onFocus: vi.fn(), onBlur: vi.fn() };
       const focusEvent = { nativeEvent: { target: 17 } };
       const blurEvent = { nativeEvent: { target: 17 } };
-      expect(flatten(input(h.render(props)).props.style).borderColor).toBe('#7A818C');
+      expect(flatten(input(h.render(props)).props.style).borderColor).toBe('#757682');
       input(h.render(props)).props.onFocus(focusEvent);
       expect(props.onFocus).toHaveBeenCalledExactlyOnceWith(focusEvent);
       expect(flatten(input(h.render(props)).props.style).borderColor).toBe('#1C3AA6');
-      expect(flatten(input(h.render({ ...props, errorText: 'Required' })).props.style).borderColor).toBe('#B3261E');
+      expect(flatten(input(h.render({ ...props, errorText: 'Required' })).props.style).borderColor).toBe('#BA1A1A');
       input(h.render(props)).props.onBlur(blurEvent);
       expect(props.onBlur).toHaveBeenCalledExactlyOnceWith(blurEvent);
-      expect(flatten(input(h.render(props)).props.style).borderColor).toBe('#7A818C');
-      expect(flatten(input(h.render({ ...props, errorText: 'Required' })).props.style).borderColor).toBe('#B3261E');
+      expect(flatten(input(h.render(props)).props.style).borderColor).toBe('#757682');
+      expect(flatten(input(h.render({ ...props, errorText: 'Required' })).props.style).borderColor).toBe('#BA1A1A');
     });
   }
 });
@@ -80,8 +80,8 @@ describe('AppField noneditable presentation and state', () => {
       const node = input(field().render(props));
       expect(node.props.editable).toBe(false);
       expect(flatten(node.props.style).opacity).toBeUndefined();
-      expect(flatten(node.props.style).backgroundColor).toBe('#EFEEEA');
-      expect(flatten(node.props.style).color).toBe('#59606B');
+      expect(flatten(node.props.style).backgroundColor).toBe('#E9E7EF');
+      expect(flatten(node.props.style).color).toBe('#454651');
     });
     it(`merges disabled state without losing unrelated accessibility state for ${JSON.stringify(props)}`, () => {
       const node = input(field().render({ ...props, 'aria-disabled': false,

@@ -1,0 +1,41 @@
+{
+  "generator": "Mascot Designer 1.0 (Tobia Donadon) via Codex image generation on the owner's ChatGPT account",
+  "date": "2026-11-03",
+  "character": "Itik: the Pateros worker duck. Cream clay duck, amber bill and feet, cobalt construction hard hat.",
+  "role": "A Pateros duck in a hard hat: local help, ready to work.",
+  "grid": [
+    3,
+    3
+  ],
+  "pixels": [
+    1254,
+    1254
+  ],
+  "cellPixels": [
+    418,
+    418
+  ],
+  "poseOrder": [
+    "idle",
+    "blink",
+    "wave",
+    "think",
+    "celebrate",
+    "oops",
+    "sleep",
+    "point",
+    "love"
+  ],
+  "crop": {
+    "from": "1024px aligned poses (one ground line, one scale)",
+    "square": [
+      162,
+      297,
+      700
+    ],
+    "ground": 0.9543
+  },
+  "background": "true alpha transparency",
+  "sha256": "3c167efa1c24093ca85cb2ce622b0cbc9d2b0a64f0d143bc50c8d67b14f0e696",
+  "sourceKit": "C:\\Users\\JOSH\\Documents\\SkillMatch-Mascots\\Itik"
+}

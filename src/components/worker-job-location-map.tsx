@@ -5,6 +5,7 @@ import { MapPinLabel } from '@/components/map-pin-label';
 import { Skeleton } from '@/components/skeleton';
 import { SkillMatchTheme } from '@/constants/theme';
 import { type JobPin } from '@/lib/job-location';
+import { useMapStyle } from '@/lib/map-type';
 
 type MapRuntime = Pick<typeof import('@maplibre/maplibre-react-native'), 'Map' | 'Camera' | 'Marker'>;
 
@@ -46,6 +47,7 @@ class JobMapBoundary extends Component<{ children: ReactNode }, { failed: boolea
 function JobMap({ pin }: { pin: JobPin }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const mapStyle = useMapStyle(MAP_STYLE);
 
   useEffect(() => {
     if (loaded || failed) return;
@@ -60,7 +62,7 @@ function JobMap({ pin }: { pin: JobPin }) {
     <View style={styles.frame}>
       <Map
         style={StyleSheet.absoluteFill}
-        mapStyle={MAP_STYLE}
+        mapStyle={mapStyle}
         androidView="texture"
         accessibilityLabel="Exact job opportunity location"
         dragPan={false}

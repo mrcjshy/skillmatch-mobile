@@ -38,6 +38,14 @@ function load(file: string): Props {
   const exports: Props = {}; cache[file] = exports;
   const require = (name: string): any => {
       if (name === '@/components/refinement-theme') return { ...load('src/components/refinement-theme.tsx'), RefinementThemeProvider: 'RefinementThemeProvider' };
+    if (name === '@/components/cancellation-sheet') return { CancellationSheet: (props: Props) => props.visible ? {
+      type: 'Modal', props: { visible: true, children: [
+        { type: 'ScrollView', props: { keyboardShouldPersistTaps: 'handled', children: [props.children,
+          props.error ? jsx(load('src/components/app-notice.tsx').AppNotice, { variant: 'danger', message: props.error }) : null] } },
+        jsx(load('src/components/app-button.tsx').AppButton, { label: props.confirmLabel, variant: props.reviewing ? 'primary' : 'destructive', disabled: props.busy || props.confirmDisabled, loading: props.busy, onPress: props.onConfirm }),
+        jsx(load('src/components/app-button.tsx').AppButton, { label: props.keepLabel, variant: props.reviewing ? 'ghost' : 'primary', disabled: props.busy, onPress: props.onClose }),
+      ] } } : null };
+    if (name === '@/components/skillmatch-mascot') return { SkillMatchMascot: 'SkillMatchMascot' };
     if (name === 'react-native') return native;
     if (name === 'react-native-worklets') return { scheduleOnRN: (fn: any) => fn() };
     if (name === 'react-native-reanimated') return { __esModule: true, default: { View: 'Reanimated.View' }, cancelAnimation() {}, ReduceMotion: { System: 'system', Never: 'never' }, Extrapolation: { CLAMP: 'clamp' }, Easing: { bezier: () => 'curve' }, interpolate: () => 1, withTiming: (value: number) => value, withDelay: (_ms: number, value: any) => value, withSequence: (...steps: any[]) => steps.at(-1), withRepeat: (value: any) => value, withSpring: (value: number) => value,
@@ -263,7 +271,7 @@ it('offers cancellation to either party directly while completion remains Client
     expect(visibleText(tree)).not.toContain('Either party may cancel.'); // UI-V3: removed by owner direction
     expect(all(tree, 'Collapsible')).toHaveLength(0);
   }
-  const busy = render(Lifecycle, { role: 'client', bookingId: ID, showCompletion: true, showCancellation: true, onChanged: async () => {} }, ['complete', null, false, null, '']);
+  const busy = render(Lifecycle, { role: 'client', bookingId: ID, showCompletion: true, showCancellation: true, onChanged: async () => {} }, ['complete', null, false, 'reason', null, '']);
   expect(all(busy, 'Pressable').every(x => x.props.disabled)).toBe(true);
 });
 it('preserves Active/History filtering, supplied ordering and route callbacks with grouped list headers',()=>{for(const role of ['client','worker'])for(const segment of ['active','history']) {pushCalls.length=0;const rows=[booking(role,'completed','history-a'),booking(role,'confirmed','active-b'),booking(role,'pending','active-c'),booking(role,'cancelled','history-d')];const tree=render(List,{role},[{},segment,rows,false,false,null]);expect(text(tree)).toContain(segment==='active'?'Active bookings':'Booking history');const cards=all(tree,'Pressable').filter(x=>x.props.accessibilityLabel?.includes('View booking details')); cards.forEach(x=>x.props.onPress());expect(pushCalls.map(x=>x.params.bookingId)).toEqual(segment==='active'?['active-b','active-c']:['history-a','history-d']);expect(pushCalls.every(x=>x.pathname===`/${role}/booking-details`)).toBe(true);}});
@@ -274,7 +282,7 @@ it('uses effective contrast in populated shared details at rest and pressed, wit
 
 it('orders lifecycle children before separated cancellation and retains validated cancellation drafts',()=>{
   const props={role:'client',bookingId:ID,showCompletion:true,showCancellation:true,onChanged:async()=>{},children:{type:'Text',props:{children:'COMMUNICATION SLOT'}}};
-  const seeds=[null,null,true,null,'']; let tree=render(Lifecycle,props,seeds);
+  const seeds=[null,null,true,'reason',null,'']; let tree=render(Lifecycle,props,seeds);
   expect(text(tree).indexOf('Finish Booking')).toBeLessThan(text(tree).indexOf('COMMUNICATION SLOT'));
   expect(text(tree).indexOf('COMMUNICATION SLOT')).toBeLessThan(text(tree).indexOf('Cancel booking'));
   const radios=all(tree,'Pressable').filter(x=>x.props.accessibilityRole==='radio'); expect(radios.length).toBeGreaterThan(0);
@@ -286,7 +294,7 @@ it('orders lifecycle children before separated cancellation and retains validate
   contrast(tree);contrast(tree,theme.colors.canvas,true);
 });
 it('keeps composed disabled/loading and failed payment/lifecycle text readable',()=>{
-  const tree=render(Lifecycle,{role:'client',bookingId:ID,showCompletion:true,showCancellation:true,onChanged:async()=>{}},['complete','Safe failure',true,'other','Long retained detail']); contrast(tree);contrast(tree,theme.colors.canvas,true);expect(all(tree,'Pressable').filter(x=>x.props.accessibilityState?.expanded===undefined).every(x=>x.props.disabled)).toBe(true);expect(visibleText(tree)).toContain('Safe failure');
+  const tree=render(Lifecycle,{role:'client',bookingId:ID,showCompletion:true,showCancellation:true,onChanged:async()=>{}},['complete','Safe failure',true,'reason','other','Long retained detail']); contrast(tree);contrast(tree,theme.colors.canvas,true);expect(all(tree,'Pressable').filter(x=>x.props.accessibilityState?.expanded===undefined).every(x=>x.props.disabled)).toBe(true);expect(visibleText(tree)).toContain('Safe failure');
   for(const role of ['client','worker']) { const tree=render(Payment,{role,bookingId:ID,payment:{id:'p',payment_method:'cod',payment_status:'pending'},jobPaymentMethod:'cash',onChanged:async()=>{}},[true,'Safe failure',null,null]);contrast(tree);contrast(tree,theme.colors.canvas,true); }
 });
 
@@ -508,6 +516,85 @@ it('shows no jump control for a thread that fits in the viewport', () => {
   scroll.props.onContentSizeChange(1080, 400);
   scroll.props.onScroll({ nativeEvent: { contentOffset: { y: 0 }, contentSize: { height: 400 }, layoutMeasurement: { height: 654 } } });
   expect(seeds[9]).toEqual({ away: false, unseen: 0 });
+});
+
+// 2026-11-04 owner request: a Messenger-style composer. The send icon sits inside the growing chat field
+// (the real AppField renders here), there is no countdown, and only an over-limit line explains a disabled send.
+function chatComposer(draft: string, isSending = false) {
+  const Chat = load('src/components/booking-chat.tsx').default;
+  const seeds: any[] = [false, false, null, { status: 'confirmed', jobTitle: 'Supplied job', counterpartName: name }, [], 'client:client-a:' + ID, draft, isSending, null, { away: false, unseen: 0 }];
+  const tree = render(Chat, { role: 'client', bookingId: ID }, seeds);
+  const input = all(tree, 'TextInput')[0];
+  const send = all(tree, 'Pressable').find(node => node.props.accessibilityLabel === 'Send message');
+  const wrap = all(tree, 'View').find(node => Array.isArray(node.props.children) && node.props.children[0] === input);
+  const composer = all(tree, 'View').find(node => flat(node.props.style).borderTopColor === theme.colors.hairline && all(node, 'TextInput').length === 1);
+  for (const [part, node] of Object.entries({ input, send, wrap, composer })) expect(node, part).toBeDefined();
+  return { tree, input, send, wrap, composer };
+}
+
+it('puts an icon-only Send message control inside the growing chat field, bottom-aligned beside the last line', () => {
+  const { input, send, wrap } = chatComposer('Hello');
+  expect(input.props.multiline).toBe(true);
+  expect(input.props.accessibilityLabel).toBe('Write a message…');
+  const inputStyle = flat(input.props.style);
+  expect(inputStyle).toMatchObject({ minHeight: 48, maxHeight: 120, borderRadius: 24, paddingRight: 48 });
+  expect(inputStyle.height).toBeUndefined();
+  const [, slot] = wrap.props.children;
+  expect(slot.props.children).toBe(send);
+  expect(flat(slot.props.style)).toMatchObject({ position: 'absolute', right: 0, bottom: 0, width: 48, justifyContent: 'flex-end' });
+  expect(slot.props.pointerEvents).toBe('box-none');
+  expect(send.props.accessibilityRole).toBe('button');
+  expect(all(send, 'Text')).toHaveLength(0);
+  expect(text(send)).toBe('');
+  const icon = all(send, 'SymbolView')[0];
+  expect(icon.props).toMatchObject({ name: { android: 'send', ios: 'paperplane.fill' }, accessible: false, synchronousGlyph: true });
+  const box = flat(send.props.style({ pressed: false }));
+  expect(box.minWidth + 2 * send.props.hitSlop).toBeGreaterThanOrEqual(48);
+  expect(box.minHeight + 2 * send.props.hitSlop).toBeGreaterThanOrEqual(48);
+});
+
+it('shows no character countdown, and an over-limit line only once the trimmed draft is too long', () => {
+  const countdown = /remaining|over limit|characters left|\d+\s*\/\s*\d+/i;
+  for (const draft of ['', 'Hello', 'x'.repeat(1999), 'x'.repeat(2000), '   ' + 'x'.repeat(2000) + '\n  ']) {
+    const { composer, send, input } = chatComposer(draft);
+    expect(visibleText(composer), JSON.stringify(draft.length)).not.toMatch(countdown);
+    expect(visibleText(composer)).not.toContain('Too long');
+    expect(input.props.value).toBe(draft);
+    expect(input.props.maxLength).toBeUndefined();
+    expect(send.props.disabled).toBe(draft.trim() === '');
+  }
+  for (const [draft, line] of [['x'.repeat(2001), 'Too long by 1 character'], ['  ' + 'x'.repeat(2050) + '  ', 'Too long by 50 characters']]) {
+    const { composer, send, input } = chatComposer(draft);
+    expect(visibleText(composer)).not.toMatch(countdown);
+    const lines = all(composer, 'Text').filter(node => text(node).startsWith('Too long'));
+    expect(lines).toHaveLength(1);
+    expect(text(lines[0])).toBe(line);
+    expect(flat(lines[0].props.style).color).toBe(theme.colors.error);
+    // Reported, never truncated: the field keeps every character and the send icon is off.
+    expect(input.props.value).toBe(draft);
+    expect(send.props.disabled).toBe(true);
+    expect(send.props.accessibilityState).toEqual({ disabled: true, busy: false });
+    expect(all(send, 'SymbolView')[0].props.tintColor).toBe(theme.colors.textMuted);
+    contrast(composer, theme.colors.canvas);
+  }
+});
+
+it('turns the send icon cobalt only for a sendable draft, and into busy dots while sending', () => {
+  const ready = chatComposer('Hello').send;
+  expect(ready.props.disabled).toBe(false);
+  expect(ready.props.accessibilityState).toEqual({ disabled: false, busy: false });
+  expect(all(ready, 'SymbolView')[0].props.tintColor).toBe(theme.colors.accent);
+  const blank = chatComposer('   \n ').send;
+  expect(blank.props.accessibilityState).toEqual({ disabled: true, busy: false });
+  expect(all(blank, 'SymbolView')[0].props.tintColor).toBe(theme.colors.textMuted);
+  const sending = chatComposer('Hello', true);
+  expect(sending.send.props.disabled).toBe(true);
+  expect(sending.send.props.accessibilityState).toEqual({ disabled: true, busy: true });
+  expect(sending.send.props.accessibilityLabel).toBe('Send message');
+  expect(all(sending.send, 'SymbolView')).toHaveLength(0);
+  expect(all(sending.send, 'PulseDots')).toHaveLength(1);
+  expect(all(sending.send, 'PulseDots')[0].props.color).toBe(theme.colors.accent);
+  expect(sending.input.props.editable).toBe(false);
 });
 
 // ---------- Map-first confirmed booking (2026-10-16): full-screen map + draggable booking panel ----------

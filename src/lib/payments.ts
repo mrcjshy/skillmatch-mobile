@@ -31,7 +31,7 @@
  *
  * WHAT THIS MODULE DOES NOT DO
  * ----------------------------
- * No GCash, no Maya, no PayMongo, no provider reference, no refund, no payment
+ * Only Cash and QR Ph exist. No PayMongo call, no provider reference, no refund, no payment
  * edit or reversal, no generic method picker, no payment history, no Realtime
  * and no polling. A Worker can never choose a method here and a Client can never
  * mark anything paid, because neither call exists.
@@ -40,11 +40,9 @@
 import { QRPH_LABEL, type JobPaymentMethod } from './job-payment';
 import { supabase } from './supabase';
 
-/** The values `bookings_payment_method_check` permits. `cod` and `qrph` are
- *  both reachable; `gcash` and `maya` exist only so the UI can recognise a
- *  future online Booking and stay out of its way -- PM-01D ships no control
- *  for either, and PM-01C settles `qrph` server-side. */
-export type PaymentMethod = 'cod' | 'gcash' | 'maya' | 'qrph';
+/** SkillMatch's two payment methods: Cash (`cod`) and QR Ph (`qrph`, settled server-side by
+ *  PM-01C). Any other stored value is not a SkillMatch method and fails closed below. */
+export type PaymentMethod = 'cod' | 'qrph';
 
 /** The three values `bookings_payment_status_check` permits. `refunded` is a
  *  schema value no code path currently produces. */
@@ -169,10 +167,6 @@ export function isPaid(p: BookingPayment | undefined): boolean {
  */
 const METHOD_LABEL: Record<PaymentMethod, string> = {
   cod: 'Cash',
-  // Schema-retained values no SkillMatch screen offers. Labelled, not hidden,
-  // so a historical row reads as what it is instead of as Cash or an error.
-  gcash: 'GCash (legacy, not offered)',
-  maya: 'Maya (legacy, not offered)',
   qrph: QRPH_LABEL,
 };
 
@@ -310,7 +304,7 @@ export function qrphErrorCopy(e: unknown): string {
  * Row coercion — never trust a row's shape.
  * ------------------------------------------------------------------ */
 
-const METHODS: readonly string[] = ['cod', 'gcash', 'maya', 'qrph'];
+const METHODS: readonly string[] = ['cod', 'qrph'];
 const STATUSES: readonly string[] = ['pending', 'paid', 'refunded'];
 
 function toMethod(v: unknown): PaymentMethod | null {

@@ -10,7 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/app-button';
-import { KeyboardSpacer } from '@/components/skeleton';
+import { KeyboardSpacer, PulseDots } from '@/components/skeleton';
 import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
 import { AppNotice } from '@/components/app-notice';
@@ -514,8 +514,10 @@ export default function BookingChat({
   }
 
   const canSend = chatAvailable && visibleBooking !== null && canSendInStatus(visibleBooking.status);
-  const remaining = remainingCharacters(draft);
   const isDraftSendable = validateContent(draft).ok;
+  const sendBlocked = !isDraftSendable || isSending;
+  // Measured on the same trimmed length the server checks; positive only when over the limit.
+  const overLimitBy = Math.max(0, -remainingCharacters(draft));
   const threadShown = !isLoading && !loadError && chatAvailable && visibleMessages.length > 0;
 
   function jumpToLatest() {
@@ -537,7 +539,7 @@ export default function BookingChat({
 
   return (
     // Edge-to-edge Android does not resize the window for the keyboard: the spacer below rises with
-    // it, so a docked keyboard never covers the composer and Send.
+    // it, so a docked keyboard never covers the composer or its send icon.
     <View style={[styles.flex, { paddingBottom: insets.bottom }]}>
       <View style={styles.thread}>
         <ScrollView
@@ -687,6 +689,7 @@ export default function BookingChat({
       {!isLoading && !loadError && chatAvailable ? (
         canSend ? (
           <View style={styles.composer}>
+            {/* One growing chat field; the send icon sits inside its right edge, beside the last line. */}
             <AppField
               value={draft}
               onChangeText={setDraft}
@@ -696,23 +699,38 @@ export default function BookingChat({
               accessibilityLabel={COPY.composerPlaceholder}
               errorText={sendError ?? undefined}
               inputStyle={styles.composerInput}
+              trailing={
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Send message"
+                  accessibilityState={{ disabled: sendBlocked, busy: isSending }}
+                  disabled={sendBlocked}
+                  onPress={handleSend}
+                  // The visible circle stays inside the field's border; the slop makes the target 48dp.
+                  hitSlop={(size.minTarget - size.iconCircle) / 2}
+                  style={({ pressed }) => [styles.send, pressed && !sendBlocked ? styles.sendPressed : null]}
+                >
+                  {isSending ? (
+                    <PulseDots color={colors.accent} />
+                  ) : (
+                    <AppSymbol
+                      synchronousGlyph
+                      pointerEvents="none"
+                      accessible={false}
+                      name={{ android: 'send', ios: 'paperplane.fill' }}
+                      size={24}
+                      tintColor={isDraftSendable ? colors.accent : colors.textMuted}
+                    />
+                  )}
+                </Pressable>
+              }
             />
-            <View style={styles.composerRow}>
-              {/* Counts down against the same trimmed length the server
-                  measures. Over-length is reported, never truncated. */}
-              <Text style={remaining < 0 ? styles.counterOver : styles.counter}>
-                {remaining >= 0 ? `${remaining} characters remaining` : `${-remaining} characters over limit`}
+            {/* Over-length is reported, never truncated: this says why the send icon is off. */}
+            {overLimitBy > 0 ? (
+              <Text style={styles.overLimit}>
+                {`Too long by ${overLimitBy} character${overLimitBy === 1 ? '' : 's'}`}
               </Text>
-              <AppButton
-                variant="primary"
-                label="Send"
-                accessibilityLabel="Send"
-                loading={isSending}
-                onPress={handleSend}
-                disabled={!isDraftSendable || isSending}
-                style={styles.sendButton}
-              />
-            </View>
+            ) : null}
           </View>
         ) : (
           <View style={styles.composer}>
@@ -837,28 +855,29 @@ const styles = StyleSheet.create({
     borderTopColor: colors.hairline,
     paddingHorizontal: spacing.gutter,
     paddingVertical: spacing.md,
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
+  // One line tall at rest (a pill), growing with the text up to the 120dp editing viewport.
   composerInput: {
+    minHeight: size.minTarget,
     maxHeight: 120,
+    borderRadius: size.minTarget / 2,
+    paddingLeft: spacing.lg,
   },
-  composerRow: {
-    flexDirection: 'row',
+  // A 40dp circle centred in the field's bottom-right 48dp square; it grows with the glyph at large text.
+  send: {
+    minWidth: size.iconCircle,
+    minHeight: size.iconCircle,
+    marginBottom: (size.minTarget - size.iconCircle) / 2,
+    borderRadius: radius.pill,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
+    justifyContent: 'center',
   },
-  counter: {
-    ...type.caption,
-    color: colors.textSecondary,
-    flex: 1,
+  sendPressed: {
+    backgroundColor: colors.accentSubtle,
   },
-  counterOver: {
-    ...type.caption,
+  overLimit: {
+    ...type.helper,
     color: colors.error,
-    flex: 1,
-  },
-  sendButton: {
-    alignSelf: 'flex-end',
   },
 });

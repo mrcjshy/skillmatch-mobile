@@ -7,6 +7,7 @@ import Animated, {
 import { scheduleOnRN } from 'react-native-worklets';
 import { AppSymbol } from '@/components/app-symbol';
 import { useUiTheme } from '@/components/refinement-theme';
+import { COBALT_LIT, COBALT_SHADOW } from '@/constants/cobalt-material';
 import { MotionTokens } from '@/constants/motion';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 
@@ -114,7 +115,8 @@ export function SwipeConfirmation({ label, confirmationTitle, confirmationMessag
         <Text style={[ui.type.button, styles.label, { color: ui.colors.textPrimary }]}>{label}</Text>
       </Animated.View>
       <GestureDetector gesture={pan}>
-        <Animated.View accessible={false} style={[styles.thumb, { backgroundColor: thumbColor }, thumbStyle]}>
+        {/* The live thumb wears the Post a job cobalt material (owner 2026-11-04); the spent one stays flat grey. */}
+        <Animated.View accessible={false} style={[styles.thumb, { backgroundColor: thumbColor }, thumbColor === ui.colors.accent ? styles.thumbLit : null, thumbStyle]}>
           <Animated.View style={[styles.glyph, arrowStyle]}><AppSymbol synchronousGlyph accessible={false} name={{ android: 'arrow_forward', ios: 'arrow.right' }} size={26} tintColor={ui.colors.onAccent} /></Animated.View>
           <Animated.View style={[styles.glyph, checkStyle]}><AppSymbol synchronousGlyph accessible={false} name={{ android: 'check', ios: 'checkmark' }} size={26} tintColor={ui.colors.onAccent} /></Animated.View>
         </Animated.View>
@@ -127,5 +129,6 @@ const styles = StyleSheet.create({
   fill: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, borderTopRightRadius: 999, borderBottomRightRadius: 999 },
   label: { marginLeft: 76, marginRight: 22, textAlign: 'center', flexShrink: 1 },
   thumb: { position: 'absolute', left: 8, top: 8, bottom: 8, width: 56, minHeight: 54, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  thumbLit: { experimental_backgroundImage: COBALT_LIT, boxShadow: COBALT_SHADOW },
   glyph: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
 });

@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react';
 import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 
+import { AdminAccountModerationPanel } from '@/components/admin-account-moderation-panel';
+import { AdminAccountProfileSection } from '@/components/admin-account-profile-section';
 import { AdminUserDetailView } from '@/components/admin-user-detail-view';
 import { AppButton } from '@/components/app-button';
 import { InlineStatus } from '@/components/inline-status';
@@ -19,6 +21,7 @@ export default function AdminUserDetailScreen() {
   const adminId = status === 'resolved' && account?.role === 'administrator' && account.is_active &&
     account.id === session?.user.id ? account.id : null;
   const [reload, setReload] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<{
     key: string; detail: AdminUserDetail | null; error: string | null; denied: boolean;
   } | null>(null);
@@ -51,7 +54,10 @@ export default function AdminUserDetailScreen() {
         : current.error ? <InlineStatus variant="error" message={current.error}
           action={current.denied ? undefined : <AppButton label="Retry" variant="secondary" onPress={() => setReload((n) => n + 1)} />} />
           : !current.detail ? <InlineStatus variant="empty" message="Account unavailable." />
-            : <AdminUserDetailView detail={current.detail} />;
+            : <AdminUserDetailView detail={current.detail} notice={notice}
+              profile={<AdminAccountProfileSection userId={current.detail.user_id} />}
+              moderation={<AdminAccountModerationPanel userId={current.detail.user_id} isWorker={kind === 'worker'}
+                onChanged={(message) => { setNotice(message); setReload((n) => n + 1); }} />} />;
 
   return (
     <RefinementThemeProvider>

@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
+import * as cobaltMaterial from '../constants/cobalt-material';
 import { formatCardDateTime } from './date-time';
 import { formatClientPostedPaymentLine } from './job-payment';
 vi.mock('./supabase', () => ({ supabase: {} }));
@@ -21,6 +22,7 @@ function load(path: string, seams: Record<string, Props>): Props {
       const names = [...raw.matchAll(/import\s*{([^}]+)}\s*from\s*['"]([^'"]+)['"]/g)].filter(m => m[2] === id).flatMap(m => m[1].split(',').map((n: string) => n.trim()).filter((n: string) => !n.startsWith('type ')));
       return Object.fromEntries(names.map(n => [n, n]));
     }
+    if (id === '@/constants/cobalt-material') return cobaltMaterial;
     throw new Error('Missing inert seam: ' + id);
   };
   new Function('require', 'exports', ts.transpileModule(raw, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText)(requireSeam, exports);

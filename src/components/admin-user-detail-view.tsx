@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppChip } from '@/components/app-chip';
+import { AppNotice } from '@/components/app-notice';
 import { FactRow } from '@/components/fact-row';
 import { InitialsAvatar } from '@/components/initials-avatar';
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
@@ -13,11 +15,19 @@ import {
 import { formatDetailDateTime } from '@/lib/date-time';
 
 /**
- * Read-only Worker or Client account for Admin: who, then account state with what it means, then
- * verification (Worker), then activity counts. AA-05 returns no contact data, so none is shown, and
- * the Admin app has no account-state control, so the state is explained rather than actionable.
+ * Worker or Client account for Admin: who, then account state with what it means, then MOD-01
+ * moderation (strikes, ban / reinstate) when the screen supplies it, then verification (Worker),
+ * then activity counts. AA-05 returns no contact data, so none is shown.
  */
-export function AdminUserDetailView({ detail }: { detail: AdminUserDetail }) {
+export function AdminUserDetailView({ detail, moderation, notice, profile }: {
+  detail: AdminUserDetail;
+  /** REG-01 resume / Client details, rendered after Account. */
+  profile?: ReactNode;
+  /** The moderation panel, rendered after Account. */
+  moderation?: ReactNode;
+  /** Outcome of the last ban or reinstatement. */
+  notice?: string | null;
+}) {
   const ui = useUiTheme();
   const styles = createStyles(ui);
   const worker = 'has_profile' in detail ? detail : null;
@@ -38,14 +48,20 @@ export function AdminUserDetailView({ detail }: { detail: AdminUserDetail }) {
         </View>
       </View>
 
+      {notice ? <AppNotice variant="success" message={notice} /> : null}
+
       <View style={styles.section}>
         <SectionHeader title="Account" />
         <SurfaceGroup>
           <FactRow label="Account status" value={status.label} strong />
           <FactRow label="Joined" value={formatDetailDateTime(detail.created_at) ?? 'Not recorded'} />
         </SurfaceGroup>
-        <Text style={styles.note}>{accountStatusExplanation(detail.is_active)} Account status is shown here for review; it is not changed from this screen.</Text>
+        <Text style={styles.note}>{accountStatusExplanation(detail.is_active)}</Text>
       </View>
+
+      {profile}
+
+      {moderation}
 
       {worker ? (
         <View style={styles.section}>

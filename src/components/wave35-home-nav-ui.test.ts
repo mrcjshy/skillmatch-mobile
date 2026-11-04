@@ -44,7 +44,10 @@ describe('Authenticated header: no brand, bell on Home only', () => {
   it('keeps the header outside the scroller, with the top inset, a wrapping name and a full-size bell target', () => {
     const header = code(HEADER);
     expect(header).toContain('paddingTop: insets.top + ui.spacing.headerTop');
-    expect(header).not.toMatch(/numberOfLines|position: 'absolute'|<Modal|<Image/);
+    expect(header).not.toMatch(/numberOfLines|position: 'absolute'|<Modal/);
+    // Its one image is the decorative time-of-day sky art, never a brand logo.
+    expect(header.match(/<Image\b/g)).toHaveLength(1);
+    expect(header).toMatch(/<Image source=\{SKY\[greeting\]\}/);
     expect(code('src/components/notification-bell.tsx')).toMatch(/minHeight: size\.ghostButton,\s*minWidth: size\.ghostButton/);
     for (const home of [WORKER_HOME, CLIENT_HOME]) {
       const source = code(home);
@@ -95,25 +98,29 @@ describe('Worker navigation and Home', () => {
 describe('Worker Profile identity', () => {
   const profile = code(WORKER_PROFILE);
 
-  it('puts phone, email and Edit profile with the identity, ahead of the professional content', () => {
-    const order = ['<InitialsAvatar', 'styles.identityName', 'styles.trade', 'label="Phone"', 'label="Email"', 'label="Edit profile"', 'title="Work skills"', 'title="Portfolio"', 'title="Account and support"'].map((marker) => profile.indexOf(marker));
+  it('opens with the shared hero and its Edit profile action, then the editor, work facts, quick actions, contact and support', () => {
+    const order = ['<ProfileHero', "label: 'Edit profile'", 'styles.editor', 'title="Work skills"', 'title="About me"', '<WorkerStrikeStatus', 'title="Portfolio and resume"', '<ProfileQuickActions', 'title="Contact"', 'title="Support and legal"', 'label="Sign out"', '<ProfileFooter'].map((marker) => profile.indexOf(marker));
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(profile).not.toContain('<Collapsible');
+    expect(profile.match(/<ProfileHero\b/g)).toHaveLength(1);
   });
 
-  it('leaves Account and support with actions only', () => {
-    const account = profile.slice(profile.indexOf('title="Account and support"'), profile.indexOf('function ContactLine'));
-    expect(account).not.toMatch(/FactRow|ContactLine|account\?\.phone|account\?\.email/);
-    expect([...account.matchAll(/<NavRow label="([^"]+)"/g)].map((match) => match[1])).toEqual(['Help and FAQ', 'My reports', 'Report an app issue', 'Terms and conditions', 'Privacy policy']);
-    expect(account).toContain('label="Sign out"');
+  it('leaves Support and legal with actions only', () => {
+    const support = profile.slice(profile.indexOf('title="Support and legal"'), profile.indexOf('<ProfileFooter'));
+    expect(support).not.toMatch(/FactRow|account\?\.phone|account\?\.email|account\.phone|account\.email/);
+    expect([...support.matchAll(/<NavRow label="([^"]+)"/g)].map((match) => match[1])).toEqual(['Help and FAQ', 'My reports', 'Report an app issue', 'Terms and conditions', 'Privacy policy']);
+    expect(support).toContain('label="Sign out"');
   });
 
   it('shows only the contact data the Worker account already carries', () => {
-    expect([...profile.matchAll(/<ContactLine [^>]*label="([^"]+)"/g)].map((match) => match[1])).toEqual(['Phone', 'Email', 'Area']);
-    expect(profile).toContain('value={account?.phone ?? null}');
-    expect(profile).toContain('value={account?.email ?? null}');
-    expect(profile).toContain('value={account ? `${account.barangay}, ${account.city}` : null}');
+    const contact = profile.slice(profile.indexOf('title="Contact"'), profile.indexOf('title="Support and legal"'));
+    expect([...contact.matchAll(/<FactRow [^>]*label="([^"]+)"/g)].map((match) => match[1])).toEqual(['Phone', 'Email']);
+    expect(contact).toContain('value={account.phone}');
+    expect(contact).toContain('value={account.email}');
+    // The area is a hero pill, built only from the parts the account carries.
+    expect(profile).toContain("[account.barangay, account.city].filter(Boolean).join(', ')");
+    expect(profile).toContain('accessibilityLabel: `Area: ${area}`');
   });
 });
 

@@ -26,6 +26,8 @@ import { AppSymbol } from '@/components/app-symbol';
 import { AppNotice } from '@/components/app-notice';
 import { inspectLocationPermission, type LocationPermissionState } from '@/lib/location-permission';
 import { LOCATION_SEARCH_DEBOUNCE_MS, LOCATION_SEARCH_MIN_LENGTH, searchPhoton, type LocationSuggestion } from '@/lib/location-search';
+import { MapTypeToggle } from '@/components/map-type-toggle';
+import { useMapStyle } from '@/lib/map-type';
 import { clearRecentLocations, loadRecentLocations, type RecentLocation, type RecentLocationScope } from '@/lib/recent-locations';
 import { useSession, type SessionLifetime } from '@/providers/session-provider';
 import { useAccount } from '@/providers/account-provider';
@@ -69,6 +71,10 @@ type JobLocationPickerProps = {
   onCancel?: () => void;
   backHandlerRef?: { current: (() => void) | null };
   onConfirm: (location: CanonicalJobLocation) => void;
+  /** REG-02: places shown above Recent while searching, e.g. the Client's sign-up Home. */
+  savedPlaces?: readonly { label: string; location: CanonicalJobLocation }[];
+  /** What the map is for, in its accessibility labels. */
+  purpose?: 'job' | 'home';
 };
 
 class MapErrorBoundary extends Component<
@@ -101,8 +107,11 @@ export function JobLocationPicker({
   onCancel,
   backHandlerRef,
   onConfirm,
+  savedPlaces = [],
+  purpose = 'job',
 }: JobLocationPickerProps) {
   const insets = useSafeAreaInsets();
+  const mapStyle = useMapStyle(PICKER_MAP_STYLE);
   const reducedMotion = useReducedMotion();
   const { width, height } = useWindowDimensions();
   const [mapSize, setMapSize] = useState({ width, height });
@@ -706,7 +715,7 @@ export function JobLocationPicker({
             <Map
               ref={mapRef}
               style={styles.map}
-              mapStyle={PICKER_MAP_STYLE}
+              mapStyle={mapStyle}
               androidView="texture"
               dragPan={!disabled && !locating}
               touchZoom={!disabled && !locating}
@@ -720,7 +729,7 @@ export function JobLocationPicker({
               onDidFinishRenderingFrame={mapRendered ? undefined : () => { setMapRendered(true); void resolveRenderedEntry(); }}
               onDidFinishRenderingMap={() => { setMapRendered(true); void resolveRenderedEntry(); }}
               onDidFinishRenderingMapFully={() => { setMapLoaded(true); void resolveRenderedEntry(); }}
-              accessibilityLabel="Job location map"
+              accessibilityLabel={purpose === 'home' ? 'Home location map' : 'Job location map'}
             >
               <Camera
                 ref={cameraRef}
@@ -753,7 +762,7 @@ export function JobLocationPicker({
             </View>
             {!mapLoaded && !mapRendered ? (
               <View style={styles.loading} pointerEvents="none">
-                <Skeleton shape="fill" label="Loading job location map" />
+                <Skeleton shape="fill" label={purpose === 'home' ? 'Loading home location map' : 'Loading job location map'} />
               </View>
             ) : null}
             <Pressable
@@ -770,6 +779,7 @@ export function JobLocationPicker({
               accessibilityLabel={COPY.useCurrentLocation}
               accessibilityState={{ disabled: busy, busy: locating }}
             >{locating ? <PulseDots color={colors.accent} /> : <AppSymbol name={{ android: 'my_location', ios: 'location' }} size={24} tintColor={colors.accent} />}</Pressable>
+            <MapTypeToggle style={{ top: insets.top + spacing.sm, right: spacing.gutter }} />
           </View>
         </MapErrorBoundary>
       ) : (
@@ -872,6 +882,22 @@ export function JobLocationPicker({
                 onPress={() => { if (permission === 'settings') void Linking.openSettings().catch(() => onNote('Unable to open Settings. Open Android app settings manually.')); else void handleUseCurrentLocation(); }} disabled={busy || moving} />
             </View>
           ) : null}
+          {searchOpen && savedPlaces.length > 0 ? (
+            <View style={styles.nearbyBlock} accessibilityLabel="Saved places">
+              <Text style={styles.nearbyTitle}>Saved</Text>
+              {savedPlaces.map((place) => (
+                <Pressable key={`saved:${place.location.pin.latitude}:${place.location.pin.longitude}`}
+                  style={styles.searchRow} onPress={() => { closeSearch(); moveToCandidate(place.location.pin, { origin: 'recent' }); }}
+                  accessibilityRole="button" accessibilityLabel={`${place.label}, ${place.location.address}`}>
+                  <AppSymbol name={{ android: 'home', ios: 'house' }} size={20} tintColor={colors.accent} />
+                  <View style={styles.rowCopy}>
+                    <Text style={styles.nearbyLabel}>{place.label}</Text>
+                    <Text style={styles.savedAddress}>{place.location.address}</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           {searchOpen && visibleRecents.length > 0 ? (
             <View style={styles.nearbyBlock} accessibilityLabel="Recent locations">
               <View style={styles.recentHeader}>
@@ -968,6 +994,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.hairline,
   },
   sheetBody: { flexShrink: 1, minHeight: 0 },
+  savedAddress: { ...type.helper, color: colors.textSecondary },
   sheetContent: { gap: spacing.sm, paddingBottom: spacing.sm },
   selectedRow: { minHeight: 112, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, borderRadius: radius.control, backgroundColor: colors.accentSubtle },
   selectedIcon: { width: 48, height: 48, borderRadius: radius.control, backgroundColor: colors.surfaceSunken, alignItems: 'center', justifyContent: 'center' },

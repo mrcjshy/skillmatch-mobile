@@ -1,0 +1,22 @@
+{
+  "generator": "Mascot Designer gen.mjs via Codex image generation (owner's ChatGPT account), Itik idle pose as style reference",
+  "date": "2026-11-03",
+  "size": [
+    192,
+    192
+  ],
+  "files": {
+    "moon": {
+      "sha256": "1d3a901ac412f00f2fd5a88a8dc0324109af8f5f996dc2a4df3087817659e56d",
+      "bytes": 32172
+    },
+    "sun": {
+      "sha256": "b9494419b01188e05d621ed111531aefc52dad985e839ddde4fffcd79544c9a9",
+      "bytes": 31493
+    },
+    "sun-cloud": {
+      "sha256": "6b4dd6795a72f61362a9b460e8e1f4e6873fe04cec487b0f5116cd7e09eb5506",
+      "bytes": 31480
+    }
+  }
+}

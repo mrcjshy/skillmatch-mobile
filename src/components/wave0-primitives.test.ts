@@ -78,8 +78,8 @@ describe('AppDialog', () => {
     expect(scroll.props.accessibilityViewIsModal).toBe(true);
     expect(flat(scroll.props.style)).toMatchObject({ maxHeight: '90%' });
     const card = flat(scroll.props.contentContainerStyle);
-    expect(card).toMatchObject({ backgroundColor: ui.colors.surfaceRaised, borderRadius: ui.radius.card });
-    expect(card.elevation).toBe(ui.elevation.floating.elevation);
+    expect(card).toMatchObject({ backgroundColor: ui.colors.surfaceRaised, borderRadius: ui.radius.sheet }); // M3 dialog: 28dp
+    expect(card.boxShadow).toBe(ui.elevation.floating.boxShadow);
     const header = all.find((n) => n.props?.accessibilityRole === 'header');
     expect(header.props.children).toBe('Title');
     expect(flat(header.props.style).fontSize).toBe(ui.type.sectionTitle.fontSize);

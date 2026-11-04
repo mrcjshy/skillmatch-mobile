@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as cobaltMaterial from '../constants/cobalt-material';
 
 import { SkillMatchTheme } from '@/constants/theme';
 
@@ -48,6 +49,7 @@ const modules: Props = {
   '@/hooks/use-reduced-motion': { useReducedMotion: () => reduced },
 };
 new Function('require', 'exports', source)((name: string) => {
+  if (name === '@/constants/cobalt-material') return cobaltMaterial;
   if (!(name in modules)) throw new Error(`Unexpected dependency: ${name}`);
   return modules[name];
 }, exports);
@@ -116,5 +118,16 @@ describe('ShareLocationFab', () => {
     reduced = false;
     expect(render('busy').program).toBeUndefined();
     expect(render('blocked').program).toBeUndefined();
+  });
+});
+
+describe('ShareLocationFab cobalt material (owner 2026-11-04)', () => {
+  it('wears the same lit cobalt and cobalt shadow as the Post a job buttons, keeping its white ring', () => {
+    const src = readFileSync('src/components/share-location-fab.tsx', 'utf8');
+    expect(src).toContain("from '@/constants/cobalt-material'");
+    expect(src).toContain('experimental_backgroundImage: COBALT_LIT, boxShadow: COBALT_SHADOW');
+    expect(src).toContain("borderWidth: 3, borderColor: '#FFFFFF'");
+    expect(src).not.toContain('...elevation.floating');
+    expect(cobaltMaterial.COBALT_LIT).toMatch(/^linear-gradient\(180deg, #2D4DC8 0%, #1C3AA6 100%\)$/);
   });
 });

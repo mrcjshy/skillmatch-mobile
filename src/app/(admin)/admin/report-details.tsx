@@ -198,9 +198,8 @@ function AdminReportDetailsContent() {
     setNotice(null);
     try {
       await reviewReport(reportId, status, validated.response);
-      const emailDelivered = status === 'under_review'
-        ? true
-        : await sendReportOutcomeEmail(reportId);
+      // Every review status emails the reporter, Under review included (owner, 2026-11-05).
+      const emailDelivered = await sendReportOutcomeEmail(reportId);
       try {
         await load();
         setNotice(emailDelivered ? COPY.reviewSaved : COPY.emailFailed);

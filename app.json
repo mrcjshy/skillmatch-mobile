@@ -1,25 +1,28 @@
 {
   "expo": {
-    "name": "SkillMatch",
+    "name": "SkillMatch UI-V3 QA",
     "slug": "skillmatch-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "skillmatchmobile",
+    "scheme": "skillmatchuiv3qa",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
     },
     "android": {
-      "package": "com.mrcjshy.skillmatch",
+      "package": "com.mrcjshy.skillmatch.uiv3qa",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#F5F3EF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "monochromeImage": "./assets/images/android-icon-monochrome.png",
+        "backgroundImage": "./assets/images/android-icon-background.png"
       },
       "predictiveBackGestureEnabled": false,
-      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"]
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
     },
     "web": {
       "output": "static",
@@ -30,13 +33,13 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F5F3EF",
+          "backgroundColor": "#FBF8FF",
           "dark": {
-            "backgroundColor": "#F5F3EF",
-            "image": "./assets/images/skillmatch-splash-icon.png"
+            "backgroundColor": "#FBF8FF",
+            "image": "./assets/images/itik-splash.png"
           },
-          "image": "./assets/images/skillmatch-splash-icon.png",
-          "imageWidth": 200,
+          "image": "./assets/images/itik-splash.png",
+          "imageWidth": 288,
           "resizeMode": "contain"
         }
       ],
@@ -45,7 +48,9 @@
         "expo-notifications",
         {
           "defaultChannel": "skillmatch_alerts_v1",
-          "sounds": ["./assets/sounds/skillmatch_tugma.wav"],
+          "sounds": [
+            "./assets/sounds/skillmatch_tugma.wav"
+          ],
           "icon": "./assets/images/notification-icon.png",
           "color": "#1C3AA6"
         }
@@ -60,7 +65,11 @@
       ],
       [
         "@livekit/react-native-expo-plugin",
-        { "android": { "audioType": "communication" } }
+        {
+          "android": {
+            "audioType": "communication"
+          }
+        }
       ],
       [
         "@config-plugins/react-native-webrtc",

@@ -78,6 +78,7 @@ function routingModule() {
     '@/components/incoming-message-banner-host': { IncomingMessageBannerHost: 'Banner' },
     '@/components/location-stop-host': { LocationStopHost: 'LocationStopHost' },
     '@/components/incoming-call-host': { IncomingCallHost: 'IncomingCall' },
+    '@/components/launch-overlay': { LaunchOverlay: 'LaunchOverlay' },
     '@/lib/auth-recovery': {
       isRecoverySurfaceActive: (status: string) => status === 'active',
     },
@@ -85,6 +86,7 @@ function routingModule() {
     '@/lib/session-route-continuation': { sessionRouteContinuation: {} },
     '@/lib/worker-onboarding': { canEnterWorkerApp },
     '@/providers/account-provider': { AccountProvider: 'AccountProvider', useAccount: vi.fn() },
+    '@/providers/profile-gate-provider': { ProfileGateProvider: 'ProfileGateProvider', useProfileGate: () => ({ profileGate: undefined, refreshProfileGate: async () => undefined }) },
     '@/providers/session-provider': { SessionProvider: 'SessionProvider', useSession: vi.fn() },
   });
 }
@@ -168,6 +170,21 @@ describe('Worker onboarding route protection', () => {
     'load-error',
   ])('keeps %s outside the operational Worker routes', (workerOnboardingState) => {
     expect(deriveAccessState(session, account({ workerOnboardingState }))).toBe('worker-identity');
+  });
+
+  it('REG-01: puts the profile step after consent and before ID verification; only an explicit incomplete answer gates', () => {
+    expect(routing.ACCESS_ROUTE).toMatchObject({ 'needs-profile': '/complete-profile' });
+    expect(deriveAccessState(session, account({ workerOnboardingState: 'needs-submission', profileGate: 'incomplete' }))).toBe('needs-profile');
+    expect(deriveAccessState(session, account({ workerOnboardingState: 'verified', profileGate: 'incomplete' }))).toBe('needs-profile');
+    expect(deriveAccessState(session, account({ workerOnboardingState: 'verified', profileGate: 'loading' }))).toBe('account-pending');
+    expect(deriveAccessState(session, account({ workerOnboardingState: 'needs-submission', profileGate: 'complete' }))).toBe('worker-identity');
+    expect(deriveAccessState(session, account({ workerOnboardingState: 'verified', profileGate: 'complete' }))).toBe('worker');
+    // A completion answer that could not be read never locks the Worker out (UX step, not authorization).
+    expect(deriveAccessState(session, account({ workerOnboardingState: 'verified', profileGate: 'error' }))).toBe('worker');
+    expect(deriveAccessState(session, account({ workerOnboardingState: 'verified', hasCurrentConsent: false, profileGate: 'incomplete' }))).toBe('needs-consent');
+    const client = account({ account: { id: 'worker-user', role: 'client', is_active: true }, profileGate: 'incomplete' });
+    expect(deriveAccessState(session, client)).toBe('needs-profile');
+    expect(deriveAccessState(session, { ...client, profileGate: 'complete' })).toBe('client');
   });
 
   it('admits only an authoritative verified state', () => {

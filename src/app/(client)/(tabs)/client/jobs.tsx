@@ -104,7 +104,7 @@ export default function ClientJobs() {
   const empty = !authorized ? <InlineStatus variant="empty" message="Your jobs are unavailable." /> : isLoading ? (
     <InlineStatus variant="loading" skeleton="jobs" message="Loading your jobs…" />
   ) : loadError ? <View style={styles.notice}><InlineStatus variant="error" message={loadError} />{retry}</View> : (
-    <InlineStatus variant="empty" message="You have not posted a job yet." />
+    <InlineStatus variant="empty" mascot="hello" message="You have not posted a job yet." />
   );
 
   return (

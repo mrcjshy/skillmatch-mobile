@@ -19,6 +19,7 @@ function compile(path: string, seams: Record<string, Props>): Props {
     if (id in seams) return seams[id];
     if (id === 'react/jsx-runtime') return { jsx: node, jsxs: node, Fragment: 'Fragment' };
     if (id === '@/constants/theme') return compile('src/constants/theme.ts', seams);
+    if (id === '@/constants/cobalt-material') return compile('src/constants/cobalt-material.ts', {});
     if (id === '@/global.css') return {};
     throw new Error('Unapproved import: ' + id);
   };
@@ -31,6 +32,8 @@ function all(value: unknown): Element[] {
   return [value as Element, ...all((value as Element).props.children)];
 }
 const theme = compile('src/constants/theme.ts', { 'react-native': { Platform: { OS: 'android', select: (x: Props) => x.android ?? x.default } } }).SkillMatchTheme.ui;
+// The Post a job page's cobalt material, shared by its primary button and the bar's + (pure strings).
+const material = compile('src/constants/cobalt-material.ts', {});
 
 // Inert motion seam: the press-scale hook's handlers are recorded so wiring can be asserted.
 const pressScale = { style: { transform: [{ scale: 1 }] }, onPressIn: vi.fn(), onPressOut: vi.fn() };
@@ -74,22 +77,72 @@ describe('W7-C1 Client central Post a job action', () => {
     expect(flat(slot.props.style).position).toBeUndefined();
   });
 
-  it('is a circular Work Blue + button, >= 48dp, labelled "Post a job", inside the bar and above the gesture inset', () => {
+  it('is an M3 FAB (16dp rounded square) in the lit cobalt of the Post a job page, >= 48dp, labelled "Post a job", inside the bar and above the gesture inset', () => {
     const { tree, label } = tabBar();
     expect(label).toBe('Post a job');
     const action = all(tree).find((n) => n.props.accessibilityLabel === 'Post a job')!;
     expect(action.props.accessibilityRole).toBe('button');
     const style = flat(action.props.style({ pressed: false }));
-    expect(style.width).toBe(56); expect(style.height).toBe(56); expect(style.borderRadius).toBe(28);
+    // M3 FAB: a 56dp rounded square with the large (16dp) shape.
+    expect(style.width).toBe(56); expect(style.height).toBe(56); expect(style.borderRadius).toBe(16);
     expect(style.width).toBeGreaterThanOrEqual(48);
+    // The Post a job page's cobalt material (owner 2026-11-04): solid cobalt under a finish lit from
+    // above, settling into the brand cobalt.
     expect(style.backgroundColor).toBe(theme.colors.accent);
-    expect(style.elevation).toBeGreaterThan(0);
+    expect(style.experimental_backgroundImage).toBe(material.COBALT_LIT);
+    expect(material.COBALT_LIT).toBe(`linear-gradient(180deg, #2D4DC8 0%, ${theme.colors.accent} 100%)`);
+    // It floats on the cobalt shadow, in its own hue, as a box shadow (Expo native-UI rule: never the
+    // legacy elevation prop).
+    expect(style.boxShadow).toBe(material.COBALT_SHADOW);
+    expect(material.COBALT_SHADOW).toBe('0px 14px 28px rgba(28, 58, 166, 0.30), 0px 4px 10px rgba(20, 43, 127, 0.18)');
+    expect(style.elevation).toBeUndefined();
     expect(style.position).toBeUndefined(); expect(style.transform).toBeUndefined(); expect(style.marginTop).toBeUndefined();
-    expect(flat(action.props.style({ pressed: true })).backgroundColor).toBe(theme.colors.accentPressed);
+    // Under the finger: the same light a shade deeper, ending on the pressed cobalt; the shadow stays.
+    const down = flat(action.props.style({ pressed: true }));
+    expect(down.backgroundColor).toBe(theme.colors.accentPressed);
+    expect(down.experimental_backgroundImage).toBe(material.COBALT_LIT_PRESSED);
+    expect(material.COBALT_LIT_PRESSED).toBe(`linear-gradient(180deg, ${theme.colors.accent} 0%, ${theme.colors.accentPressed} 100%)`);
+    expect(down.boxShadow).toBe(material.COBALT_SHADOW);
     const glyph = all(action).find((n) => n.type === 'AppSymbol')!;
     expect(glyph.props).toMatchObject({ name: { android: 'add', ios: 'plus' }, tintColor: theme.colors.onAccent });
-    // The bar keeps the bottom inset as padding, so nothing sits in the gesture area.
-    expect(flat(tree.props.style)).toMatchObject({ paddingBottom: 21, height: 101 });
+    // The bar overlays the scene at the bottom, keeps the bottom inset (plus a gap) clear, lets
+    // touches above the pill through, and fades the canvas in behind a translucent rounded pill.
+    expect(flat(tree.props.style)).toMatchObject({ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: 21 + theme.spacing.sm, paddingLeft: theme.spacing.md, paddingRight: theme.spacing.md });
+    expect(flat(tree.props.style).backgroundColor).toBeUndefined();
+    expect(tree.props.pointerEvents).toBe('box-none');
+    const fade = tree.props.children.find((n: Element | null) => n?.props?.pointerEvents === 'none');
+    expect(String(flat(fade.props.style).experimental_backgroundImage)).toMatch(/^linear-gradient\(to bottom, rgba\(251, 248, 255, 0\)/); // the canvas (M3 surface #FBF8FF), clear at the top
+    const pill = all(tree).find((n) => n.props.role === 'tablist')!;
+    expect(flat(pill.props.style)).toMatchObject({ flexDirection: 'row', borderRadius: 34 });
+    // M3 surfaceContainer (#EFEDF4), still slightly see-through so content ghosts under the pill.
+    expect(flat(pill.props.style).backgroundColor).toMatch(/^rgba\(239, 237, 244, 0\.\d+\)$/);
+    expect(flat(pill.props.style).boxShadow).toBeTruthy();
+    // Only the selected tab draws the M3 tonal indicator, as a layer (Android ripple replaces backgrounds).
+    const capsules = all(pill).filter((n) => n.type === 'View' && n.props.pointerEvents === 'none' && flat(n.props.style).backgroundColor);
+    expect(capsules).toHaveLength(1);
+    expect(flat(pill.props.style).minHeight).toBeGreaterThanOrEqual(style.height);
+  });
+
+  it('wears exactly the material of the primary button on the Post a job page (CobaltButton), at rest and pressed', () => {
+    const action = all(tabBar().tree).find((n) => n.props.accessibilityLabel === 'Post a job')!;
+    const { CobaltButton } = compile('src/components/cobalt-ui.tsx', {
+      'react-native': { Pressable: 'Pressable', Text: 'Text', View: 'View', StyleSheet: { create: (x: Props) => x, hairlineWidth: 1 }, Platform: { OS: 'android', select: (x: Props) => x.android ?? x.default } },
+      'react-native-reanimated': {
+        __esModule: true, default: { View: 'Animated.View' }, Easing: { bezier: () => 'ease' }, Keyframe: class { duration() { return this; } },
+        useAnimatedStyle: (fn: () => Props) => fn(), useReducedMotion: () => false, useSharedValue: () => ({ get: () => 0, set: vi.fn() }), withSpring: (to: number) => to,
+      },
+      react: { useEffect: vi.fn(), useState: (initial: unknown) => [initial, vi.fn()] },
+      'expo-haptics': { impactAsync: vi.fn(async () => undefined), ImpactFeedbackStyle: { Light: 'light' } },
+      '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
+      '@/components/skeleton': { PulseDots: 'PulseDots' },
+    });
+    const button = all(CobaltButton({ label: 'Next', onPress: vi.fn() })).find((n) => n.type === 'Pressable')!;
+    const finish = (style: Props) => ({ backgroundColor: style.backgroundColor, experimental_backgroundImage: style.experimental_backgroundImage, boxShadow: style.boxShadow });
+    for (const pressed of [false, true]) {
+      const fab = finish(flat(action.props.style({ pressed })));
+      expect(fab.experimental_backgroundImage, `pressed: ${pressed}`).toMatch(/^linear-gradient\(/);
+      expect(fab, `pressed: ${pressed}`).toEqual(finish(flat(button.props.style({ pressed }))));
+    }
   });
 
   it('pressing + calls the Post Job handler; disabled while posting or unavailable', () => {
@@ -107,7 +160,9 @@ describe('W7-C1 Client central Post a job action', () => {
     const { tree, emitted, dispatched } = tabBar(1);
     const tabs = all(tree).filter((n) => n.props.role === 'tab');
     expect(tabs.map((t) => t.props['aria-selected'])).toEqual([false, true, false, false]);
-    expect(all(tabs[1]).find((n) => n.type === 'TabLabel')!.props).toMatchObject({ focused: true, color: theme.colors.accent, children: 'My jobs' });
+    // Icons only (owner request 2026-11-04): no visible label, the name stays the accessible label.
+    expect(all(tabs[1]).some((n) => n.type === 'TabLabel' || n.type === 'Text')).toBe(false);
+    expect(tabs[1].props['aria-label']).toBe('My jobs');
     tabs[2].props.onPress();
     expect(emitted.at(-1)).toEqual({ type: 'tabPress', target: 'client/bookings-key', canPreventDefault: true });
     expect(dispatched.at(-1)).toEqual({ type: 'NAVIGATE', payload: { name: 'client/bookings' }, target: 'tabs-key' });

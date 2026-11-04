@@ -11,6 +11,8 @@ import {
   Text,
   View,
   useWindowDimensions,
+  type StyleProp,
+  type TextStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -24,6 +26,7 @@ type AppSheetProps = {
   /** Android Back and scrim tap (when `dismissible`) call this; the owner sets `visible` false. */
   onClose: () => void;
   title: string;
+  titleStyle?: StyleProp<TextStyle>;
   children?: ReactNode;
   /** Pinned below the scrolling content (e.g. one primary action). */
   footer?: ReactNode;
@@ -46,7 +49,7 @@ const EXIT_EASING = Easing.bezier(...easing.accelerate);
  * window, scrolls when content or text size demands it, and pads for the system navigation bar.
  * Animation is skipped when the system asks for reduced motion.
  */
-export function AppSheet({ visible, onClose, title, children, footer, dismissible = true, swipeToClose = false }: AppSheetProps) {
+export function AppSheet({ visible, onClose, title, titleStyle, children, footer, dismissible = true, swipeToClose = false }: AppSheetProps) {
   const ui = useUiTheme();
   const { styles } = createStyles(ui);
   const insets = useSafeAreaInsets();
@@ -132,7 +135,7 @@ export function AppSheet({ visible, onClose, title, children, footer, dismissibl
           <View {...handleGesture.panHandlers}>
             <View accessible={false} importantForAccessibility="no-hide-descendants" style={styles.handle} />
             <View style={styles.header}>
-              <Text accessibilityRole="header" style={styles.title}>{title}</Text>
+              <Text accessibilityRole="header" style={[styles.title, titleStyle]}>{title}</Text>
               <AppIconButton icon={{ android: 'close', ios: 'xmark' }} accessibilityLabel={`Close ${title}`} disabled={!dismissible} onPress={onClose} />
             </View>
           </View>
@@ -165,7 +168,7 @@ function createStyles(ui: UiTheme) {
       width: size.sheetHandleWidth,
       height: size.sheetHandleHeight,
       borderRadius: radius.pill,
-      backgroundColor: colors.hairline,
+      backgroundColor: `${colors.textSecondary}66`, // M3 drag handle: onSurfaceVariant at 40%
     },
     header: {
       flexDirection: 'row',

@@ -11,8 +11,11 @@ export async function submitClientPostJob(input: {
   owner: ClientPostJobDraftContextValue;
   skills: readonly CatalogSkill[];
   refresh: (ownerId: string) => Promise<void>;
+  /** Called with the number of finished stages (1-5): checked, created, photos, refreshed, done. */
+  onStage?: (finished: number) => void;
 }): Promise<void> {
   const { owner, skills, refresh } = input;
+  const stage = (finished: number) => { try { input.onStage?.(finished); } catch { /* presentation only */ } };
   const operation = owner.beginPost();
   if (!operation) return;
   const current = () => owner.isOperationCurrent(operation);
@@ -42,6 +45,7 @@ export async function submitClientPostJob(input: {
     const knownIds = new Set(skills.map(skill => skill.id));
     const skillIds = [...new Set([primary.id, ...draft.additionalSkillIds.filter(id => knownIds.has(id))])];
     if (!current() || !owner.markCreateDispatched(operation)) return;
+    stage(1);
     let createdJobId: string;
     try {
       createdJobId = await createMyJobWithLocation({ title: primary.skill_name, description: draft.description.trim(),
@@ -57,6 +61,7 @@ export async function submitClientPostJob(input: {
       return;
     }
     if (!owner.recordCreatedJob(operation, createdJobId) || !current()) return;
+    stage(2);
     let uploadedPhotoCount = 0;
     const retries: JobPhotoRetry[] = [];
     for (let index = 0; index < draft.jobPhotos.length; index += 1) {
@@ -81,9 +86,11 @@ export async function submitClientPostJob(input: {
       }
     }
     if (!current()) return;
+    stage(3);
     let refreshFailed = false;
     try { await refresh(operation.ownerId); } catch { refreshFailed = true; }
     if (!current()) return;
+    stage(4);
     let success: string;
     const count = draft.jobPhotos.length;
     if (count === 0) success = 'Job posted. Waiting for a worker to accept.';
@@ -94,6 +101,7 @@ export async function submitClientPostJob(input: {
       success = 'Job posted. ' + uploadedPhotoCount + ' of ' + count + ' photos uploaded; ' + failed + ' ' + (failed === 1 ? 'photo' : 'photos') + ' could not be uploaded.';
     }
     if (!current()) return;
+    stage(5);
     owner.settlePost(operation, { success, error: refreshFailed
       ? 'Job posted, but the job list could not be refreshed. Check My Posted Jobs.' : null });
   } finally {

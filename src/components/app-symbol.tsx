@@ -24,6 +24,8 @@ const glyphs: Record<string, string> = {
   lock: '\ue897', mark_email_unread: '\uf18a', photo_camera: '\ue412', refresh: '\ue5d5',
   upload_file: '\ue9fc', verified_user: '\ue8e8', visibility: '\ue8f4', visibility_off: '\ue8f5',
   warning: '\ue002',
+  // Chat composer send (paper plane; code point from expo-symbols android/symbols.json)
+  send: '\ue163',
 };
 
 /** Expo's Android symbol is scalable text inside a fixed-size view. Reserve its full bounds. */

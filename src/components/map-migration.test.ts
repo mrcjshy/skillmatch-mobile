@@ -81,6 +81,7 @@ function harness(file: string, nativeAvailable = true, dev = false, overrides: R
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24, bottom: 24 }) },
     '@/constants/theme': { SkillMatchTheme: { ui, border: {}, surface: {}, text: {}, feedback: {} } },
     '@/lib/native-job-map': { jobMapRuntime: nativeAvailable ? runtime : null, JOB_MAP_STYLE: 'https://tiles.openfreemap.org/styles/liberty' },
+    '@/components/map-type-toggle': { MapTypeToggle: 'MapTypeToggle' }, '@/lib/map-type': { useMapStyle: (style: unknown) => style },
     '@/lib/picker-map-style': { PICKER_MAP_STYLE },
     '@/lib/map-coordinates': coordinates,
     '@/lib/canonical-job-location': canonical,

@@ -7,6 +7,7 @@ import { tamaguiConfig } from '../../tamagui.config';
 import { PushNotificationInboxIntent } from '@/components/push-notification-inbox-intent';
 import { IncomingMessageBannerHost } from '@/components/incoming-message-banner-host';
 import { IncomingCallHost } from '@/components/incoming-call-host';
+import { LaunchOverlay } from '@/components/launch-overlay';
 import { LocationStopHost } from '@/components/location-stop-host';
 import { SessionReconnectingScreen } from '@/components/session-reconnecting-screen';
 import { StateScreen } from '@/components/state-screen';
@@ -19,6 +20,7 @@ import {
   useAccount,
   type AccountContextValue,
 } from '@/providers/account-provider';
+import { ProfileGateProvider, useProfileGate, type ProfileGate } from '@/providers/profile-gate-provider';
 import {
   SessionProvider,
   useSession,
@@ -48,6 +50,7 @@ export type AccessState =
   | 'needs-phone-verification'
   | 'blocked'
   | 'needs-consent'
+  | 'needs-profile'
   | 'worker-identity'
   | 'worker'
   | 'client'
@@ -68,7 +71,10 @@ export function deriveAccessState(
   accountValue: Pick<
     AccountContextValue,
     'account' | 'status' | 'accountError' | 'hasCurrentConsent' | 'workerOnboardingState'
-  >,
+  > & {
+    /** REG-01 profile step; undefined skips it (not applicable, or a caller that predates it). */
+    profileGate?: ProfileGate;
+  },
   phoneOtpEnabled = isPhoneOtpEnabled()
 ): AccessState {
   const { session, isSessionLoading, sessionError, recoveryStatus } = sessionValue;
@@ -105,16 +111,26 @@ export function deriveAccessState(
   }
   if (resolved && account.is_active === true && account.role === 'worker') {
     if (hasCurrentConsent !== true) return 'needs-consent';
+    // Profile and resume come before ID verification (REG-01).
+    if (accountValue.profileGate === 'loading') return 'account-pending';
+    if (accountValue.profileGate === 'incomplete') return 'needs-profile';
     return canEnterWorkerApp(workerOnboardingState) ? 'worker' : 'worker-identity';
   }
   if (resolved && account.is_active === true && account.role === 'client') {
     if (hasCurrentConsent !== true) return 'needs-consent';
+    if (accountValue.profileGate === 'loading') return 'account-pending';
+    if (accountValue.profileGate === 'incomplete') return 'needs-profile';
     return 'client';
   }
 
   // status === 'error', resolved with null account, invalid role, invalid
   // is_active, or any other malformed authenticated non-pending state.
   return 'account-failure';
+}
+
+/** The boot states the launch overlay waits through (both render the inline loading StateScreen). */
+export function isLaunchBooting(access: AccessState): boolean {
+  return access === 'session-restoring' || access === 'account-pending';
 }
 
 /** Forward target per routed state. Inline states have no route. */
@@ -124,6 +140,7 @@ export const ACCESS_ROUTE: Partial<Record<AccessState, Href>> = {
   'needs-phone-verification': '/verify-phone' as Href,
   blocked: '/blocked',
   'needs-consent': '/legal-consent',
+  'needs-profile': '/complete-profile' as Href,
   'worker-identity': '/verify-identity',
   worker: '/worker',
   client: '/client',
@@ -134,7 +151,8 @@ export const ACCESS_ROUTE: Partial<Record<AccessState, Href>> = {
 function RootNavigator() {
   const sessionValue = useSession();
   const accountValue = useAccount();
-  const access = deriveAccessState(sessionValue, accountValue);
+  const { profileGate } = useProfileGate();
+  const access = deriveAccessState(sessionValue, { ...accountValue, profileGate });
   const pathname = usePathname();
   const params = useGlobalSearchParams();
   const ownerId = sessionValue.session?.user.id ?? null;
@@ -183,6 +201,7 @@ function RootNavigator() {
           access === 'signed-out' ||
           access === 'needs-phone-verification' ||
           access === 'needs-consent' ||
+          access === 'needs-profile' ||
           access === 'worker-identity'
         }
       >
@@ -214,17 +233,32 @@ function RootNavigator() {
   );
 }
 
+/**
+ * The launch hand-off over everything, from the first frame: Itik exactly where the native splash
+ * left him, until the boot state is ready (see LaunchOverlay). Unmounts itself once it has left.
+ */
+function RootLaunchOverlay() {
+  const sessionValue = useSession();
+  const accountValue = useAccount();
+  const { profileGate } = useProfileGate();
+  const access = deriveAccessState(sessionValue, { ...accountValue, profileGate });
+  return <LaunchOverlay booting={isLaunchBooting(access)} />;
+}
+
 export default function RootLayout() {
   return (
     <SessionProvider>
       <AccountProvider>
-        <TamaguiProvider config={tamaguiConfig} defaultTheme="skillmatch">
-          <PushNotificationInboxIntent />
-          <RootNavigator />
-          <IncomingMessageBannerHost />
-          <IncomingCallHost />
-          <LocationStopHost />
-        </TamaguiProvider>
+        <ProfileGateProvider>
+          <TamaguiProvider config={tamaguiConfig} defaultTheme="skillmatch">
+            <PushNotificationInboxIntent />
+            <RootNavigator />
+            <IncomingMessageBannerHost />
+            <IncomingCallHost />
+            <LocationStopHost />
+            <RootLaunchOverlay />
+          </TamaguiProvider>
+        </ProfileGateProvider>
       </AccountProvider>
     </SessionProvider>
   );

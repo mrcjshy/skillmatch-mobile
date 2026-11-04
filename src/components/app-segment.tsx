@@ -38,7 +38,7 @@ export function AppSegment<T extends string>({
       accessibilityLabel={accessibilityLabel}
       style={[styles.track, contentSized && styles.trackContentSized, style]}
     >
-      {options.map((option) => {
+      {options.map((option, index) => {
         const selected = option.value === value;
         return (
           <Pressable
@@ -51,6 +51,7 @@ export function AppSegment<T extends string>({
             style={({ pressed }) => [
               styles.option,
               contentSized && styles.optionContentSized,
+              index > 0 && !contentSized ? styles.optionDivided : null,
               selected ? styles.optionSelected : null,
               pressed && !disabled ? styles.optionPressed : null,
               disabled ? styles.optionDisabled : null,
@@ -67,14 +68,14 @@ export function AppSegment<T extends string>({
 function createStyles(ui: UiTheme) {
   const { colors, type, spacing, radius, size } = ui;
 const styles = StyleSheet.create({
-  // One outer boundary (>= 3:1) identifies the control; the options inside stay quiet.
+  // M3 segmented buttons: one outlined pill (>= 3:1) split by dividers; it clips its segments.
   track: {
     flexDirection: 'row',
-    backgroundColor: colors.surfaceSunken,
+    backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: colors.controlBorder,
     borderRadius: radius.pill,
-    padding: spacing.xs,
+    overflow: 'hidden',
   },
   option: {
     flex: 1,
@@ -83,19 +84,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
     backgroundColor: 'transparent',
-    borderWidth: 1.5,
+    borderWidth: 0,
     borderColor: 'transparent',
-    borderRadius: radius.pill,
+    borderRadius: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  trackContentSized: { flexWrap: 'wrap', gap: spacing.xs, borderRadius: radius.control },
-  optionContentSized: { flex: 0, flexBasis: 'auto', flexGrow: 1, flexShrink: 0, maxWidth: '100%', borderRadius: radius.control },
+  optionDivided: { borderLeftWidth: 1, borderLeftColor: colors.controlBorder },
+  // Wrapping choices cannot share one pill: each becomes its own outlined M3 segment.
+  trackContentSized: { flexWrap: 'wrap', gap: spacing.xs, borderWidth: 0, borderRadius: radius.control, overflow: 'visible' },
+  optionContentSized: { flex: 0, flexBasis: 'auto', flexGrow: 1, flexShrink: 0, maxWidth: '100%', borderRadius: radius.pill, borderWidth: 1, borderColor: colors.controlBorder },
   optionSelected: {
-    backgroundColor: colors.surface,
-    borderColor: colors.accent,
+    backgroundColor: colors.accentTonal,
   },
-  optionPressed: { backgroundColor: colors.accentSubtle },
+  optionPressed: { backgroundColor: colors.surfaceSunken },
   optionDisabled: { backgroundColor: 'transparent', borderColor: 'transparent' },
   labelDisabled: { color: colors.textSecondary },
   label: {

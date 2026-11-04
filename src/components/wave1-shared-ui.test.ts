@@ -29,19 +29,23 @@ function compile(file: string, modules: Props): Props {
 }
 
 const ui = compile('src/constants/theme.ts', { 'react-native': native, '@/global.css': {} }).SkillMatchTheme.ui;
+// The Post a job page's cobalt material: pure strings, no imports of its own.
+const material = compile('src/constants/cobalt-material.ts', {});
 const base = {
   react: { useRef: (initial: any) => ({ current: initial }), useCallback: (fn: any) => fn },
   'react-native': native,
   'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
   '@/components/refinement-theme': { useUiTheme: () => ui },
+  '@/constants/cobalt-material': material,
   '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
 
   '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
+      '@/components/skillmatch-mascot': { SkillMatchMascot: 'SkillMatchMascot' },
   'expo-symbols': {},
   'expo-status-bar': { StatusBar: 'StatusBar' },
   'expo-router': { Link: 'Link' },
   'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24, bottom: 16 }) },
-  '@/assets/images/skillmatch-logo.png': 'logo',
+  '@/assets/images/skillmatch-mark.png': 'logo',
 };
 
 /** Minimal hook store so stateful components can be driven press by press. */
@@ -93,10 +97,13 @@ describe('AuthScreen shell', () => {
     expect(order.indexOf('Child')).toBeLessThan(order.indexOf('Footer'));
   });
 
-  it('shows a compact wordmark by default and omits it for later steps', () => {
+  it('shows the Itik brand tile alone, centred, by default and omits it for later steps (owner, 2026-11-05)', () => {
     const withBrand = AuthScreen({ title: 'T' });
     expect(ofType(withBrand, 'Image')[0].props.source).toBe('logo');
-    expect(flat(ofType(withBrand, 'Image')[0].props.style)).toMatchObject({ width: 32, height: 32 });
+    expect(flat(ofType(withBrand, 'Image')[0].props.style)).toMatchObject({ width: 64, height: 64 });
+    const brand = ofType(withBrand, 'View').find((node: any) => node.props.accessibilityLabel === 'SkillMatch')!;
+    expect(flat(brand.props.style)).toMatchObject({ alignSelf: 'center' });
+    expect(ofType(withBrand, 'Text').some((node: any) => node.props.children === 'SkillMatch')).toBe(false);
     expect(ofType(AuthScreen({ title: 'T', brand: false }), 'Image')).toHaveLength(0);
   });
 
@@ -170,16 +177,16 @@ describe('StateScreen', () => {
     expect(flat(column.props.style).backgroundColor).toBeUndefined();
   });
 
-  it('shows pulsing dots instead of an icon while loading and keeps the message announced', () => {
+  it('shows a thinking duck while loading and keeps the message announced', () => {
     const tree = StateScreen({ loading: true, title: 'Loading', message: 'Restoring your session…' });
-    expect(ofType(tree, 'PulseDots')).toHaveLength(1);
+    expect(ofType(tree, 'SkillMatchMascot')[0].props.expression).toBe('think');
     expect(ofType(tree, 'AppSymbol')).toHaveLength(0);
     expect(ofType(tree, 'Text').find((node) => node.props.children === 'Restoring your session…')!.props.accessibilityLiveRegion).toBe('polite');
   });
 
   it('tints the cue by meaning and hides it from TalkBack (the title carries the meaning)', () => {
     for (const [tone, fill, ink] of [['error', ui.colors.errorTint, ui.colors.error], ['warning', ui.colors.warningTint, ui.colors.warning], ['success', ui.colors.successTint, ui.colors.success], ['neutral', ui.colors.accentSubtle, ui.colors.accent]]) {
-      const tree = StateScreen({ tone, title: 'T' });
+      const tree = StateScreen({ tone, title: 'T', icon: { android: 'info' } });
       const cue = ofType(tree, 'View').find((node) => node.props.importantForAccessibility === 'no-hide-descendants')!;
       expect(flat(cue.props.style).backgroundColor).toBe(fill);
       expect(ofType(tree, 'AppSymbol')[0].props.tintColor).toBe(ink);
@@ -268,6 +275,25 @@ describe('RadioRow', () => {
     const row = RadioRow({ label: 'Worker', meaning: 'x', selected: true, onPress: vi.fn() });
     const texts = ofType(row, 'Text');
     expect(texts.map((node) => flat(node.props.style).color)).toEqual([ui.colors.textPrimary, ui.colors.textSecondary]);
+  });
+
+  it('in the cobalt appearance turns only the chosen row lit cobalt, with a white mark and label', () => {
+    const chosen = RadioRow({ label: 'Cash', selected: true, appearance: 'cobalt', onPress: vi.fn() });
+    expect(chosen.props.accessibilityRole).toBe('radio');
+    expect(chosen.props.accessibilityState).toEqual({ selected: true, disabled: false });
+    // Same 2dp edge and padding as the default selected row, so nothing shifts.
+    const rest = flat(chosen.props.style({ pressed: false }));
+    expect(rest).toMatchObject({ minHeight: 56, borderWidth: 2, borderColor: ui.colors.accent, backgroundColor: ui.colors.accent, paddingVertical: 11, paddingHorizontal: 15 });
+    expect(rest.experimental_backgroundImage).toContain('linear-gradient');
+    expect(rest.experimental_backgroundImage).toBe(material.COBALT_SHEEN); // the page's one shared sheen
+    expect(flat(chosen.props.style({ pressed: true })).backgroundColor).toBe(ui.colors.accentPressed);
+    expect(flat(chosen.props.style({ pressed: true })).experimental_backgroundImage).toBe(material.COBALT_SHEEN_PRESSED);
+    expect(ofType(chosen, 'Text').map((node) => flat(node.props.style).color)).toEqual([ui.colors.onAccent]);
+    const marks = ofType(chosen, 'View').map((node) => flat(node.props.style));
+    expect(marks.find((style) => style.width === 24)!.borderColor).toBe(ui.colors.onAccent);
+    expect(marks.find((style) => style.width === 12)!.backgroundColor).toBe(ui.colors.onAccent);
+    const other = RadioRow({ label: 'QR Ph', selected: false, appearance: 'cobalt', onPress: vi.fn() });
+    expect(flat(other.props.style({ pressed: false }))).toMatchObject({ borderWidth: 1, borderColor: ui.colors.controlBorder, backgroundColor: ui.colors.surface });
   });
 
   it('does not react while disabled', () => {
@@ -361,6 +387,20 @@ describe('AppField additions (inputRef, trailing)', () => {
     expect(flat(input.props.style).paddingRight).toBe(48);
     expect(flat(slot.props.style)).toMatchObject({ position: 'absolute', top: 0, bottom: 0, right: 0, width: 48 });
     expect(slot.props.children).toBe(trailing);
+  });
+
+  // 2026-11-04 chat composer: the send icon sits beside the last line of a growing multiline field.
+  it('centres the trailing control on one line and bottom-aligns it in a multiline field, passing other taps to the input', () => {
+    const trailing = element('Send', {});
+    for (const multiline of [false, true]) {
+      const [input, slot] = appField({ trailing, multiline }).props.children[1].props.children;
+      expect(input.props.multiline).toBe(multiline);
+      expect(flat(input.props.style).paddingRight).toBe(48);
+      expect(flat(slot.props.style)).toMatchObject({ position: 'absolute', top: 0, bottom: 0, right: 0, width: 48, alignItems: 'center',
+        justifyContent: multiline ? 'flex-end' : 'center' });
+      expect(slot.props.pointerEvents).toBe('box-none');
+      expect(slot.props.children).toBe(trailing);
+    }
   });
 
   it('hands the caller a focus handle without changing the input contract', () => {

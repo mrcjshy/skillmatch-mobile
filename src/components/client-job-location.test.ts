@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { expect, it, vi } from 'vitest';
+import * as cobaltMaterial from '../constants/cobalt-material';
 import { readOpenJobLocation, saveOpenJobLocation } from '@/lib/client-job-location';
 import { SkillMatchTheme } from '@/constants/theme';
 
@@ -43,6 +44,7 @@ function harness(options: { dismissalLabel?: string; isOperationCurrent?: () => 
     '@/lib/realtime': { NOTIFICATION_INSERTED: 'notification_inserted', userNotificationsTopic: (id: string) => id,
       subscribeInvalidation: ({ onInvalidate }: any) => { invalidate = onInvalidate; return vi.fn(); } },
     '@/constants/theme': { SkillMatchTheme },
+    '@/constants/cobalt-material': cobaltMaterial,
   };
   const exports: Record<string, any> = {};
   const source = ts.transpileModule(readFileSync('src/components/client-job-location.tsx', 'utf8'), {
@@ -105,6 +107,7 @@ it('checks contrast of composed location dismissal/loading/edit/save controls on
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },
     'react-native': { Pressable: 'Pressable', Text: 'Text', ActivityIndicator: 'Spinner', StyleSheet: { create: (s: unknown) => s } },
     '@/constants/theme': { SkillMatchTheme },
+    '@/constants/cobalt-material': cobaltMaterial,
   };
   runInNewContext(buttonSource, { exports: buttonExports, require: (name: string) => name === '@/components/refinement-theme' ? { useUiTheme: () => SkillMatchTheme.ui } : modules[name] });
   const flat = (style: any): any => Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean).map(flat)) : style ?? {};

@@ -46,7 +46,7 @@ function harness(existing?: ReturnType<typeof createClientPostJobDraftOwner>, su
   const theme = load('src/constants/theme.ts', { 'react-native': native, '@/global.css': {} });
   const modules: Props = {
     react: { useState: (initial: any) => { const i = cursor++; if (!(i in state)) state[i] = typeof initial === 'function' ? initial() : initial;
-      return [state[i], (next: any) => { state[i] = typeof next === 'function' ? next(state[i]) : next; }]; }, useCallback: (fn: any) => fn, useLayoutEffect: (fn: any) => fn() },
+      return [state[i], (next: any) => { state[i] = typeof next === 'function' ? next(state[i]) : next; }]; }, useCallback: (fn: any) => fn, useLayoutEffect: (fn: any) => fn(), useEffect: (fn: any) => { fn(); } },
     'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' }, 'react-native': native,
     'expo-router': { useNavigation: () => navigation, useRouter: () => router, useFocusEffect: (fn: any) => { if (!cleanup) cleanup = fn(); } },
     'expo-router/react-navigation': { useHeaderHeight: () => 80, useIsFocused: () => focused, usePreventRemove: (enabled: boolean, callback: any) => { prevention = { enabled, callback }; } },
@@ -54,6 +54,12 @@ function harness(existing?: ReturnType<typeof createClientPostJobDraftOwner>, su
     '@/constants/theme': theme, '@/lib/date-time': dateTime, '@/lib/job-location': location, '@/lib/job-payment': payment,
     '@/lib/job-posting-schedule': schedule, '@/lib/job-skill-suggestions': { ...suggestions, JOB_SKILL_SUGGESTIONS_ENABLED: suggestionsEnabled }, '@/lib/post-job-wizard': wizard, '@/lib/post-job-skill-selection': skillSelection,
     '@/lib/client-post-job-submission': submission, '@/lib/recent-locations': { saveRecentLocation: recent },
+    '@/lib/profile-details': { loadMyHomeLocation: async () => null },
+    '@/components/posting-progress-overlay': { PostingProgressOverlay: 'PostingProgressOverlay' },
+    '@/components/post-job-steps': { PostJobSteps: 'PostJobSteps' },
+    '@/components/cobalt-ui': { CobaltButton: 'CobaltButton', LiftCard: 'LiftCard', CheckBadge: 'CheckBadge', CobaltTicket: 'CobaltTicket', StepStage: 'StepStage', GlowWell: 'GlowWell',
+      COBALT: { base: '#1C3AA6', deep: '#142B7F', sheen: 'linear-gradient(135deg, #2F55D4 0%, #1C3AA6 55%, #142B7F 100%)', lit: 'x', litPressed: 'x', text: '#FFFFFF', textSecondary: '#DDE1FF', hairline: 'x' } },
+    '@/lib/posting-hold': { waitForPostedChecklist: async () => undefined },
     '@/lib/client-post-job-navigation': postNavigation,
     '@/lib/canonical-job-location': canonicalLocation,
     '@/lib/job-description-presets': presets,
@@ -305,6 +311,8 @@ it('preserves fee presets and custom value matching, payment options, populated 
   h.press('Next'); const review = h.render(); const text = [...all(review, node => node.type === 'Text').map(node => node.props.children).flat(), ...all(review, node => node.type === 'FactRow').map(node => node.props.value)].join(' ');
   expect(text).toContain('Plumbing, Electrical'); expect(text).toContain('Very long work description'); expect(text).toContain('Confirmed address');
   expect(text).toContain('QR Ph'); expect(text).toContain('500');
+  expect(all(review, node => node.type === 'FactRow' && node.props.label === 'Budget').map(node => node.props.value)).toEqual(['₱500']);
+  expect(all(review, node => node.type === 'Text' && node.props.children === '₱500')).toHaveLength(0);
 });
 it('retains final posting readiness protection and disables the form while posting', () => {
   const h = harness(); h.owner.updateDraft({ ...valid, wizardStep: 4 }); h.jobs.isLoading = true;
@@ -313,6 +321,52 @@ it('retains final posting readiness protection and disables the form while posti
   h.jobs.loadError = null; h.owner.beginPost(); expect(h.find('Post job').props.disabled).toBe(true);
   expect(h.find('Previous step').props.disabled).toBe(true);
 });
+it('shows the Post a job checklist on every wizard step instead of the old segment bar', () => {
+  const h = harness();
+  for (const wizardStep of [1, 2, 3, 4, 3, 2] as const) {
+    h.owner.updateDraft({ ...valid, wizardStep });
+    expect(h.control('PostJobSteps').props).toEqual({ step: wizardStep });
+  }
+  const texts = all(h.render(), node => node.type === 'Text').map(node => node.props.children);
+  expect(texts.some(text => Array.isArray(text) && text.includes(' of 4'))).toBe(false);
+});
+it('wears premium cobalt: lit Next and Post, cobalt choices, cobalt review ticket, steps on one stage', () => {
+  const h = harness(); h.owner.updateDraft({ ...valid, wizardStep: 3 });
+  const next = h.control('CobaltButton'); expect(next.props).toMatchObject({ label: 'Next', disabled: false });
+  // Every step's content sits inside the stage; the actions stay outside it, so they never slide.
+  const stage = h.control('StepStage'); expect(stage.props.step).toBe(3);
+  expect(all(stage, node => node.type === 'CobaltButton' || node.props?.label === 'Previous step')).toHaveLength(0);
+  expect(all(h.render(), node => node.type === 'RadioRow').map(node => node.props.appearance)).toEqual(['cobalt', 'cobalt']);
+  // The chosen fee chip carries the finished-dot check; the others do not.
+  const chips = all(h.render(), node => node.props?.accessibilityRole === 'radio' && node.type === 'Pressable');
+  expect(chips.filter(chip => all(chip, node => node.type === 'CheckBadge' && node.props.tone === 'white').length > 0).map(chip => chip.props.accessibilityLabel)).toEqual(['₱1,500']);
+  h.press('Next');
+  const ticket = h.control('CobaltTicket'); const rows = all(ticket, node => node.type === 'FactRow');
+  expect(rows.length).toBe(7); expect(rows.every(row => row.props.tone === 'cobalt')).toBe(true);
+  const post = h.find('Post job'); expect(post.type).toBe('CobaltButton'); expect(post.props).toMatchObject({ loading: false, disabled: false });
+});
+it('glows the description and budget fields only while they have focus', () => {
+  const h = harness(); h.owner.updateDraft({ ...valid, wizardStep: 2 });
+  const well = () => all(h.render(), node => node.type === 'GlowWell')[0];
+  expect(well().props.focused).toBe(false);
+  h.control('AppField').props.onFocus(); expect(well().props.focused).toBe(true);
+  h.control('AppField').props.onBlur(); expect(well().props.focused).toBe(false);
+  h.owner.updateDraft({ wizardStep: 3, feePreset: 'custom' });
+  h.control('TextInput').props.onFocus(); expect(well().props.focused).toBe(true);
+  h.control('TextInput').props.onBlur(); expect(well().props.focused).toBe(false);
+});
+it('covers posting with the checklist, holds with all five stages done, then removes it', async () => {
+  const h = harness(); h.owner.updateDraft({ ...valid, wizardStep: 4 });
+  expect(h.control('PostingProgressOverlay')).toBeUndefined();
+  let atHold: unknown = 'not held';
+  h.modules['@/lib/posting-hold'].waitForPostedChecklist = async () => { atHold = h.control('PostingProgressOverlay')?.props.finished; };
+  h.find('Post job').props.onPress();
+  // Up at once, still posting (the details check finishes before the first network call).
+  const opened = h.control('PostingProgressOverlay').props.finished;
+  expect(opened).toBeGreaterThanOrEqual(0); expect(opened).toBeLessThan(5);
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+  expect(atHold).toBe(5); expect(h.control('PostingProgressOverlay')).toBeUndefined();
+});
 it('final Post uses real orchestration and replaces the wizard with the confirmed Job map', async () => {
   const h = harness(); h.owner.updateDraft({ ...valid, wizardStep: 4 });
   h.find('Post job').props.onPress(); h.find('Post job').props.onPress();
@@ -320,7 +374,7 @@ it('final Post uses real orchestration and replaces the wizard with the confirme
   expect(supabase.rpc).toHaveBeenCalledTimes(1); expect(h.owner.draft.wizardStep).toBe(1);
   expect(all(h.render(), node => node.type === 'Text').map(node => node.props.children)).toContain('Job posted. 1 of 1 photos uploaded. Waiting for a worker to accept.');
   expect(h.navigation.dispatch).not.toHaveBeenCalled(); expect(h.owner.takePendingCreatedJob()).toBeNull();
-  expect(h.router.replace).toHaveBeenCalledExactlyOnceWith({ pathname: '/client/job-details', params: { jobId: '22222222-2222-4222-8222-222222222222' } });
+  expect(h.router.replace).toHaveBeenCalledExactlyOnceWith({ pathname: '/client/job-details', params: { jobId: '22222222-2222-4222-8222-222222222222', posted: '1' } });
 });
 it('never opens tracking for an unknown creation outcome', async () => {
   const h = harness(); h.owner.updateDraft({ ...valid, jobPhotos: [], wizardStep: 4 });
@@ -437,7 +491,7 @@ it('places explicit suggestions between description and manual skills only on St
 it('invalidates suggestion authority synchronously before description ABA and manual picker open/toggle/Done', () => { const h=harness(undefined, true); h.owner.updateDraft(valid); h.owner.updateDraft({wizardStep:2}); const authority=h.control('JobSkillSuggestionsPanel').props.authority; const description=h.control('AppField').props.onChangeText; let previous=authority.revision; description('Other work'); description(valid.description); expect(authority.revision).toBeGreaterThan(previous); previous=authority.revision; h.press('Edit skills'); expect(authority.revision).toBeGreaterThan(previous); previous=authority.revision; h.control('SkillCatalogPicker').props.onToggleSkill('extra'); expect(authority.revision).toBeGreaterThan(previous); previous=authority.revision; h.press('Done'); expect(authority.revision).toBeGreaterThan(previous); expect(supabase.rpc).not.toHaveBeenCalled(); });
 it('invalidates suggestion authority synchronously before leaving Step 2 and on blur', () => { const h=harness(undefined, true); h.owner.updateDraft({...valid,wizardStep:2}); const authority=h.control('JobSkillSuggestionsPanel').props.authority; let previous=authority.revision; h.press('Next'); expect(authority.revision).toBeGreaterThan(previous); previous=authority.revision; h.blur(); expect(authority.revision).toBeGreaterThan(previous); });
 it('scopes confirmed recents to captured lifetime and refuses an old scope after blur or session replacement', () => { const h=harness(); h.owner.updateDraft({...valid,wizardStep:1}); h.press('Change location'); h.control('JobLocationPicker').props.onConfirm({pin:valid.pin,address:canonicalLocation.JOB_LOCATION_DISPLAY_FALLBACK}); const scope=h.recent.mock.calls[0][0] as any; expect(scope.userId).toBe(h.owner.ownerId); expect(scope.isCurrent()).toBe(true); h.blur(); expect(scope.isCurrent()).toBe(false); h.focus(); expect(scope.isCurrent()).toBe(false); });
-it('discloses current eligible Worker access and labels fallback as general area rather than confirmed street', () => { const h=harness(); h.owner.updateDraft({...valid,wizardStep:1,address:canonicalLocation.JOB_LOCATION_DISPLAY_FALLBACK}); const subtitles=all(h.render(),node=>node.type==='SectionHeader').map(node=>node.props.subtitle).join(' '); expect(subtitles).toContain('Shared only with workers who qualify'); expect(h.find('Change location').props.accessibilityValue.text).toContain('General area'); });
+it('discloses current eligible Worker access and labels fallback as general area rather than confirmed street', () => { const h=harness(); h.owner.updateDraft({...valid,wizardStep:1,address:canonicalLocation.JOB_LOCATION_DISPLAY_FALLBACK}); const tree=h.render(); const lead=all(tree,node=>node.type==='Text').map(node=>node.props.children).join(' '); expect(lead).toContain('Shared only with workers who qualify'); expect(all(tree,node=>node.type==='SectionHeader'&&node.props.title==='Service location')).toHaveLength(0); expect(h.find('Change location').props.accessibilityValue.text).toContain('General area'); });
 it('does not let retained confirmation write after focus ABA or foreground loss', () => { const h=harness(); h.owner.updateDraft({...valid,wizardStep:1}); h.press('Change location'); const old=h.control('JobLocationPicker').props.onConfirm; h.blur(); h.focus(); old({pin:valid.pin,address:'Stale replacement'}); expect(h.owner.draft.address).toBe(valid.address); expect(h.recent).not.toHaveBeenCalled(); h.press('Change location'); const current=h.control('JobLocationPicker').props.onConfirm; h.modules['react-native'].AppState.currentState='background'; current({pin:valid.pin,address:'Background replacement'}); expect(h.owner.draft.address).toBe(valid.address); expect(h.recent).not.toHaveBeenCalled(); });
 
 it('reconciliation hold hides suggestions while keeping description, photos and manual skills', () => {

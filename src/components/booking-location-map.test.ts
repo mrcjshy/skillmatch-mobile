@@ -49,6 +49,7 @@ function harness(runtimeAvailable = true) {
     } },
     '@/hooks/use-booking-pins': { useBookingPins: () => ({ now: 0, view: { status: 'ready', counterpart: null } }) },
     '@/lib/native-job-map': { JOB_MAP_STYLE: {}, jobMapRuntime: runtimeAvailable ? { Map: 'NativeMap', Camera: 'NativeCamera', Marker: 'NativeMarker' } : null },
+    '@/components/map-type-toggle': { MapTypeToggle: 'MapTypeToggle' }, '@/lib/map-type': { useMapStyle: (style: unknown) => style },
     '@/lib/location-pins': { mergeOverlap: () => [], pinFreshness: () => 'expired' },
     '@/lib/location-map-view': {
       bookingMapMarkers: () => [], frameMarkers: () => ({ center: [121, 14], zoom: 15 }),

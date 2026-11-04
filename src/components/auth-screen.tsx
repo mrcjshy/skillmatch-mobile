@@ -101,19 +101,18 @@ export function AuthScreen({ scrollRef, title, description, brand = true, childr
 }
 
 /**
- * Compact wordmark. Its colour is provisional (it follows the accent through the token aliases)
- * and is deliberately not treated as a branding decision here.
+ * The brand: Itik's launcher tile alone, centred (owner, 2026-11-05: minimal, no name). It is the same
+ * mark as the home screen icon and the splash; screen readers still hear "SkillMatch".
  */
 function BrandMark() {
   const styles = createStyles(useUiTheme());
   return (
     <View style={styles.brand} accessible accessibilityLabel="SkillMatch" accessibilityRole="image">
       <Image
-        source={require('@/assets/images/skillmatch-logo.png')}
+        source={require('@/assets/images/skillmatch-mark.png')}
         style={styles.brandLogo}
         accessibilityIgnoresInvertColors
       />
-      <Text style={styles.brandName}>SkillMatch</Text>
     </View>
   );
 }
@@ -157,9 +156,8 @@ function createStyles(ui: UiTheme) {
       alignSelf: 'center',
       gap: spacing.xl,
     },
-    brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-    brandLogo: { width: 32, height: 32 },
-    brandName: { ...type.sectionTitle, color: colors.accent },
+    brand: { alignSelf: 'center' },
+    brandLogo: { width: 64, height: 64 },
     header: { gap: spacing.sm },
     title: { ...type.screenTitle, color: colors.textPrimary },
     description: { ...type.body, color: colors.textSecondary },

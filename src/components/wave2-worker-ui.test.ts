@@ -89,10 +89,25 @@ describe('FactRow', () => {
     expect(row.props.accessible).toBe(true);
     const [label, value] = ofType(row, 'Text');
     expect(flat(label.props.style).color).toBe(ui.colors.textSecondary);
-    expect(flat(value.props.style)).toMatchObject({ color: ui.colors.textPrimary, fontWeight: '600' });
+    expect(flat(value.props.style)).toMatchObject({ color: ui.colors.textPrimary, fontWeight: '500' });
     expect(value.props.selectable).toBe(true);
     expect(value.props.numberOfLines).toBeUndefined();
     expect(ofType(row, 'AppSymbol')).toHaveLength(1);
+  });
+});
+
+describe('FactRow on cobalt (Post a job review)', () => {
+  const { FactRow } = compile('src/components/fact-row.tsx', base);
+
+  it('reads white over an onAccentSecondary label with a white icon, and speaks the same', () => {
+    const row = FactRow({ icon: { android: 'schedule' }, label: 'Schedule', value: 'Nov 6 at 6:30 AM', strong: true, tone: 'cobalt' });
+    expect(row.props.accessibilityLabel).toBe('Schedule: Nov 6 at 6:30 AM');
+    const [label, value] = ofType(row, 'Text');
+    expect(flat(label.props.style).color).toBe(ui.colors.onAccentSecondary);
+    expect(flat(value.props.style)).toMatchObject({ color: ui.colors.onAccent, fontWeight: '500' });
+    expect(ofType(row, 'AppSymbol')[0].props.tintColor).toBe(ui.colors.onAccent);
+    const plain = FactRow({ icon: { android: 'schedule' }, label: 'Schedule', value: 'x' });
+    expect(ofType(plain, 'AppSymbol')[0].props.tintColor).toBe(ui.colors.accent);
   });
 });
 

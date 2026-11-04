@@ -31,7 +31,7 @@ it('gives the actual bell 48 by 48 minima while preserving icon and hit slop', (
   const { element } = render('worker');
   expect(flat(element.props.style({ pressed: false }))).toMatchObject({ minHeight: 48, minWidth: 48 });
   expect(element.props.hitSlop).toBe(8);
-  expect(element.props.children[0].props).toMatchObject({ size: 24, tintColor: '#1B1F24', name: { android: 'notifications_none', ios: 'bell' } });
+  expect(element.props.children[0].props).toMatchObject({ size: 24, tintColor: '#1B1B21', name: { android: 'notifications_none', ios: 'bell' } });
 });
 it('checks symbol contrast against the actual header surface in both press states', () => {
   const { element, colors } = render('worker');
@@ -56,7 +56,7 @@ it('uses selected pressed feedback and restores resting presentation without opa
   const { element } = render('client');
   const rest = flat(element.props.style({ pressed: false }));
   const pressed = flat(element.props.style({ pressed: true }));
-  expect(pressed.backgroundColor).toBe('#E9EEFC');
+  expect(pressed.backgroundColor).toBe('#DDE1FF');
   expect(pressed.opacity).toBeUndefined();
   expect(pressed.backgroundColor).not.toBe(rest.backgroundColor);
   expect(flat(element.props.style({ pressed: false }))).toEqual(rest);

@@ -179,7 +179,7 @@ it('keeps every static chip variant bounded, growing and fully labeled with call
   for (const variant of ['neutral', 'selected', 'positive', 'warning', 'danger']) {
     const tree = render(AppChip({ label: longName, variant }));
     const s = flat(tree.props.style), text = all(tree, 'Text')[0];
-    expect(s.minHeight).toBe(28);
+    expect(s.minHeight).toBe(32); // M3 chip height
     expect(s.height).toBeUndefined();
     expect(s.maxWidth).toBe('100%');
     expect(s.flexShrink).toBe(1);

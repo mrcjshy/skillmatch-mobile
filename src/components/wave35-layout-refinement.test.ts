@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SkillMatchTheme } from '@/constants/theme';
-import { homeDate, homeGreeting } from '@/lib/home-greeting';
+import { greetingName, homeGreeting, homeShortDate } from '@/lib/home-greeting';
 import { createCoalescedInvalidation } from '@/lib/realtime';
 import { loadHasUnreadNotifications } from '@/lib/notification-unread';
 import { supabase } from '@/lib/supabase';
@@ -35,51 +35,80 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe('shared Home greeting, date and balanced title', () => {
   function headerHarness(role: string) {
-    let now: Date | undefined, focus!: () => () => void, onState!: () => void;
+    let now: Date | undefined, arrivals: number | undefined, focus!: () => () => void, onState!: () => void;
+    const waves: number[] = [];
     const appState = { currentState: 'active', addEventListener: (_event: string, callback: () => void) => { onState = callback; return { remove: noop }; } };
     const { HomeStickyHeader } = compile('src/components/home-header.tsx', {
-      react: { useState: (initial: () => Date) => { now ??= initial(); return [now, (value: Date) => { now = value; }]; }, useCallback: (fn: unknown) => fn },
-      'react-native': { ...native, AppState: appState },
+      react: {
+        useState: (initial: unknown) => {
+          if (typeof initial === 'function') { now ??= (initial as () => Date)(); return [now, (value: Date) => { now = value; }]; }
+          arrivals ??= initial as number;
+          return [arrivals, (value: number | ((n: number) => number)) => { arrivals = typeof value === 'function' ? value(arrivals!) : value; }];
+        },
+        useCallback: (fn: unknown) => fn,
+      },
+      '@/components/motion': { MotionView: 'MotionView', useGreetingWave: (play: number) => { waves.push(play); return { wave: play }; } },
+      'react-native': { ...native, Image: 'Image', AppState: appState },
       'expo-router': { useFocusEffect: (fn: typeof focus) => { focus = fn; } },
+      '@/assets/images/greeting/sun.png': 'sky-sun', '@/assets/images/greeting/sun-cloud.png': 'sky-sun-cloud', '@/assets/images/greeting/moon.png': 'sky-moon',
       'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24 }) },
       '@/components/notification-bell': { NotificationBell: 'NotificationBell' },
       '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
-      '@/lib/home-greeting': { homeDate, homeGreeting },
+      '@/lib/home-greeting': { greetingName, homeGreeting, homeShortDate },
     });
-    return { render: (name = 'Alex') => HomeStickyHeader({ name, role }), focus: () => focus(), resume: () => onState() };
+    return { render: (name = 'Alex') => HomeStickyHeader({ name, role }), focus: () => focus(), resume: () => onState(), waves };
   }
   it.each(['worker', 'client'])('%s shows the actual local greeting, name and calendar date', role => {
     vi.useFakeTimers(); const now = new Date(2026, 9, 3, 9, 15); vi.setSystemTime(now);
     const h = headerHarness(role), tree = h.render();
-    expect(text(tree)).toContain('Good morning,'); expect(text(tree)).toContain(homeDate(now));
+    expect(text(tree)).toContain('Good morning,'); expect(text(tree)).toContain(homeShortDate(now));
     expect(nodes(tree).find(n => n.type === 'Text' && n.props.accessibilityRole === 'header' && n.props.children === 'Alex')).toBeDefined();
     expect(nodes(tree).find(n => n.type === 'NotificationBell')!.props.role).toBe(role);
     expect(nodes(tree).filter(n => n.type === 'Text').every(n => n.props.numberOfLines === undefined)).toBe(true);
   });
-  it('gives the greeting a hierarchy: small accent context line with the date, then the name strongest', () => {
+  it('stays compact: a 3D sky icon for the time of day, greeting and short date on one line, then the name with a waving hand', () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 9, 3, 20, 0));
-    const tree = headerHarness('worker').render('Jomerson');
+    const h = headerHarness('worker');
+    const tree = h.render('jomerson');
+    const flat = (style: any) => Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
+    // No tinted panel: the header sits on the canvas with its hairline, as before.
+    expect(flat(tree.props.style)).toMatchObject({ backgroundColor: SkillMatchTheme.ui.colors.canvas, borderBottomWidth: 1 });
+    expect(flat(tree.props.style).borderBottomLeftRadius).toBeUndefined();
+    // The evening moon, decorative and hidden from screen readers.
+    const art = nodes(tree).find(n => n.type === 'Image')!;
+    expect(art.props.source).toBe('sky-moon');
+    expect(nodes(tree).find(n => n.props.importantForAccessibility === 'no-hide-descendants' && nodes(n).includes(art))).toBeDefined();
+    // Greeting and date share one line; the capitalised name is the single, strongest header.
     const texts = nodes(tree).filter(n => n.type === 'Text');
-    const salutation = texts.find(n => text(n) === 'Good evening,')!, date = texts.find(n => text(n) === homeDate(new Date(2026, 9, 3)))!;
+    const salutation = texts.find(n => text(n).startsWith('Good evening') && text(n).includes('·'))!;
+    expect(text(salutation)).toBe(`Good evening,  ·  ${homeShortDate(new Date(2026, 9, 3))}`);
     const name = texts.find(n => n.props.children === 'Jomerson')!;
-    expect(salutation.props.style).toMatchObject({ fontSize: 14, fontWeight: '600', color: SkillMatchTheme.ui.colors.accent });
-    expect(date.props.style).toMatchObject({ fontSize: 14, color: SkillMatchTheme.ui.colors.textSecondary });
-    expect(name.props.style).toMatchObject({ fontSize: 22, fontWeight: '700', color: SkillMatchTheme.ui.colors.textPrimary });
-    expect(homeDate(new Date(2026, 9, 3))).toMatch(/ · /);
-    // Wave 7: greeting, then the name, then the date, top to bottom, in one shrinkable column.
+    expect(name.props.accessibilityRole).toBe('header');
+    expect(texts.filter(n => n.props.accessibilityRole === 'header')).toHaveLength(1);
+    expect(flat(name.props.style)).toMatchObject({ fontSize: 24, fontWeight: '800', color: SkillMatchTheme.ui.colors.textPrimary });
+    // Two text lines beside the icon: greeting line, then name.
     const column = nodes(tree).find(n => n.type === 'View' && n.props.style?.flex === 1 && n.props.style?.minWidth === 0)!;
-    const order = nodes(column).filter(n => n.type === 'Text');
-    expect(order).toEqual([salutation, name, date]);
-    // A decorative time-of-day glyph, hidden from screen readers.
-    const glyph = nodes(tree).find(n => n.type === 'AppSymbol')!;
-    expect(glyph.props.name).toEqual({ android: 'dark_mode', ios: 'moon' });
-    expect(nodes(tree).find(n => n.props.importantForAccessibility === 'no-hide-descendants' && nodes(n).includes(glyph))).toBeDefined();
-    expect(text(headerHarness('client').render(''))).not.toContain(',');
+    expect(column.props.children.filter(Boolean)).toHaveLength(2);
+    // The hand is decorative and waves again each time Home is focused.
+    const hand = nodes(tree).find(n => n.type === 'MotionView')!;
+    expect(hand.props).toMatchObject({ accessible: false, importantForAccessibility: 'no-hide-descendants' });
+    expect(text(hand)).toBe('👋');
+    h.focus(); h.render('jomerson'); expect(h.waves.at(-1)).toBe(1);
+    // No name: no comma and no hand.
+    const empty = headerHarness('client').render('');
+    expect(text(empty)).toContain('Good evening  ·  ');
+    expect(text(empty)).not.toContain('Good evening,');
+    expect(nodes(empty).some(n => n.type === 'MotionView')).toBe(false);
+    // Morning shows the sun, afternoon the sun behind a cloud.
+    vi.setSystemTime(new Date(2026, 9, 3, 8, 0));
+    expect(nodes(headerHarness('client').render()).find(n => n.type === 'Image')!.props.source).toBe('sky-sun');
+    vi.setSystemTime(new Date(2026, 9, 3, 14, 0));
+    expect(nodes(headerHarness('client').render()).find(n => n.type === 'Image')!.props.source).toBe('sky-sun-cloud');
   });
   it('updates on focus, time changes and foreground resume without leaving a timer after blur', () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 9, 3, 23, 59));
     const h = headerHarness('worker'); h.render(); const cleanup = h.focus();
-    vi.advanceTimersByTime(60_000); expect(text(h.render())).toContain(homeDate(new Date(2026, 9, 4)));
+    vi.advanceTimersByTime(60_000); expect(text(h.render())).toContain(homeShortDate(new Date(2026, 9, 4)));
     vi.setSystemTime(new Date(2026, 9, 4, 12, 0)); h.resume(); expect(text(h.render())).toContain('Good afternoon,');
     cleanup(); expect(vi.getTimerCount()).toBe(0);
   });
@@ -87,7 +116,8 @@ describe('shared Home greeting, date and balanced title', () => {
     const tree = headerHarness('client').render();
     expect(text(tree)).not.toContain('Home');
     const row = nodes(tree).find(n => n.type === 'View' && n.props.style?.flexDirection === 'row' && nodes(n).some(c => c.type === 'NotificationBell'))!;
-    const [greeting, slot] = row.props.children;
+    const [sky, greeting, slot] = row.props.children;
+    expect(sky.props.importantForAccessibility).toBe('no-hide-descendants');
     expect(greeting.props.style).toMatchObject({ flex: 1, minWidth: 0 });
     expect(slot.props.style).toMatchObject({ width: 48, minHeight: 48 });
     expect(nodes(slot).map(n => n.type)).toContain('NotificationBell');

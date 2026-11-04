@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View, type TextInput } from 'react-native';
+import { StyleSheet, View, type TextInput } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
 import { AppDivider } from '@/components/app-divider';
@@ -34,6 +34,10 @@ type SignInMode = 'email' | 'phone';
  * authoritative users row, and root access-state routing sends the signed-in
  * user to the Worker, Client, or Administrator shell, or to blocked /
  * bootstrap-error as appropriate.
+ *
+ * Minimal by owner direction (2026-11-04): the brand, the title, labelled fields and the actions.
+ * No guide line under the title, no placeholder or helper text in a field, no lead above
+ * Create an account. Errors still appear beside their field.
  *
  * Email and password is always available. SMS code sign-in is an additional path shown only
  * when EXPO_PUBLIC_PHONE_SIGN_IN_ENABLED is exactly `true`; it signs in an EXISTING account
@@ -226,7 +230,6 @@ export default function LoginScreen() {
   const footer = (
     <>
       <AppDivider />
-      <Text style={styles.footerLead}>New to SkillMatch?</Text>
       {/* Ordinary push: Back from Register returns here. */}
       <AppButton
         label="Create an account"
@@ -247,7 +250,6 @@ export default function LoginScreen() {
       <AuthScreen
         scrollRef={scrollRef}
         title="Sign in"
-        description="Enter the mobile number linked to your account. We will text you a six-digit code."
         footer={footer}
       >
         {sessionNotice ? <FormMessage tone={sessionNotice.tone} message={sessionNotice.text} /> : null}
@@ -261,13 +263,11 @@ export default function LoginScreen() {
               setPhone(value);
               setFieldError((current) => (current?.field === 'phone' ? null : current));
             }}
-            placeholder="0917 123 4567"
             keyboardType="phone-pad"
             autoCorrect={false}
             autoComplete="tel"
             textContentType="telephoneNumber"
             disabled={isSubmitting || sentPhone !== null}
-            helperText="A Philippine mobile number, such as 0917 123 4567."
             errorText={fieldError?.field === 'phone' ? fieldError.message : undefined}
             accessibilityLabel="Mobile number"
           />
@@ -281,7 +281,6 @@ export default function LoginScreen() {
                 setCode(value);
                 setFieldError((current) => (current?.field === 'code' ? null : current));
               }}
-              placeholder="000000"
               keyboardType="number-pad"
               autoComplete="sms-otp"
               textContentType="oneTimeCode"
@@ -340,7 +339,6 @@ export default function LoginScreen() {
     <AuthScreen
       scrollRef={scrollRef}
       title="Sign in"
-      description="Enter your email and password to continue."
       footer={footer}
     >
       {sessionNotice ? <FormMessage tone={sessionNotice.tone} message={sessionNotice.text} /> : null}
@@ -354,7 +352,6 @@ export default function LoginScreen() {
             setEmail(value);
             setFieldError((current) => (current?.field === 'email' ? null : current));
           }}
-          placeholder="you@example.com"
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
@@ -400,10 +397,9 @@ export default function LoginScreen() {
 }
 
 function createStyles(ui: UiTheme) {
-  const { colors, type, spacing } = ui;
+  const { spacing } = ui;
   return StyleSheet.create({
     form: { gap: spacing.lg },
     actions: { gap: spacing.xs },
-    footerLead: { ...type.body, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.sm },
   });
 }

@@ -11,14 +11,14 @@ import { SectionHeader } from '@/components/section-header';
 import { SurfaceGroup } from '@/components/surface-group';
 import {
   BOOKING_KEYS, BOOKING_LABELS, JOB_KEYS, JOB_LABELS,
-  PAYMENT_METHOD_KEYS, PAYMENT_METHOD_LABELS, PAYMENT_STATUS_KEYS, PAYMENT_STATUS_LABELS,
+  PAYMENT_METHOD_DISPLAY_KEYS, PAYMENT_METHOD_LABELS, PAYMENT_STATUS_KEYS, PAYMENT_STATUS_LABELS,
   REPORT_KEYS, REPORT_LABELS, sumBucket, type AdminAnalyticsView,
 } from '@/lib/admin-analytics';
 import { idReviewAttention, plural, reportAttention } from '@/lib/admin-presentation';
 import { formatDetailDateTime } from '@/lib/date-time';
 
 /** QR Ph is the PayMongo method, which runs in TEST mode; say so wherever it is counted. */
-function paymentMethodTitle(method: (typeof PAYMENT_METHOD_KEYS)[number]): string {
+function paymentMethodTitle(method: (typeof PAYMENT_METHOD_DISPLAY_KEYS)[number]): string {
   return method === 'qrph' ? `${PAYMENT_METHOD_LABELS.qrph} (PayMongo TEST)` : PAYMENT_METHOD_LABELS[method];
 }
 
@@ -118,10 +118,10 @@ export function AdminAnalyticsDashboard({
           <View style={styles.section}>
             <SectionHeader
               title="Payments"
-              subtitle="Counts of Bookings by payment method, not money. PayMongo runs in TEST mode, so no real money moves. GCash and Maya are retained legacy categories."
+              subtitle="Counts of Bookings by payment method, not money. PayMongo runs in TEST mode, so no real money moves."
             />
             <SurfaceGroup>
-              {PAYMENT_METHOD_KEYS.map((method) => {
+              {PAYMENT_METHOD_DISPLAY_KEYS.map((method) => {
                 const bucket = summary.paymentsByMethodStatus[method];
                 return (
                   <AdminCountRow

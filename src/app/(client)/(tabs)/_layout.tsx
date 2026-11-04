@@ -1,6 +1,7 @@
 import { Tabs, useRouter, type Href } from 'expo-router';
 import { TabIcon, TabLabel, useAppTabScreenOptions } from '@/components/app-tab-bar';
 import { ClientTabBar } from '@/components/client-tab-bar';
+import { useFloatingTabBar } from '@/components/floating-tab-bar';
 import { SkillMatchTheme } from '@/constants/theme';
 import { useClientPostJobDraft } from '@/providers/client-post-job-draft-provider';
 
@@ -10,7 +11,9 @@ const { size } = SkillMatchTheme.ui;
 // bar's central circular action (Wave 7), not a tab: it pushes the existing Post Job flow, guarded
 // by the current draft owner. Catalog readiness is handled inside Job details.
 export default function ClientTabsLayout() {
-  const screenOptions = useAppTabScreenOptions();
+  const baseOptions = useAppTabScreenOptions();
+  const floating = useFloatingTabBar();
+  const screenOptions = { ...baseOptions, sceneStyle: [baseOptions.sceneStyle, floating.sceneStyle] };
   const router = useRouter();
   const { isPosting, isOwnerCurrent } = useClientPostJobDraft();
   const postDisabled = isPosting || !isOwnerCurrent();
@@ -21,6 +24,7 @@ export default function ClientTabsLayout() {
         tabBar={(props) => (
           <ClientTabBar
             {...props}
+            onHeight={floating.onHeight}
             postDisabled={postDisabled}
             posting={isPosting}
             onPostJob={() => { if (!postDisabled && isOwnerCurrent()) router.push('/client/post-job' as Href); }}
@@ -34,7 +38,7 @@ export default function ClientTabsLayout() {
             tabBarAccessibilityLabel: 'Home',
             headerShown: false,
             tabBarIcon: ({ color }) => (
-              <TabIcon name={{ android: 'home', ios: 'house.fill' }} color={color} size={size.tabIcon} />
+              <TabIcon name={{ android: 'home', ios: 'house.fill' }} color={color} size={size.tabIcon} plain />
             ),
             tabBarLabel: ({ focused, color }) => (
               <TabLabel focused={focused} color={color}>Home</TabLabel>
@@ -51,6 +55,7 @@ export default function ClientTabsLayout() {
                 name={{ android: 'list_alt', ios: 'list.bullet.rectangle' }}
                 color={color}
                 size={size.tabIcon}
+                plain
               />
             ),
             tabBarLabel: ({ focused, color }) => (
@@ -68,6 +73,7 @@ export default function ClientTabsLayout() {
                 name={{ android: 'calendar_month', ios: 'calendar' }}
                 color={color}
                 size={size.tabIcon}
+                plain
               />
             ),
             tabBarLabel: ({ focused, color }) => (
@@ -81,7 +87,7 @@ export default function ClientTabsLayout() {
             title: 'Profile',
             tabBarAccessibilityLabel: 'Profile',
             tabBarIcon: ({ color }) => (
-              <TabIcon name={{ android: 'person', ios: 'person.fill' }} color={color} size={size.tabIcon} />
+              <TabIcon name={{ android: 'person', ios: 'person.fill' }} color={color} size={size.tabIcon} plain />
             ),
             tabBarLabel: ({ focused, color }) => (
               <TabLabel focused={focused} color={color}>Profile</TabLabel>

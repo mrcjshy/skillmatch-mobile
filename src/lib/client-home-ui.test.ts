@@ -44,20 +44,21 @@ function setup(options: { owner?: ReturnType<typeof createClientPostJobDraftOwne
   let focused!: () => (() => void) | undefined;
   const state = options.bookings ?? [];
   const seams: Record<string, Props> = {
-    react: { useState: (initial: unknown) => [Array.isArray(initial) ? state : typeof initial === 'function' ? initial() : initial, noop], useRef: (initial: unknown) => ({ current: initial }), useCallback: (fn: unknown) => fn },
+    react: { useState: (initial: unknown) => [Array.isArray(initial) ? state : typeof initial === 'function' ? initial() : initial, noop], useRef: (initial: unknown) => ({ current: initial }), useCallback: (fn: unknown) => fn, useEffect: () => undefined },
     'react-native': { ...Object.fromEntries(['Text','View','ScrollView','KeyboardAvoidingView','Modal','Pressable','TextInput'].map(n => [n,n])), StyleSheet: { create: (value: unknown) => value }, Platform: { OS: 'android', select: (choices: Props) => choices.default } },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) },
     'expo-router': { useRouter: () => ({ push }), useFocusEffect: (fn: typeof focused) => { focused = fn; } },
     'expo-symbols': { SymbolView: 'SymbolView' },
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },
     '@/providers/account-provider': { useAccount: () => ({ account: { id: 'client-a', full_name: 'Alex Example' } }) },
+    '@/providers/profile-gate-provider': { useProfileGate: () => ({ profileGate: undefined, firstName: null, refreshProfileGate: async () => undefined }) },
     '@/providers/session-provider': { useSession: () => ({ session: { user: { id: 'client-a' } }, sessionRevision: 1 }) },
     '@/providers/client-jobs-provider': { useClientJobs: () => ({ jobs: options.jobs ?? [], skills: [], isLoading: options.loading ?? false, loadError: options.error ?? null, refresh: noop }) },
     '@/providers/client-post-job-draft-provider': { useClientPostJobDraft: () => owner },
     '@/lib/client-post-job-navigation': { postingRecoveryNotice },
     '@/lib/booking-records': { loadClientBookings: loadBookings },
     '@/lib/client-home-booking-focus': { createClientHomeBookingFocus: (args: Parameters<typeof createClientHomeBookingFocus>[0]) => createClientHomeBookingFocus({ ...args, client }) },
-    '@/lib/home-greeting': { homeGreeting: () => 'Good morning' }, '@/lib/initials': { firstNameFromFullName: () => 'Alex' },
+    '@/lib/home-greeting': { homeGreeting: () => 'Good morning' }, '@/lib/initials': { firstNameFromFullName: () => 'Alex' }, '@/lib/client-onboarding': { CLIENT_ONBOARDING_PATH: '/client/onboarding', takeClientOnboardingPending: () => false },
     '@/lib/date-time': { formatCardDateTime: (value: string | null) => value ? 'Jan 2, 12:15 PM' : null },
     '@/lib/job-location': { COPY: {}, initialJobPin: null }, '@/lib/job-photos': {}, '@/lib/job-payment': {},
     '@/lib/job-posting-schedule': {}, '@/lib/post-job-wizard': {}, '@/lib/recent-locations': {},
@@ -77,6 +78,8 @@ function postAction(options: { owner?: ReturnType<typeof createClientPostJobDraf
     'expo-router': { useRouter: () => ({ push }), Tabs: Object.assign('Tabs', { Screen: 'Tabs.Screen' }) },
     'react-native': { StyleSheet: { create: (value: unknown) => value }, Platform: { OS: 'android', select: (choices: Props) => choices.default } },
     '@/components/app-tab-bar': { TabIcon: 'TabIcon', TabLabel: 'TabLabel', useAppTabScreenOptions: () => ({}) },
+    '@/components/floating-tab-bar': { useFloatingTabBar: () => ({ onHeight: () => undefined, sceneStyle: {} }) },
+    '@/lib/client-onboarding': { CLIENT_ONBOARDING_PATH: '/client/onboarding', takeClientOnboardingPending: () => false },
     '@/providers/client-jobs-provider': { useClientJobs: () => ({ isLoading: options.loading ?? false, loadError: options.error ?? null }) },
     '@/providers/client-post-job-draft-provider': { useClientPostJobDraft: () => owner },
   };

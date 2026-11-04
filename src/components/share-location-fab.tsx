@@ -18,6 +18,7 @@ import { AppSymbol } from '@/components/app-symbol';
 import { MotionView, usePressScale } from '@/components/motion';
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
+import { COBALT_LIT, COBALT_SHADOW } from '@/constants/cobalt-material';
 
 const SIZE = 56;
 
@@ -95,7 +96,7 @@ export function ShareLocationFab({ mode, onPress, bottom }: { mode: ShareFabMode
 }
 
 function createStyles(ui: UiTheme) {
-  const { spacing, colors, elevation } = ui;
+  const { spacing, colors } = ui;
   return StyleSheet.create({
     anchor: { position: 'absolute', right: spacing.gutter },
     stage: { width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' },
@@ -103,7 +104,9 @@ function createStyles(ui: UiTheme) {
     ring: { position: 'absolute', width: SIZE, height: SIZE, borderRadius: SIZE / 2, borderWidth: 1.5, borderColor: colors.accent },
     button: {
       width: SIZE, height: SIZE, borderRadius: SIZE / 2, backgroundColor: colors.accent,
-      alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFFFFF', ...elevation.floating,
+      // The Post a job cobalt material (owner 2026-11-04): lit from above, on a cobalt shadow.
+      experimental_backgroundImage: COBALT_LIT, boxShadow: COBALT_SHADOW,
+      alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFFFFF',
     },
     blocked: { opacity: 0.5 },
   });

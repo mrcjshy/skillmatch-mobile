@@ -64,6 +64,7 @@ vi.mock('../../tamagui.config', () => ({ tamaguiConfig: {} }));
 vi.mock('@/components/push-notification-inbox-intent', () => ({ PushNotificationInboxIntent: () => null }));
 vi.mock('@/components/incoming-message-banner-host', () => ({ IncomingMessageBannerHost: () => null }));
 vi.mock('@/components/incoming-call-host', () => ({ IncomingCallHost: () => null }));
+vi.mock('@/components/launch-overlay', () => ({ LaunchOverlay: () => null }));
 vi.mock('@/components/location-stop-host', () => ({ LocationStopHost: () => null }));
 vi.mock('@/components/state-screen', () => ({ StateScreen: ({ message }: any) => { b.messages.push(message); return null; } }));
 vi.mock('@/components/session-reconnecting-screen', () => ({ SessionReconnectingScreen: () => null }));

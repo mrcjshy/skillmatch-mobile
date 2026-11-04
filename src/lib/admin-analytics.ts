@@ -2,7 +2,10 @@ import { supabase } from './supabase';
 
 export const JOB_KEYS = ['open', 'matched', 'completed', 'cancelled', 'unset'] as const;
 export const BOOKING_KEYS = ['pending', 'confirmed', 'completed', 'cancelled', 'no_show'] as const;
+/** The server summary's method buckets (its shape is unchanged). */
 export const PAYMENT_METHOD_KEYS = ['gcash', 'maya', 'qrph', 'cod', 'unset'] as const;
+/** What the Admin dashboard shows: SkillMatch's two methods (QR Ph, Cash) and Not set. */
+export const PAYMENT_METHOD_DISPLAY_KEYS = ['qrph', 'cod', 'unset'] as const;
 export const PAYMENT_STATUS_KEYS = ['pending', 'paid', 'refunded', 'unset'] as const;
 export const REPORT_KEYS = ['submitted', 'under_review', 'resolved', 'dismissed'] as const;
 
@@ -136,8 +139,8 @@ export const JOB_LABELS: Record<(typeof JOB_KEYS)[number], string> = {
 export const BOOKING_LABELS: Record<(typeof BOOKING_KEYS)[number], string> = {
   pending: 'Pending', confirmed: 'Confirmed', completed: 'Completed', cancelled: 'Cancelled', no_show: 'No-show',
 };
-export const PAYMENT_METHOD_LABELS: Record<(typeof PAYMENT_METHOD_KEYS)[number], string> = {
-  gcash: 'GCash (legacy)', maya: 'Maya (legacy)', qrph: 'QR Ph', cod: 'Cash', unset: 'Not set',
+export const PAYMENT_METHOD_LABELS: Record<(typeof PAYMENT_METHOD_DISPLAY_KEYS)[number], string> = {
+  qrph: 'QR Ph', cod: 'Cash', unset: 'Not set',
 };
 export const PAYMENT_STATUS_LABELS: Record<(typeof PAYMENT_STATUS_KEYS)[number], string> = {
   pending: 'Pending', paid: 'Paid', refunded: 'Refunded', unset: 'Not set',

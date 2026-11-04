@@ -86,11 +86,12 @@ describe('Iteration 06 Wave 0 token contract', () => {
     expect(c.info).toBe(c.accent);
   });
 
-  it('uses a warm off-white canvas, not the Iteration 05 cool slate or legacy cream-green', () => {
-    expect(c.canvas).toBe('#F7F6F3');
-    expect(['#F5F6F8', '#F9F6EF']).not.toContain(c.canvas);
+  it('uses the Material 3 surface of the cobalt seed (owner choice 2026-11-04), not the Iteration 06 warm canvas', () => {
+    expect(c.canvas).toBe('#FBF8FF');
+    expect(['#F7F6F3', '#F5F6F8', '#F9F6EF']).not.toContain(c.canvas);
     const [r, , b] = [1, 3, 5].map((o) => parseInt(c.canvas.slice(o, o + 2), 16));
-    expect(r).toBeGreaterThanOrEqual(b); // warm: red channel not below blue
+    expect(b).toBeGreaterThanOrEqual(r); // cobalt-tinted: blue channel not below red
+    expect(c.accent).toBe('#1C3AA6'); // the brand cobalt stays the primary
   });
 
   it('pressed states are visibly distinct from their resting colours', () => {
@@ -98,8 +99,8 @@ describe('Iteration 06 Wave 0 token contract', () => {
     expect(c.accentSubtlePressed).not.toBe(c.accentSubtle);
   });
 
-  it('limits weights to 400 / 600 / 700, keeps body at 16sp and nothing tappable below 14sp', () => {
-    for (const [name, t] of Object.entries(ui.type)) expect(['400', '600', '700'], name).toContain(t.fontWeight);
+  it('limits weights to M3 400 / 500 (and 700 for money), keeps body at 16sp and nothing tappable below 14sp', () => {
+    for (const [name, t] of Object.entries(ui.type)) expect(['400', '500', '700'], name).toContain(t.fontWeight);
     expect(ui.type.body.fontSize).toBe(16);
     for (const name of ['label', 'button', 'helper', 'body', 'bodyEmphasis']) expect(ui.type[name].fontSize, name).toBeGreaterThanOrEqual(14);
     for (const t of Object.values(ui.type)) expect(t.lineHeight).toBeGreaterThan(t.fontSize);
@@ -126,7 +127,7 @@ describe('Iteration 06 Wave 0 token contract', () => {
   it('defines the radius scale and 48dp touch-target rules', () => {
     expect(ui.radius.control).toBe(12);
     expect(ui.radius.card).toBe(16);
-    expect(ui.radius.sheet).toBe(24);
+    expect(ui.radius.sheet).toBe(28); // M3 extra-large
     expect(ui.size.minTarget).toBe(48);
     for (const name of ['secondaryButton', 'ghostButton', 'compactButton', 'iconButton']) expect(ui.size[name], name).toBeGreaterThanOrEqual(48);
     expect(ui.size.primaryButton).toBe(52);

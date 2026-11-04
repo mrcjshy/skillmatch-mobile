@@ -93,6 +93,15 @@ it('renders the compact summary and a tap opens the map-first Booking details di
   // The dock reads nothing itself: Booking details owns the protected booking and location lifetimes.
   expect(h.reads).not.toHaveBeenCalled(); expect(h.readLocation).not.toHaveBeenCalled(); expect(h.subscriptions.size).toBe(0);
 });
+it.each(['client', 'worker'])('%s Home dock clears the floating tab bar: its card rests above the bar, not under the pill', role => {
+  // The dock is the last thing in a tab scene, and tab scenes run under the floating bar by size.tabBarOverlap
+  // (TAB_BAR_OVERLAP). Without that much bottom padding the card's lower half sat under the pill (owner, 2026-11-04).
+  const { spacing, size } = SkillMatchTheme.ui;
+  const dock = nodes(harness(role).render()).find(n => n.props?.gesture)!;
+  expect(size.tabBarOverlap).toBe(48);
+  expect(dock.props.style.paddingBottom).toBe(spacing.sm + size.tabBarOverlap);
+  expect(dock.props.style.flexShrink).toBe(0);
+});
 it('a clear upward swipe on the dock opens Booking details; short or sideways drags do not', () => {
   const h = harness(); const g = gesture(h.render());
   expect(g.onMoveShouldSetPanResponderCapture({}, { dx: 2, dy: -20 })).toBe(true);

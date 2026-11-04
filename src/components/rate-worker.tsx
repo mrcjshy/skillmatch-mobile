@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
+import { SkillMatchMascot } from '@/components/skillmatch-mascot';
 import { StarRatingInput } from '@/components/star-rating-input';
 import { SkillMatchTheme } from '@/constants/theme';
 import {
@@ -114,6 +115,8 @@ export default function RateWorker({ bookingId, onRated }: { bookingId: string; 
 
   return (
     <View style={styles.panel}>
+      {/* One mascot moment: Itik hugs a heart while you rate, and thinks while it sends. */}
+      <View style={styles.mascot}><SkillMatchMascot expression={isSubmitting ? 'think' : 'love'} size={88} /></View>
       <Text style={styles.heading}>{COPY.heading}</Text>
 
       <Text style={styles.label}>{COPY.scoreLabel}</Text>
@@ -172,6 +175,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     borderCurve: 'continuous',
   },
+  mascot: { alignItems: 'center' },
   heading: {
     ...type.sectionTitle,
     color: colors.textPrimary,

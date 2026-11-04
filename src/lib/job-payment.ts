@@ -2,8 +2,7 @@
  * R4 Job posting-time payment intent.
  *
  * Stored values stay `cod` | `qrph`. UI labels are Cash / QR Ph.
- * NULL is legacy compatibility only. `gcash` and `maya` are Booking-schema
- * leftovers and are not Job-level choices.
+ * NULL is legacy compatibility only. Cash and QR Ph are the only methods.
  *
  * METHOD is not TIMING. This module names HOW a Job is paid (Cash or the
  * PayMongo QR Ph TEST simulation). WHEN payment settles (while the Booking is

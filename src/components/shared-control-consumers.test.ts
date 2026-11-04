@@ -6,6 +6,7 @@ import { runInNewContext } from 'node:vm';
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
+import * as cobaltMaterial from '../constants/cobalt-material';
 
 type Props = Record<string, any>;
 const flatten = (style: any): Props => Array.isArray(style)
@@ -32,6 +33,7 @@ function harness() {
     runInNewContext(code, { ...context, exports, require: (name: string) => {
       if (name === '@/components/refinement-theme') return { useUiTheme: () => modules['@/constants/theme'].SkillMatchTheme.ui, RefinementThemeProvider: ({ children }: any) => children };
       if (name === '@/components/skeleton') return { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' };
+      if (name === '@/constants/cobalt-material') return cobaltMaterial;
       if (!(name in modules)) throw Error(`Unexpected import: ${name}`);
       return modules[name];
     } });
@@ -60,6 +62,17 @@ function harness() {
     const result = compile(`export const element = (${selected.getText(source)});`,
       { 'react/jsx-runtime': { jsx, jsxs: jsx } }, { AppButton, styles: styles(file), ...context });
     return { props: result.element.props, control: AppButton(result.element.props) };
+  };
+  // The chat's icon-only send: its real `sendBlocked` line and its Pressable, compiled from source.
+  const send = (context: Props) => {
+    const source = ast(booking);
+    const blocked = nodes(source, node => ts.isVariableStatement(node) && node.getText(source).startsWith('const sendBlocked ='))[0];
+    const pressable = nodes(source, node => ts.isJsxElement(node) && node.openingElement.tagName.getText(source) === 'Pressable'
+      && node.openingElement.attributes.properties.some(attribute => attribute.getText(source) === 'accessibilityLabel="Send message"'))[0];
+    const result = compile(`${blocked.getText(source)}\nexport const element = (${pressable.getText(source)});`,
+      { 'react/jsx-runtime': { jsx, jsxs: jsx } },
+      { ...theme.SkillMatchTheme.ui, Pressable: 'Pressable', PulseDots: 'PulseDots', AppSymbol: 'AppSymbol', styles: styles(booking), ...context });
+    return result.element.props;
   };
   // Mounts the real FAQ screen. Elements stay unrendered, as React passes them.
   const mountFaq = (headerHeight = 0) => {
@@ -126,37 +139,72 @@ function harness() {
       parentStyle: flatten(parent.props.style),
       ui: theme.SkillMatchTheme.ui };
   };
-  return { styles, button, faqInteraction, mountFaq, ui: theme.SkillMatchTheme.ui, size: theme.SkillMatchTheme.ui.size };
+  return { styles, button, send, faqInteraction, mountFaq, ui: theme.SkillMatchTheme.ui, size: theme.SkillMatchTheme.ui.size };
 }
 const booking = 'src/components/booking-chat.tsx';
 const faq = 'src/components/faq-chatbot.tsx';
 
-describe('Booking Chat Send compatibility', () => {
-  it('keeps Send name stable and exposes loading while preserving draft/send blocking', () => {
+// 2026-11-04 owner request: a Messenger-style send icon inside the chat field replaces the labelled
+// Send button, and the characters-remaining countdown is gone.
+describe('Booking Chat send icon compatibility', () => {
+  it('names the icon-only send, keeps draft/send blocking and shows busy dots while sending', () => {
     const h = harness();
     const handleSend = vi.fn();
     for (const isSending of [false, true]) for (const isDraftSendable of [false, true]) {
-      const { props, control } = h.button(booking, 'sendButton', { isSending, isDraftSendable, handleSend });
-      expect(props.label).toBe('Send');
-      expect(props.accessibilityLabel).toBe('Send');
-      expect(props.loading).toBe(isSending);
-      expect(props.disabled).toBe(!isDraftSendable || isSending);
+      const props = h.send({ isSending, isDraftSendable, handleSend });
+      const blocked = !isDraftSendable || isSending;
+      expect(props.accessibilityRole).toBe('button');
+      expect(props.accessibilityLabel).toBe('Send message');
+      expect(props.accessibilityState).toEqual({ disabled: blocked, busy: isSending });
+      expect(props.disabled).toBe(blocked);
       expect(props.onPress).toBe(handleSend);
-      expect(control.props.accessibilityLabel).toBe('Send');
-      expect(control.props.accessibilityState).toEqual({ disabled: !isDraftSendable || isSending, busy: isSending });
-      expect(control.props.children.type).toBe(isSending ? 'PulseDots' : 'Text');
-      if (!control.props.disabled) control.props.onPress();
+      // Icon only: no visible word, the icon itself is hidden from accessibility.
+      expect(props.label).toBeUndefined();
+      const child = props.children;
+      if (isSending) {
+        expect(child.type).toBe('PulseDots');
+        expect(child.props.color).toBe(h.ui.colors.accent);
+      } else {
+        expect(child.type).toBe('AppSymbol');
+        expect(child.props.name).toEqual({ android: 'send', ios: 'paperplane.fill' });
+        expect(child.props.synchronousGlyph).toBe(true);
+        expect(child.props.accessible).toBe(false);
+        expect(child.props.tintColor).toBe(isDraftSendable ? h.ui.colors.accent : h.ui.colors.textMuted);
+      }
+      if (!props.disabled) props.onPress();
     }
     expect(handleSend).toHaveBeenCalledTimes(1);
   });
-  it('lets the Send control grow and preserves the 120 editing viewport', () => {
+  it('gives the send icon a 48dp target inside the field slot, free to grow at large text', () => {
+    const h = harness();
+    for (const isDraftSendable of [false, true]) {
+      const props = h.send({ isSending: false, isDraftSendable, handleSend: vi.fn() });
+      const slop = typeof props.hitSlop === 'number'
+        ? { top: props.hitSlop, bottom: props.hitSlop, left: props.hitSlop, right: props.hitSlop }
+        : { top: 0, bottom: 0, left: 0, right: 0, ...props.hitSlop };
+      for (const pressed of [false, true]) {
+        const box = flatten(props.style({ pressed }));
+        expect(box.width).toBeUndefined();
+        expect(box.height).toBeUndefined();
+        expect(box.minWidth + slop.left + slop.right).toBeGreaterThanOrEqual(h.size.minTarget);
+        expect(box.minHeight + slop.top + slop.bottom).toBeGreaterThanOrEqual(h.size.minTarget);
+        // The whole target fits the field's 48dp trailing slot, its bottom on the field's bottom edge.
+        expect(box.minWidth + slop.left + slop.right).toBeLessThanOrEqual(h.size.iconButton);
+        expect(box.marginBottom).toBe(slop.bottom);
+        expect(box.backgroundColor).toBe(pressed && isDraftSendable ? h.ui.colors.accentSubtle : undefined);
+      }
+    }
+  });
+  it('shapes the field as a one-line pill that grows to the 120 editing viewport, with no counter or button row', () => {
     const h = harness();
     const styles = h.styles(booking);
-    expect(styles.sendButton.height).toBeUndefined();
-    const { control } = h.button(booking, 'sendButton', { isSending: false, isDraftSendable: true, handleSend: vi.fn() });
-    expect(flatten(control.props.style({ pressed: false })).minHeight).toBe(52);
-    expect(flatten(control.props.style({ pressed: false })).height).toBeUndefined();
-    expect(styles.composerInput.maxHeight).toBe(120);
+    expect(styles.composerInput).toMatchObject({ minHeight: h.size.minTarget, maxHeight: 120, borderRadius: h.size.minTarget / 2 });
+    expect(styles.composerInput.height).toBeUndefined();
+    for (const gone of ['composerRow', 'counter', 'counterOver', 'sendButton']) expect(styles[gone], gone).toBeUndefined();
+    const source = read(booking);
+    expect(source).not.toMatch(/characters remaining|characters over limit|label="Send"/);
+    // Over-length is reported, never truncated.
+    expect(source).not.toContain('maxLength');
   });
 });
 

@@ -21,12 +21,15 @@ export function TabIcon({
   name,
   color,
   size: iconSize,
+  plain = false,
 }: {
   name: SymbolViewProps['name'];
   color: ColorValue;
   size: number;
+  /** The floating Client/Worker pill: the active tab is a cobalt glyph, no filled indicator. */
+  plain?: boolean;
 }) {
-  const active = color === TAB_ACTIVE_COLOR;
+  const active = color === TAB_ACTIVE_COLOR && !plain;
   return (
     <View
       pointerEvents="none"
@@ -44,8 +47,23 @@ export function TabIcon({
   );
 }
 
+/**
+ * One line, always: in the floating pill a wrapped label (the bold selected "Bookings" on the
+ * five-slot Client bar) made the bar taller and pushed the selected capsule past its edge. A label
+ * that does not fit shrinks a little (to 75%) instead of wrapping; the tab's accessibility label
+ * still carries the full name.
+ */
 export function TabLabel({ focused, color, children }: { focused: boolean; color: ColorValue; children: string }) {
-  return <Text style={{ ...type.label, color, fontWeight: focused ? '700' : type.label.fontWeight, textAlign: 'center' }}>{children}</Text>;
+  return (
+    <Text
+      numberOfLines={1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.75}
+      style={{ ...type.label, color, fontWeight: focused ? '700' : type.label.fontWeight, textAlign: 'center' }}
+    >
+      {children}
+    </Text>
+  );
 }
 
 /**

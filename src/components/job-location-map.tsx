@@ -18,6 +18,7 @@ import {
 import type { OpportunityLocation } from '@/lib/opportunity-location';
 import { formatLocation } from '@/lib/bookings';
 import { JOB_MAP_STYLE, jobMapRuntime as mapsRuntime } from '@/lib/native-job-map';
+import { useMapStyle } from '@/lib/map-type';
 import { pinToLngLat } from '@/lib/map-coordinates';
 
 
@@ -58,6 +59,7 @@ export function StaticJobMap({
   const { styles } = createStyles(ui);
 
   const [mapReady, setMapReady] = useState(mapsRuntime !== null);
+  const mapStyle = useMapStyle(JOB_MAP_STYLE);
   const [loaded, setLoaded] = useState(false);
   const Map = mapsRuntime?.Map;
   const Camera = mapsRuntime?.Camera;
@@ -86,7 +88,7 @@ export function StaticJobMap({
       <View style={styles.exactMapFrame} pointerEvents="none">
         <Map
           style={styles.map}
-          mapStyle={JOB_MAP_STYLE}
+          mapStyle={mapStyle}
           androidView="texture"
           dragPan={false}
           touchZoom={false}

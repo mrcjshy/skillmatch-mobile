@@ -41,7 +41,8 @@ export type NotificationRow = {
  * Human-readable label per notification type. A raw type string such as
  * `booking_confirmed` or `no_show_strike` must NEVER reach the screen.
  *
- * These are the values `notifications_type_check` permits after V4 #16.
+ * These are the values `notifications_type_check` permits after V4 #16, plus
+ * MOD-01's `account_reinstated`.
  * The four that no current server path emits yet are still mapped, because the
  * type domain allows them and a future writer must not be able to surface a
  * raw identifier just because this map was left incomplete.
@@ -53,6 +54,7 @@ const NOTIFICATION_LABEL: Record<string, string> = {
   booking_completed: 'Booking completed',
   no_show_strike: 'No-show recorded',
   account_suspended: 'Account suspended',
+  account_reinstated: 'Account reinstated',
   payment_received: 'Payment received',
   worker_verified: 'Profile verified',
   report_submitted: 'Report submitted',
@@ -169,4 +171,68 @@ export function loadErrorCopy(e: unknown): string {
 
 export function markErrorCopy(code: string | null): string {
   return code === FORBIDDEN ? COPY.markForbidden : COPY.markGeneric;
+}
+
+/* ------------------------------------------------------------------ *
+ * Inbox presentation: a kind per type, and rows grouped by local day.
+ * ------------------------------------------------------------------ */
+
+/** What a notification is about, for its icon and colour. Unknown types are neutral. */
+export type NotificationKind = 'request' | 'confirmed' | 'cancelled' | 'completed' | 'warning' | 'blocked' | 'payment' | 'verified' | 'report' | 'general';
+const NOTIFICATION_KIND: Record<string, NotificationKind> = {
+  booking_request: 'request',
+  booking_confirmed: 'confirmed',
+  booking_cancelled: 'cancelled',
+  booking_completed: 'completed',
+  no_show_strike: 'warning',
+  account_suspended: 'blocked',
+  account_reinstated: 'verified',
+  payment_received: 'payment',
+  worker_verified: 'verified',
+  report_submitted: 'report',
+};
+export function notificationKind(type: string): NotificationKind {
+  return NOTIFICATION_KIND[type] ?? 'general';
+}
+
+/** Device-local time of day only, e.g. "5:21 PM"; the day is the section heading. */
+export function formatNotificationTime(iso: string | null): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date);
+}
+
+export type NotificationDay = { key: string; title: string; rows: NotificationRow[] };
+
+/**
+ * Consecutive rows that share a device-local day become one section: "Today", "Yesterday",
+ * then a short date ("Fri, Oct 30", with the year when it is not this year). The server's
+ * newest-first order is kept exactly; rows without a valid time go to a final "Earlier" section.
+ */
+export function groupNotificationsByDay(rows: NotificationRow[], now: Date = new Date()): NotificationDay[] {
+  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const today = dayKey(now);
+  const yesterdayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const yesterday = dayKey(yesterdayDate);
+  const titleFor = (d: Date) => {
+    const key = dayKey(d);
+    if (key === today) return 'Today';
+    if (key === yesterday) return 'Yesterday';
+    return new Intl.DateTimeFormat(undefined, d.getFullYear() === now.getFullYear()
+      ? { weekday: 'short', month: 'short', day: 'numeric' }
+      : { month: 'short', day: 'numeric', year: 'numeric' }).format(d);
+  };
+  const days: NotificationDay[] = [];
+  const undated: NotificationRow[] = [];
+  for (const row of rows) {
+    const d = row.created_at ? new Date(row.created_at) : null;
+    if (!d || Number.isNaN(d.getTime())) { undated.push(row); continue; }
+    const key = dayKey(d);
+    const last = days[days.length - 1];
+    if (last && last.key === key) last.rows.push(row);
+    else days.push({ key, title: titleFor(d), rows: [row] });
+  }
+  if (undated.length) days.push({ key: 'undated', title: 'Earlier', rows: undated });
+  return days;
 }

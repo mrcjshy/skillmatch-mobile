@@ -85,8 +85,10 @@ function BookingDock(props: DockProps & { primary: RoleBooking; authorized: () =
 function createStyles(ui: UiTheme) {
   const { colors, type, spacing, radius, size } = ui;
   return StyleSheet.create({
-    // A flex sibling below Home's scrolling viewport; the navigator owns its own inset and height.
-    dock: { flexShrink: 0, paddingHorizontal: spacing.gutter, paddingTop: spacing.sm, paddingBottom: spacing.sm, backgroundColor: colors.canvas },
+    // A flex sibling below Home's scrolling viewport, so it is the last thing in a tab scene that
+    // runs under the floating bar by size.tabBarOverlap. It adds that overlap below the card, so the
+    // card rests just above the bar like the last row of a list instead of under the pill.
+    dock: { flexShrink: 0, paddingHorizontal: spacing.gutter, paddingTop: spacing.sm, paddingBottom: spacing.sm + size.tabBarOverlap, backgroundColor: colors.canvas },
     card: { minHeight: size.minTarget, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md,
       backgroundColor: colors.surfaceRaised, borderColor: colors.hairline, borderWidth: 1, borderRadius: radius.card },
     pressed: { backgroundColor: colors.surfaceSunken },

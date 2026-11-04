@@ -218,6 +218,7 @@ export default function ClientJobDetails({ jobId, postingWarning }: { jobId: str
       <View style={styles.mapScreen}>
         <Stack.Screen options={{ headerShown: false }} />
         {finding && read ? <FindingJobMap jobId={job.id} clientId={ownerId} isOperationCurrent={read.operation.locationCurrent} revision={locationRevision}
+          sheetExpanded={sheetPosition === 'expanded'}
           insets={mapInsetsForPanel({ headerBottom, collapsedHeight: panelHeight })} /> : null}
         <BookingSheet topReserve={headerBottom} onCollapsedHeight={setPanelHeight} panelName="Job details panel"
           initialPosition={sheetPosition} onPositionChange={rememberSheetPosition}

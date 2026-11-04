@@ -45,14 +45,18 @@ describe('Post Job structure', () => {
 
   it('keeps step navigation and text input out of the docked review step', () => {
     expect(source).toContain('wizardStep === 4 && !isLoading && !loadError');
-    expect(source).toMatch(/wizardStep < 4 \? \(\s*<AppButton[^>]*label="Next"/);
+    // Premium cobalt (2026-11-04): Next is the lit cobalt primary.
+    expect(source).toMatch(/wizardStep < 4 \? \(\s*<CobaltButton[^>]*label="Next"/);
     expect((source.match(/validatePostJobWizardStep\(/g) ?? []).length).toBe(1);
   });
 
-  it('docks the budget summary beside one Post job action and rises with the keyboard', () => {
+  it('docks one full-width Post job action and keeps the budget in the review summary', () => {
     const dock = source.slice(source.indexOf('{showDock ? ('));
-    before(dock, 'styles.dockSummary', '<AppButton');
-    expect((dock.slice(0, dock.indexOf('<Modal')).match(/<AppButton/g) ?? []).length).toBe(1);
+    expect(dock).not.toContain('styles.dockSummary');
+    expect(source).toContain('label="Budget" value={budgetLabel} strong inline');
+    // Premium cobalt (2026-11-04): the one dock action is the lit cobalt Post job.
+    expect((dock.slice(0, dock.indexOf('<Modal')).match(/<CobaltButton/g) ?? []).length).toBe(1);
+    expect((dock.slice(0, dock.indexOf('<Modal')).match(/<AppButton/g) ?? []).length).toBe(0);
     expect(source).toContain('<KeyboardSpacer />');
     expect(source).toContain('keyboardShouldPersistTaps="handled"');
     expect(source).toContain('keyboardDismissMode="on-drag"');
@@ -82,6 +86,13 @@ describe('Chat keeps its composer above a docked keyboard', () => {
     expect(source).toContain('paddingBottom: insets.bottom');
     expect(source.indexOf('<KeyboardSpacer bottomOffset={insets.bottom} />')).toBeGreaterThan(source.indexOf('styles.composer'));
     expect(source).not.toContain('KeyboardAvoidingView');
+  });
+  it('carries the send icon inside the chat field, so it rises with the field rather than sitting in a row below it', () => {
+    const composer = source.slice(source.indexOf('<View style={styles.composer}>'), source.indexOf('<KeyboardSpacer bottomOffset={insets.bottom} />'));
+    before(composer, '<AppField', 'trailing={');
+    before(composer, 'trailing={', 'accessibilityLabel="Send message"');
+    expect(composer).not.toContain('<AppButton');
+    expect(composer).not.toContain('styles.composerRow');
   });
 });
 

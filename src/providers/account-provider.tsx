@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabase';
 import { getMyConsent, isCurrentLegalConsent, type UserConsent } from '@/lib/user-consent';
 import { getMyIdentitySubmission, type WorkerIdentitySubmission } from '@/lib/worker-identity';
 import { loadWorkerOnboarding, type WorkerOnboardingState } from '@/lib/worker-onboarding';
+import { normalizePhilippineMobile } from '@/lib/philippine-phone';
 import { isPhoneVerificationRequiredForBootstrap } from '@/lib/phone-verification';
 import { useSession } from '@/providers/session-provider';
 import { ClientPostJobDraftMemoryProvider } from '@/providers/client-post-job-draft-provider';
@@ -166,12 +167,15 @@ function validateBootstrapInput(
 
   if (!isNonEmptyString(rawFullName)) return null;
   if (!isNonEmptyString(rawPhone)) return null;
+  // Only a valid Philippine mobile number is ever saved, in one form (+639XXXXXXXXX).
+  const phone = normalizePhilippineMobile(rawPhone);
+  if (phone === null) return null;
   if (rawRole !== 'worker' && rawRole !== 'client') return null;
   if (!isNonEmptyString(sessionEmail)) return null;
 
   return {
     fullName: rawFullName.trim(),
-    phone: rawPhone.trim(),
+    phone,
     role: rawRole,
     email: sessionEmail,
   };

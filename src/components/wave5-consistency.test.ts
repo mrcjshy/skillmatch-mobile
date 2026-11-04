@@ -180,7 +180,7 @@ describe('one header grammar for every role', () => {
     const { APP_HEADER_OPTIONS, APP_STACK_SCREEN_OPTIONS } = load('src/components/app-header-options.ts') as Record<string, Props>;
     expect(APP_HEADER_OPTIONS.headerTitleAlign).toBe('center');
     expect(APP_HEADER_OPTIONS.headerShadowVisible).toBe(false);
-    expect(APP_HEADER_OPTIONS.headerTitleStyle).toEqual({ fontFamily: 'sans-serif', fontSize: 18, fontWeight: '700' });
+    expect(APP_HEADER_OPTIONS.headerTitleStyle).toEqual({ fontFamily: 'sans-serif', fontSize: 18, fontWeight: '500' }); // M3 Medium
     expect(APP_STACK_SCREEN_OPTIONS).toMatchObject({ ...APP_HEADER_OPTIONS, statusBarStyle: 'dark' });
   });
   it('the notification bell renders only from the Home header, and no tab layout adds a header action', () => {
@@ -188,7 +188,9 @@ describe('one header grammar for every role', () => {
     for (const role of ['worker', 'client', 'admin']) expect(code(`src/app/(${role})/(tabs)/_layout.tsx`)).not.toMatch(/headerRight|headerLeft/);
   });
   it('no authenticated screen repeats the SkillMatch logo or name in its header', () => {
-    expect(sources.filter((file) => /skillmatch-logo\.png/.test(code(file)))).toEqual(['src/components/auth-screen.tsx']);
+    expect(sources.filter((file) => /skillmatch-mark\.png/.test(code(file)))).toEqual(['src/components/auth-screen.tsx']);
+    // The old "S" mark is retired everywhere (owner, 2026-11-04): the auth header shows Itik's launcher tile.
+    expect(sources.filter((file) => /skillmatch-logo\.png/.test(code(file)))).toEqual([]);
   });
 });
 

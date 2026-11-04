@@ -17,7 +17,6 @@ import {
   loadJobRequiredSkills,
   loadMyOpportunities,
   loadMyWorkerSkills,
-  PROFICIENCY_LABEL,
   SKILL_GAP_COPY,
   SkillRef,
   WorkerSkillRef,
@@ -401,7 +400,7 @@ function GapEquation({
                   <SkillPill
                     key={s.id}
                     variant={matched ? 'positive' : 'neutral'}
-                    label={`${s.name}${s.proficiency === null ? '' : ` · ${PROFICIENCY_LABEL[s.proficiency]}`}`}
+                    label={s.name}
                   />
                 );
               })}

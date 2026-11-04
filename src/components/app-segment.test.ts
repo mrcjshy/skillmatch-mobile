@@ -80,13 +80,14 @@ describe('AppSegment actual controlled options', () => {
       expect(label.props.numberOfLines).toBeUndefined();
       expect(label.props.allowFontScaling).not.toBe(false);
       expect(flatten(label.props.style).flexShrink).toBe(1);
-      // Selection is weight + accent + a raised white pill with an accent outline; never an underline.
+      // Selection is weight + accent on the M3 tonal fill (secondaryContainer); never an underline.
       if (option.props.accessibilityState.selected) {
         expect(flatten(label.props.style).textDecorationLine).toBeUndefined();
         expect(flatten(label.props.style).fontWeight).toBe('700');
-        expect(states(option, false)).toMatchObject({ backgroundColor: h.ui.colors.surface, borderColor: h.ui.colors.accent });
+        expect(states(option, false)).toMatchObject({ backgroundColor: h.ui.colors.accentTonal });
       } else expect(states(option, false)).toMatchObject({ backgroundColor: 'transparent', borderColor: 'transparent' });
-      contrast(option, track.backgroundColor, 'segment');
+      // The M3 track is a transparent outlined pill: labels sit on the canvas behind it.
+      contrast(option, track.backgroundColor === 'transparent' ? h.ui.colors.canvas : track.backgroundColor, 'segment');
     }
   });
   it('preserves exact values/names and one callback per activation; disabled props and neutral states remain', () => {
@@ -101,7 +102,8 @@ describe('AppSegment actual controlled options', () => {
     for (const button of children(disabledTree).filter(n => n.type === 'Pressable')) {
       expect(button.props.disabled).toBe(true); expect(button.props.accessibilityState.disabled).toBe(true);
       expect(states(button, true)).toEqual(states(button, false));
-      contrast(button, flatten(disabledTree.props.style).backgroundColor, 'segment-disabled');
+      const disabledTrack = flatten(disabledTree.props.style).backgroundColor;
+      contrast(button, disabledTrack === 'transparent' ? h.ui.colors.canvas : disabledTrack, 'segment-disabled');
     }
   });
 });

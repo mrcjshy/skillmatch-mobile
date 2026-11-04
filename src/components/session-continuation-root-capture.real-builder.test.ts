@@ -66,6 +66,10 @@ vi.mock('@/providers/session-provider', async () => {
     },
   };
 });
+vi.mock('@/providers/profile-gate-provider', () => ({
+  ProfileGateProvider: ({ children }: { children?: unknown }) => children,
+  useProfileGate: () => ({ profileGate: undefined, refreshProfileGate: async () => undefined }),
+}));
 vi.mock('@/providers/account-provider', async () => {
   const { useSyncExternalStore } = await import('react');
   return {
@@ -89,6 +93,7 @@ vi.mock('../../tamagui.config', () => ({ tamaguiConfig: {} }));
 vi.mock('@/components/push-notification-inbox-intent', () => ({ PushNotificationInboxIntent: () => null }));
 vi.mock('@/components/incoming-message-banner-host', () => ({ IncomingMessageBannerHost: () => null }));
 vi.mock('@/components/incoming-call-host', () => ({ IncomingCallHost: () => null }));
+vi.mock('@/components/launch-overlay', () => ({ LaunchOverlay: () => null }));
 vi.mock('@/components/location-stop-host', () => ({ LocationStopHost: () => null }));
 vi.mock('@/components/state-screen', () => ({ StateScreen: () => null }));
 vi.mock('@/components/session-reconnecting-screen', () => ({ SessionReconnectingScreen: () => null }));

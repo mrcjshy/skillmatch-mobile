@@ -94,11 +94,9 @@ describe('FT-05 payment-before-completion presentation', () => {
 });
 
 describe('Cash and QR Ph labels', () => {
-  it('labels the two offered methods and marks GCash/Maya as legacy, not offered', () => {
+  it('labels the only two SkillMatch methods, Cash and QR Ph', () => {
     expect(formatPaymentMethod('cod')).toBe('Cash');
     expect(formatPaymentMethod('qrph')).toBe('QR Ph');
-    expect(formatPaymentMethod('gcash')).toMatch(/legacy/i);
-    expect(formatPaymentMethod('maya')).toMatch(/legacy/i);
     expect(formatPaymentMethod(null)).toBeNull();
   });
 
@@ -128,6 +126,16 @@ describe('historical or unknown payment values fail closed', () => {
     const map = await fetchBookingPayments(['a', 'b']);
     expect(map.has('a')).toBe(false);
     expect(map.get('b')).toEqual({ id: 'b', payment_method: 'cod', payment_status: 'pending' });
+  });
+
+  it('treats a stored GCash or Maya value as not a SkillMatch method: the row fails closed', async () => {
+    rows([
+      { id: 'g', payment_method: 'gcash', payment_status: 'pending' },
+      { id: 'm', payment_method: 'maya', payment_status: 'paid' },
+      { id: 'q', payment_method: 'qrph', payment_status: 'pending' },
+    ]);
+    const map = await fetchBookingPayments(['g', 'm', 'q']);
+    expect([...map.keys()]).toEqual(['q']);
   });
 
   it('drops a row whose status is unrecognised so it can never be treated as paid', async () => {

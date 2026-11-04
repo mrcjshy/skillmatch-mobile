@@ -116,8 +116,8 @@ describe('Admin analytics RPC contract', () => {
     expect(PAYMENT_METHOD_LABELS.unset).toBe('Not set');
     expect(PAYMENT_METHOD_LABELS.cod).toBe('Cash');
     expect(PAYMENT_METHOD_LABELS.qrph).toBe('QR Ph');
-    expect(PAYMENT_METHOD_LABELS.gcash).toContain('legacy');
-    expect(PAYMENT_METHOD_LABELS.maya).toContain('legacy');
+    // Only SkillMatch's two methods (and Not set) are labelled for display.
+    expect(Object.keys(PAYMENT_METHOD_LABELS).sort()).toEqual(['cod', 'qrph', 'unset']);
     expect(PAYMENT_STATUS_LABELS.unset).toBe('Not set');
     expect(BOOKING_LABELS.no_show).toBe('No-show');
   });

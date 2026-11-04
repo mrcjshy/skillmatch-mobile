@@ -1,178 +1,137 @@
-// @ts-expect-error -- Node-only static composition harness.
-import { readdirSync, readFileSync } from 'node:fs';
+// @ts-expect-error -- Node-only composition harness.
+import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-/**
- * M6 mascot guard. The mascot is static, decorative artwork on exactly two approved surfaces:
- * Worker Home's empty result and Client Post Job success (M6B removed it from Worker Job Accepted;
- * it must not return there). This proves
- * the assets, the component contract and the placement allowlist. It does not prove native
- * rendering; TesterArmy covers runtime.
- */
 type Props = Record<string, any>;
-type Element = { type: unknown; props: Props };
-const source = (path: string): string => readFileSync(path, 'utf8');
-const node = (type: unknown, props: Props): Element => ({ type, props });
-const RN = { StyleSheet: { create: (x: Props) => x }, View: 'View', Text: 'Text', ActivityIndicator: 'ActivityIndicator' };
-const theme = compile('src/constants/theme.ts', { 'react-native': { Platform: { OS: 'android', select: (x: Props) => x.android ?? x.default } } }).SkillMatchTheme.ui;
-
-function compile(path: string, seams: Record<string, Props>): Props {
+const read = (p: string) => readFileSync(p, 'utf8');
+const jsx = (type: any, props: Props) => ({ type, props });
+const all = (n: any): any[] => Array.isArray(n) ? n.flatMap(all) : n?.props ? [n, ...all(n.props.children)] : [];
+const flat = (s: any): Props => Array.isArray(s) ? Object.assign({}, ...s.filter(Boolean).map(flat)) : s ?? {};
+function compile(path: string, seams: Props): Props {
   const exports: Props = {};
-  const requireSeam = (id: string): Props => {
-    if (id in seams) return seams[id];
-    if (id === 'react/jsx-runtime') return { jsx: node, jsxs: node, Fragment: 'Fragment' };
+  new Function('require', 'exports', ts.transpileModule(read(path), { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022,
+  } }).outputText)((id: string) => {
     if (id === '@/global.css') return {};
-    if (id.startsWith('@/assets/images/mascot/')) return { asset: id };
-    throw new Error('Unapproved import: ' + id);
-  };
-  new Function('require', 'exports', ts.transpileModule(source(path), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText)(requireSeam, exports);
+    if (id === 'react/jsx-runtime') return { jsx, jsxs: jsx };
+    if (id === '@/assets/images/mascot/itik-worker-poses.png') return 'duck-atlas';
+    if (id in seams) return seams[id];
+    throw Error('Unexpected import: ' + id);
+  }, exports);
   return exports;
 }
-function all(value: unknown): Element[] {
-  if (Array.isArray(value)) return value.flatMap(all);
-  if (!value || typeof value !== 'object' || !('props' in value)) return [];
-  return [value as Element, ...all((value as Element).props.children)];
-}
-function sourceFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry: { name: string; isDirectory(): boolean }) => {
-    const path = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) return sourceFiles(path);
-    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+const RN = { View: 'View', Text: 'Text', Image: 'Image', StyleSheet: { create: (s: Props) => s } };
+const theme = compile('src/constants/theme.ts', { 'react-native': { Platform: { select: (s: Props) => s.android ?? s.default } } }).SkillMatchTheme.ui;
+
+describe('Itik, the Pateros worker duck', () => {
+  it('ships a square nine-cell PNG atlas, independent of a network or archive runtime', () => {
+    const png = readFileSync('assets/images/mascot/itik-worker-poses.png');
+    expect(png.subarray(1, 4).toString()).toBe('PNG');
+    expect(png.readUInt32BE(16)).toBe(png.readUInt32BE(20));
+    expect(png.readUInt32BE(16) % 3).toBe(0);
+    expect(png[25]).toBe(6); // RGBA asset: all nine poses now carry alpha transparency.
+    expect(read('src/components/skillmatch-mascot.tsx')).not.toMatch(/https?:|mascot-(empty|success)\.svg/);
   });
-}
-
-const ASSET_DIR = 'assets/images/mascot';
-const RETIRED_NAMES = /lapat|dugtong|tagpo/i;
-const APPROVED_PLACEMENTS = [
-  'src/app/(worker)/(tabs)/worker/index.tsx',
-  'src/components/client-post-job-screen.tsx',
-];
-
-describe('M6 mascot assets', () => {
-  const files = readdirSync(ASSET_DIR).sort();
-
-  it('are exactly the approved static poses, with neutral names', () => {
-    expect(files).toEqual(['mascot-empty.svg', 'mascot-success.svg']);
-  });
-
-  it('keep the M5 construction geometry unchanged and use Iteration 06 colour tokens only', () => {
-    const allowed = new Set([theme.colors.accent, theme.colors.accentSubtle, theme.colors.textPrimary, theme.colors.surface, theme.colors.controlBorder]
-      .map((hex: string) => hex.toUpperCase()));
-    for (const file of files) {
-      const svg = source(`${ASSET_DIR}/${file}`);
-      const colours = [...svg.matchAll(/#[0-9A-Fa-f]{3,8}\b/g)].map((m) => m[0].toUpperCase());
-      expect(colours.length, file).toBeGreaterThan(0);
-      for (const colour of colours) expect(allowed, `${file} ${colour}`).toContain(colour);
-      expect(svg, file).not.toMatch(/gradient|filter|<image|<style|<script|<animate|<set\b/i);
-      const m5 = source(`src/components/__fixtures__/mascot/${file.replace('mascot-', '')}`);
-      const body = (svg: string) => svg.replace(/<!--.*?-->/gs, '').replace(/^<svg[^>]*>/, '').trim();
-      expect(body(svg), file).toBe(body(m5));
-    }
-  });
-
-  it('carry no mascot name, label or title', () => {
-    for (const file of files) {
-      const svg = source(`${ASSET_DIR}/${file}`);
-      expect(svg, file).not.toMatch(RETIRED_NAMES);
-      expect(svg, file).not.toMatch(/aria-|role=|<title|<desc|<text/i);
-    }
-  });
-});
-
-describe('M6 mascot component', () => {
-  const module = compile('src/components/skillmatch-mascot.tsx', {
-    'react-native': RN,
-    'expo-image': { Image: 'Image' },
-  });
-
-  it('draws the full figure at the approved 64 dp minimum, in the 260 x 200 artboard proportion', () => {
-    expect(module.MASCOT_HEIGHT).toBeGreaterThanOrEqual(64);
-    for (const pose of ['empty', 'success']) {
-      const tree = module.SkillMatchMascot({ pose });
-      const image = all(tree).find((n) => n.type === 'Image')!;
-      expect(image.props.source).toEqual({ asset: `@/assets/images/mascot/mascot-${pose}.svg` });
-      expect(image.props.contentFit).toBe('contain');
-      const style = Object.assign({}, ...[image.props.style].flat());
-      expect(style.height).toBe(module.MASCOT_HEIGHT);
-      expect(style.width / style.height).toBeCloseTo(260 / 200, 5);
-    }
-  });
-
-  it('stays out of the accessibility tree and never names itself', () => {
-    const tree = module.SkillMatchMascot({ pose: 'success' });
-    expect(tree.props.accessible).toBe(false);
-    expect(tree.props.accessibilityElementsHidden).toBe(true);
-    expect(tree.props.importantForAccessibility).toBe('no-hide-descendants');
-    for (const element of all(tree)) {
-      expect(element.props.accessibilityLabel).toBeUndefined();
-      expect(element.props.accessibilityRole).toBeUndefined();
-    }
-    expect(source('src/components/skillmatch-mascot.tsx')).not.toMatch(RETIRED_NAMES);
-  });
-
-  it('is static: no motion primitive, Reanimated, timer or entrance animation', () => {
-    const file = source('src/components/skillmatch-mascot.tsx');
-    expect(file).not.toMatch(/@\/components\/motion|react-native-reanimated|Animated|entering|exiting|transition|setInterval|setTimeout|requestAnimationFrame/);
-  });
-});
-
-describe('M6 mascot placements', () => {
-  it('only the two approved surfaces import the mascot', () => {
-    const importers = sourceFiles('src').filter((file) => /@\/components\/skillmatch-mascot/.test(source(file)));
-    expect(importers.sort()).toEqual([...APPROVED_PLACEMENTS].sort());
-  });
-
-  it('no user-facing mascot name anywhere in the app source', () => {
-    for (const file of sourceFiles('src')) expect(source(file), file).not.toMatch(RETIRED_NAMES);
-  });
-
-  it('Worker Home: the Empty pose is the empty result only; busy, loading and error stay as they were', () => {
-    const home = source(APPROVED_PLACEMENTS[0]);
-    expect(home.match(/<SkillMatchMascot/g)).toHaveLength(1);
-    expect(home).toContain('<InlineStatus variant="empty" message="No matching jobs right now." illustration={<SkillMatchMascot pose="empty" />} />');
-    for (const line of home.split('\n').filter((l) => /variant="(note|loading|error)"/.test(l))) expect(line).not.toContain('illustration');
-  });
-
-  it('InlineStatus: an empty-state illustration takes the glyph tile\'s place; every other use is unchanged', () => {
-    const { InlineStatus } = compile('src/components/inline-status.tsx', {
-      'react-native': RN,
-      'expo-symbols': {},
-      '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
-
-      '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
-      '@/components/refinement-theme': { useUiTheme: () => theme },
+  function harness(frame = 0, navigated = true, loaded = true) {
+    let focused = true, cursor = 0;
+    const slots = [true, loaded];
+    let handler!: (s: string) => void;
+    let cleanup!: () => void;
+    const remove = vi.fn();
+    const useDuckMotion = vi.fn(() => ({ pose: frame, style: { transform: [] } }));
+    const module = compile('src/components/skillmatch-mascot.tsx', {
+      react: { useCallback: (fn: any) => fn, useContext: () => navigated ? { isFocused: () => focused, addListener: () => () => {} } : undefined, useSyncExternalStore: (_subscribe: any, snapshot: any) => snapshot(), useState: () => { const slot = cursor++; return [slots[slot], (v: boolean) => { slots[slot] = v; }]; }, useEffect: (fn: () => () => void) => { cleanup = fn(); } },
+      'expo-router/react-navigation': { NavigationContext: {} },
+      'react-native': { ...RN, AppState: { currentState: 'active', addEventListener: (_: string, fn: typeof handler) => { handler = fn; return { remove }; } } },
+      '@/components/motion': { MotionView: 'MotionView', useDuckMotion },
+      '@/components/duck-fx': { DuckFxLayer: 'DuckFx' },
     });
-    const art = node('Mascot', {});
-    const withArt = all(InlineStatus({ variant: 'empty', message: 'No matching jobs right now.', illustration: art }));
-    expect(withArt).toContain(art);
-    expect(withArt.some((n) => n.type === 'AppSymbol')).toBe(false);
-    const message = withArt.find((n) => n.type === 'Text')!;
-    expect(message.props.children).toBe('No matching jobs right now.');
-    expect(message.props.accessibilityRole).toBeUndefined();
-    const plain = all(InlineStatus({ variant: 'empty', message: 'Nothing here.' }));
-    expect(plain.some((n) => n.type === 'AppSymbol')).toBe(true);
-    for (const variant of ['note', 'loading', 'error']) {
-      expect(all(InlineStatus({ variant, message: 'x', illustration: art }))).not.toContain(art);
+    return { render: (props: Props = {}) => { cursor = 0; return module.SkillMatchMascot(props); }, emit: (s: string) => handler(s), focus: (value: boolean) => { focused = value; }, close: () => cleanup(), remove, useDuckMotion };
+  }
+  it('clips each expression to one atlas cell inside a fixed stage, with no crossfade', () => {
+    for (let frame = 0; frame < 9; frame++) {
+      const tree = harness(frame).render({ size: 96 });
+      // The stage holds the layout place; effects may draw past it, the sprite never does.
+      expect(flat(tree.props.style)).toMatchObject({ width: 96, height: 96, overflow: 'visible' });
+      expect(flat(all(tree).find(n => n.type === 'MotionView').props.style)).toMatchObject({ width: 96, height: 96, overflow: 'hidden', transformOrigin: '50% 95.4%' });
+      expect(flat(tree.props.style).backgroundColor).toBeUndefined();
+      expect(flat(tree.props.style).borderRadius).toBeUndefined();
+      const image = all(tree).find(n => n.type === 'Image');
+      expect(image.props.source).toBe('duck-atlas');
+      expect(image.props.fadeDuration).toBe(0);
+      expect(image.props.style).toMatchObject({ width: 288, height: 288, left: -(frame % 3) * 96, top: -Math.floor(frame / 3) * 96 });
     }
   });
-
-  it('Job accepted (M6B rollback): no mascot; the existing check reveal, words and action exactly as before M6', () => {
-    const details = source('src/components/job-opportunity-details.tsx');
-    expect(details).not.toMatch(/skillmatch-mascot|SkillMatchMascot|successArt/);
-    const accepted = details.slice(details.indexOf('if (accepted) {'), details.indexOf('if (isLoading) {'));
-    expect(accepted).toMatch(/<View style=\{styles\.center\}>\s+<MotionView entering=\{motion\.successEnter\} style=\{styles\.successMark\}/);
-    expect(accepted).toContain('<InlineStatus variant="note" headline={notice?.headline ?? ACCEPT_JOB_COPY.accepted}');
-    expect(accepted).toContain('message={notice?.detail ?? ACCEPT_JOB_COPY.accepted} />');
-    expect(accepted).toMatch(/<AppButton label="View bookings" variant="secondary"\s+onPress=\{\(\) => router\.replace\('\/worker\/bookings' as Href\)\} \/>/);
+  it('is decorative and never captures a tap or duplicates state announcements', () => {
+    const tree = harness().render();
+    expect(tree.props).toMatchObject({ accessible: false, accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants', pointerEvents: 'none' });
+    expect(all(tree).some(n => n.props.accessibilityLabel || n.props.accessibilityRole)).toBe(false);
   });
+  it('pauses in background or hidden sheets and removes its AppState listener', () => {
+    const h = harness(); h.render({ expression: 'hello' });
+    expect(h.useDuckMotion).toHaveBeenLastCalledWith('hello', true, 96);
+    h.emit('background'); h.render();
+    expect(h.useDuckMotion).toHaveBeenLastCalledWith('sleep', false, 96);
+    h.emit('active'); h.render({ active: false });
+    expect(h.useDuckMotion).toHaveBeenLastCalledWith('sleep', false, 96);
+    h.close(); expect(h.remove).toHaveBeenCalled();
+  });
+  it('starts the greeting only after its image has loaded so the wing motion can be seen', () => {
+    const h = harness(0, true, false); const tree = h.render({ expression: 'hello' });
+    expect(h.useDuckMotion).toHaveBeenLastCalledWith('hello', false, 96);
+    all(tree).find(n => n.type === 'Image').props.onLoad();
+    h.render({ expression: 'hello' });
+    expect(h.useDuckMotion).toHaveBeenLastCalledWith('hello', true, 96);
+  });
+  it('pauses retained tabs on blur and is safe outside navigation during bootstrap', () => {
+    const h = harness(); h.render({ expression: 'hello' });
+    h.focus(false); h.render({ expression: 'hello' });
+    expect(h.useDuckMotion).toHaveBeenLastCalledWith('hello', false, 96);
+    h.focus(true); h.render({ expression: 'hello' });
+    expect(h.useDuckMotion).toHaveBeenLastCalledWith('hello', true, 96);
+    const bootstrap = harness(4, false); bootstrap.render({ expression: 'think' });
+    expect(bootstrap.useDuckMotion).toHaveBeenLastCalledWith('think', true, 96);
+  });
+  it('maps existing success to celebration and an empty state to sleep', () => {
+    const h = harness(); h.render({ pose: 'success' });
+    expect(h.useDuckMotion).toHaveBeenLastCalledWith('celebrate', true, 96);
+    h.render({ pose: 'empty' }); expect(h.useDuckMotion).toHaveBeenLastCalledWith('sleep', true, 96);
+  });
+  it('plays the effect layer for the same move, size and pause state as the body', () => {
+    const h = harness(); let fx = all(h.render({ expression: 'love', size: 88 })).find(n => n.type === 'DuckFx');
+    expect(fx.props).toMatchObject({ expression: 'love', active: true, size: 88 });
+    h.emit('background'); fx = all(h.render({ expression: 'love', size: 88 })).find(n => n.type === 'DuckFx');
+    expect(fx.props.active).toBe(false);
+  });
+});
 
-  it('Client Post Job: the unchanged success words come first, the Success pose follows; never beside a post error', () => {
-    const screen = source(APPROVED_PLACEMENTS[1]);
-    expect(screen.match(/<SkillMatchMascot/g)).toHaveLength(1);
-    const success = screen.slice(screen.indexOf('{postSuccess ?'), screen.indexOf('{isLoading ? ('));
-    expect(success.indexOf('{postSuccess}</Text>')).toBeGreaterThan(-1);
-    expect(success.indexOf('{postSuccess}</Text>')).toBeLessThan(success.indexOf('<SkillMatchMascot pose="success" />'));
-    expect(success).toContain('{postError ? null : <SkillMatchMascot pose="success" />}');
+describe('shared empty states', () => {
+  const { InlineStatus } = compile('src/components/inline-status.tsx', {
+    'react-native': RN, '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
+    '@/components/skeleton': { Skeleton: 'Skeleton' },
+    '@/components/skillmatch-mascot': { SkillMatchMascot: 'Duck' },
+    '@/components/refinement-theme': { useUiTheme: () => theme },
+  });
+  it('uses one duck as the default empty illustration and retains words and recovery action', () => {
+    const tree = InlineStatus({ variant: 'empty', message: 'No bookings yet.', action: jsx('Retry', {}) });
+    expect(all(tree).filter(n => n.type === 'Duck')).toHaveLength(1);
+    expect(all(tree).some(n => n.type === 'Text' && n.props.children === 'No bookings yet.')).toBe(true);
+    expect(all(tree).some(n => n.type === 'Retry')).toBe(true);
+  });
+  it('lets Itik sleep through a default empty state, or take the mood a screen asks for', () => {
+    expect(all(InlineStatus({ variant: 'empty', message: 'No bookings yet.' })).find(n => n.type === 'Duck').props.expression).toBe('sleep');
+    expect(all(InlineStatus({ variant: 'empty', mascot: 'hello', message: 'You have not posted a job yet.' })).find(n => n.type === 'Duck').props.expression).toBe('hello');
+  });
+  it('respects supplied artwork or semantic icons without another mascot', () => {
+    for (const props of [{ illustration: jsx('Art', {}) }, { icon: { android: 'work' } }]) {
+      expect(all(InlineStatus({ variant: 'empty', message: 'Nothing here', ...props })).some(n => n.type === 'Duck')).toBe(false);
+    }
+  });
+  it('preserves skeleton loading and compact error/note semantics', () => {
+    expect(InlineStatus({ variant: 'loading', message: 'Loading', skeleton: 'detail' }).props).toMatchObject({ shape: 'detail', label: 'Loading' });
+    for (const variant of ['note', 'error']) expect(all(InlineStatus({ variant, message: 'x' })).some(n => n.type === 'Duck')).toBe(false);
+    const error = all(InlineStatus({ variant: 'error', message: 'Try again.' })).find(n => n.type === 'Text');
+    expect(error.props).toMatchObject({ accessibilityRole: 'alert', accessibilityLiveRegion: 'polite' });
   });
 });

@@ -8,6 +8,8 @@ import { ShareLocationFab, type ShareFabMode } from '@/components/share-location
 import { useLocationSharing } from '@/hooks/use-location-sharing';
 import { useBookingPins } from '@/hooks/use-booking-pins';
 import { JOB_MAP_STYLE, jobMapRuntime } from '@/lib/native-job-map';
+import { MapTypeToggle } from '@/components/map-type-toggle';
+import { useMapStyle } from '@/lib/map-type';
 import { mergeOverlap, pinFreshness, type PinRole } from '@/lib/location-pins';
 import {
   bookingMapMarkers, frameMarkers, framedMarkers, mapAccessibilityLabel, markerPadding, needsReframe, sharingStatusCopy,
@@ -135,6 +137,7 @@ function InlineMap({ surface, markers, destination, insets, pinsPaused = false }
   const { loaded } = surface;
   const markerKey = JSON.stringify(markers);
   const viewKey = `${insets.top}:${insets.bottom}`;
+  const mapStyle = useMapStyle(JOB_MAP_STYLE);
   useEffect(() => {
     if (!loaded || !map.current) return;
     let cancelled = false;
@@ -165,7 +168,7 @@ function InlineMap({ surface, markers, destination, insets, pinsPaused = false }
   if (!surface.available || !Map || !Camera || !Marker) {
     return <View style={[StyleSheet.absoluteFill, styles.unavailable, { paddingTop: insets.top }]}><Text style={styles.text}>Map unavailable in this installation.</Text></View>;
   }
-  return <MapBoundary onFailure={() => surface.setFailed()}><View style={[StyleSheet.absoluteFill, styles.canvas]}><Map ref={map} style={styles.map} mapStyle={JOB_MAP_STYLE} androidView="texture"
+  return <MapBoundary onFailure={() => surface.setFailed()}><View style={[StyleSheet.absoluteFill, styles.canvas]}><Map ref={map} style={styles.map} mapStyle={mapStyle} androidView="texture"
     accessibilityLabel={mapAccessibilityLabel(markers)}
     onRegionDidChange={() => setCameraRevision(value => value + 1)}
     onDidFinishRenderingMapFully={() => surface.setLoaded()} onDidFailLoadingMap={() => surface.setFailed()}>
@@ -178,7 +181,9 @@ function InlineMap({ surface, markers, destination, insets, pinsPaused = false }
         <MapPinLabel kind={members.length > 1 ? 'group' : first.kind} label={members.map(member => member.label).join(' / ')} stale={members.length === 1 && first.stale} paused={pinsPaused} />
       </Marker>;
     })}
-  </Map></View></MapBoundary>;
+  </Map>
+  {/* The expanded details sheet covers the map: nothing there to switch, so the toggle steps aside. */}
+  {pinsPaused ? null : <MapTypeToggle style={{ top: insets.top + 16, right: 16 }} />}</View></MapBoundary>;
 }
 
 function createStyles(ui: UiTheme) {

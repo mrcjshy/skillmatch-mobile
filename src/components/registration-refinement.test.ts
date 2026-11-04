@@ -58,6 +58,7 @@ function harness() {
     '@/components/app-button': host('AppButton'),
     '@/components/app-divider': host('AppDivider'),
     '@/components/app-field': host('AppField'),
+    '@/components/app-symbol': host('AppSymbol'),
     '@/components/auth-screen': { ...host('AuthScreen', 'AuthSection', 'AuthLink'), useAuthScroll: () => ({ scrollRef: { current: { scrollToEnd } }, focusField }) },
     '@/components/consent-check': host('ConsentCheck'),
     '@/components/form-message': host('FormMessage'),
@@ -66,6 +67,7 @@ function harness() {
     '@/components/step-list': host('StepList'),
     '@/lib/supabase': { supabase: { auth: { signUp } } },
     '@/lib/philippine-phone': phone,
+    '@/lib/profile-details': { NAME_MAX: 60, tidy: (value: string) => value.replace(/\s+/g, ' ').trim() },
     '@/lib/user-consent': { CONSENT_COPY, hasRequiredLegalAcceptance },
   };
   const compiled = ts.transpileModule(readFileSync('src/app/(auth)/register.tsx', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -81,7 +83,7 @@ function harness() {
     (option.props.onPress as () => void)();
   };
   const fill = () => {
-    for (const [label, value] of [['Full name', '  Alex Santos  '], ['Phone number', '09171234567'], ['Email', ' alex@example.test '], ['Password', 'example-password'], ['Confirm password', 'example-password']]) {
+    for (const [label, value] of [['First name', '  Alex  '], ['Last name', ' Santos '], ['Phone number', '09171234567'], ['Email', ' alex@example.test '], ['Password', 'example-password'], ['Confirm password', 'example-password']]) {
       (field(label).props.onChangeText as (value: string) => void)(value);
     }
   };
@@ -135,10 +137,10 @@ describe('role-specific registration refinement with inert auth', () => {
     expect(tree.props.title).toBe('Join as a Worker');
     expect(titles(tree)).toEqual(['Your path as a Worker', 'About you', 'Sign-in details', 'Terms and privacy']);
     const path = flat.find(node => node.type === 'StepList')!.props.steps as { label: string; state: string }[];
-    expect(path.map(step => step.label)).toEqual(['Create your account', 'Confirm your email', 'Submit a valid ID', 'Set up your work profile']);
-    expect(path.map(step => step.state)).toEqual(['current', 'upcoming', 'upcoming', 'upcoming']);
+    expect(path.map(step => step.label)).toEqual(['Create your account', 'Confirm your email', 'Build your resume', 'Submit a valid ID', 'Set up your work profile']);
+    expect(path.map(step => step.state)).toEqual(['current', 'upcoming', 'upcoming', 'upcoming', 'upcoming']);
     expect(flat.findIndex(node => node.type === 'RadioRow')).toBeLessThan(flat.findIndex(node => FIELD_TYPES.includes(node.type as string)));
-    expect(h.fields().map(node => node.props.label)).toEqual(['Full name', 'Phone number', 'Email', 'Password', 'Confirm password']);
+    expect(h.fields().map(node => node.props.label)).toEqual(['First name', 'Last name', 'Phone number', 'Email', 'Password', 'Confirm password']);
     expect(h.signUp).not.toHaveBeenCalled();
   });
 
@@ -148,8 +150,9 @@ describe('role-specific registration refinement with inert auth', () => {
     expect(tree.props.title).toBe('Join as a Client');
     expect(titles(tree)).toEqual(['Your details', 'Terms and privacy']);
     expect(nodes(tree).some(node => node.type === 'StepList')).toBe(false);
-    expect(h.fields().map(node => node.props.label)).toEqual(['Full name', 'Phone number', 'Email', 'Password', 'Confirm password']);
-    expect(h.field('Full name').props.value).toBe('  Alex Santos  ');
+    expect(h.fields().map(node => node.props.label)).toEqual(['First name', 'Last name', 'Phone number', 'Email', 'Password', 'Confirm password']);
+    expect(h.field('First name').props.value).toBe('  Alex  ');
+    expect(h.field('Last name').props.value).toBe(' Santos ');
     expect(h.signUp).not.toHaveBeenCalled();
   });
 
@@ -165,7 +168,7 @@ describe('role-specific registration refinement with inert auth', () => {
 
   it.each(['Worker', 'Client'])('preserves the exact %s signup contract and replacement to email verification', async (role) => {
     const h = harness(); h.choose(role); h.fill(); h.consent(); await h.submit();
-    expect(h.signUp).toHaveBeenCalledExactlyOnceWith({ email: 'alex@example.test', password: 'example-password', options: { data: { registration_full_name: 'Alex Santos', registration_phone: '+639171234567', registration_role_intent: role.toLowerCase() } } });
+    expect(h.signUp).toHaveBeenCalledExactlyOnceWith({ email: 'alex@example.test', password: 'example-password', options: { data: { registration_full_name: 'Alex Santos', registration_first_name: 'Alex', registration_last_name: 'Santos', registration_phone: '+639171234567', registration_role_intent: role.toLowerCase() } } });
     expect(h.replace).toHaveBeenCalledExactlyOnceWith({ pathname: '/verify-email', params: { email: 'alex@example.test' } });
   });
 
@@ -181,9 +184,9 @@ describe('role-specific registration refinement with inert auth', () => {
   it('reports the first missing field beside it and moves focus to it', async () => {
     const h = harness(); h.choose('Worker');
     const focus = vi.fn();
-    (h.field('Full name').props.inputRef as { current: unknown }).current = { focus };
+    (h.field('First name').props.inputRef as { current: unknown }).current = { focus };
     await h.submit();
-    expect(h.field('Full name').props.errorText).toBe('Please enter your full name.');
+    expect(h.field('First name').props.errorText).toBe('Please enter your first name.');
     expect(focus).toHaveBeenCalledTimes(1);
     expect(h.signUp).not.toHaveBeenCalled();
     h.fill();
@@ -192,9 +195,33 @@ describe('role-specific registration refinement with inert auth', () => {
     expect(h.field('Phone number').props.errorText).toBe('Enter a valid Philippine mobile number, such as +63 917 123 4567.');
   });
 
+  it('checks the phone number live: a check mark when valid, a wrong start at once, an unfinished number after leaving the field (owner, 2026-11-05)', () => {
+    const h = harness(); h.choose('Client');
+    const COPY = phone.PHILIPPINE_MOBILE_COPY;
+    const phoneField = () => h.field('Phone number').props;
+    const type = (value: string) => (phoneField().onChangeText as (s: string) => void)(value);
+    type('0917');
+    expect(phoneField().errorText).toBeUndefined();
+    expect(phoneField().helperText).toBe('7 more digits');
+    expect(phoneField().trailing).toBeUndefined();
+    (phoneField().onBlur as () => void)();
+    expect(phoneField().errorText).toBe(COPY.incomplete);
+    type('0817');
+    expect(phoneField().errorText).toBe(COPY.prefix);
+    type('0917abc');
+    expect(phoneField().errorText).toBe(COPY.characters);
+    type('09171234567');
+    expect(phoneField().errorText).toBeUndefined();
+    expect(phoneField().helperText).toBe(COPY.valid);
+    expect(phoneField().trailing).toBeTruthy();
+    type('091712345678');
+    expect(phoneField().errorText).toBe(COPY.tooLong);
+    expect(phoneField().trailing).toBeUndefined();
+  });
+
   it('surfaces a mocked auth failure as a form message without routing or adding registration fields', async () => {
     const h = harness(); h.choose('Worker'); h.fill(); h.consent(); h.signUp.mockResolvedValueOnce({ error: { message: 'Account could not be created.' } });
     await h.submit(); expect(h.replace).not.toHaveBeenCalled(); expect(h.messages()).toEqual(['Account could not be created.']);
-    expect(h.fields()).toHaveLength(5);
+    expect(h.fields()).toHaveLength(6);
   });
 });

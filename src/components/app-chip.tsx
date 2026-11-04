@@ -32,7 +32,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     flexDirection: 'row',
     gap: spacing.xs,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm, // M3 chip shape: small (8dp)
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     alignItems: 'center',

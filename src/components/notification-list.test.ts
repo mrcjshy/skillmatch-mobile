@@ -42,6 +42,8 @@ function inbox({ open = true, marking = null as string | null, refreshing = fals
     '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
 
     '@/components/app-divider': { AppDivider: 'AppDivider' },
+    '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
+    'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 0, bottom: 24, left: 0, right: 0 }) },
     ...Object.fromEntries(['app-button', 'app-notice', 'inline-status'].map(n => ['@/components/' + n,
       { [n.split('-').map(x => x[0].toUpperCase()+x.slice(1)).join('')]: n }])),
   });
@@ -91,7 +93,7 @@ for (const opts of [{ marking: 'unread' }, { refreshing: true }]) it(`keeps busy
     await b.props.onPress();
     for (const pressed of [false,true]) {
       const s = flat(card(h,b,pressed).props.style);
-      expect(s.backgroundColor).toBe('#EFEEEA');
+      expect(s.backgroundColor).toBe('#E9E7EF');
       expect(s.opacity).toBeUndefined();
     }
   }
@@ -161,7 +163,7 @@ it('renders a real dated timestamp with readable unread pressed contrast and res
     'Booking request, unread. First message', 'Booking confirmed. Second message',
   ]);
   expect(buttons.map(button => button.props.disabled)).toEqual([false,false]);
-  const expected = h.notifications.formatTimestamp(h.fixtureRows[0].created_at);
+  const expected = h.notifications.formatNotificationTime(h.fixtureRows[0].created_at);
   expect(typeof expected).toBe('string');
   expect(expected.length).toBeGreaterThan(0);
   const resting = card(h,buttons[0],false), pressed = card(h,buttons[0],true);
@@ -169,7 +171,7 @@ it('renders a real dated timestamp with readable unread pressed contrast and res
   expect(flat(card(h,buttons[0],false).props.style)).toEqual(flat(resting.props.style));
   const timestamp = observedText(pressed).filter(node => node.text === expected);
   expect(timestamp).toHaveLength(1);
-  expect(timestamp[0].foreground).toBe('#59606B');
+  expect(timestamp[0].foreground).toBe('#454651');
   expect(timestamp[0].opacity).toBe(1);
   const ratio = contrast(timestamp[0].foreground,timestamp[0].background);
   console.log('Dated timestamp composed contrast', JSON.stringify({ ...timestamp[0], ratio }));
@@ -185,21 +187,23 @@ it('keeps all dated and missing-date row text readable across interactive, stati
     expect(states).toHaveLength(opts.open === false ? 3 : 4);
     for (const { tree, pressed } of states) {
       const texts = observedText(tree);
-      const unread = texts.some(node => node.text === 'Unread');
-      const row = h.fixtureRows[unread ? 0 : 1];
+      const row = h.fixtureRows.find(candidate => texts.some(node => node.text === candidate.message))!;
+      const unread = row.is_read !== true;
       expect(texts.some(node => node.text === h.notifications.formatNotificationLabel(row.type))).toBe(true);
       expect(texts.some(node => node.text === row.message)).toBe(true);
-      const formatted = h.notifications.formatTimestamp(row.created_at);
+      const formatted = h.notifications.formatNotificationTime(row.created_at);
       if (dated) {
         expect(formatted?.length).toBeGreaterThan(0);
         expect(texts.filter(node => node.text === formatted)).toHaveLength(1);
       } else {
         expect(formatted).toBeNull();
-        expect(texts).toHaveLength((unread ? 3 : 2) + (opts.marking === row.id ? 1 : 0));
+        // Label and message; unread is a dot and a weight, never an extra word.
+        expect(texts).toHaveLength(2 + (opts.marking === row.id ? 1 : 0));
       }
       const marking = opts.marking === row.id;
       if (marking) expect(texts.some(node => node.text === 'Marking as read…')).toBe(true);
-      if (unread) expect(texts.find(node => node.text === 'Unread')?.background).toBe(texts.find(node => node.text === h.notifications.formatNotificationLabel(row.type))?.background);
+      expect(texts.some(node => node.text === 'Unread')).toBe(false);
+      void unread;
       for (const text of texts) {
         expect(text.opacity).toBe(1);
         expect(text.foreground).toMatch(/^#[0-9A-Fa-f]{6}$/);
@@ -212,22 +216,48 @@ it('keeps all dated and missing-date row text readable across interactive, stati
   }
 });
 
-it('groups rows into one hairline surface with a divider between rows, never nested cards', () => {
+it('groups rows by day: a titled section per day, one hairline surface each, inset dividers, never nested cards', () => {
   const h = inbox();
+  // Undated fixture rows share the final "Earlier" section.
+  const headers = all(h.tree, 'Text').filter(node => node.props.accessibilityRole === 'header');
+  expect(headers.map(node => node.props.children)).toEqual(['Earlier']);
   const group = all(h.tree, 'View').find(node => flat(node.props.style).overflow === 'hidden')!;
   const style = flat(group.props.style);
   expect(style).toMatchObject({ backgroundColor: '#FFFFFF', borderRadius: 16, overflow: 'hidden' });
   expect(all(group, 'AppDivider')).toHaveLength(1);
+  expect(all(group, 'AppDivider')[0].props.inset).toBe(16 + 40 + 12); // aligns with the row text
   expect(all(group, 'Pressable')).toHaveLength(2);
+  const dated = inbox({ dated: true });
+  expect(all(dated.tree, 'Text').filter(node => node.props.accessibilityRole === 'header')).toHaveLength(1);
 });
 
-it('marks unread rows with an accent fill, a dot and the word, never colour alone', () => {
+it('gives each row a coloured icon for its kind, hidden from screen readers', () => {
+  const h = inbox();
+  const [request, confirmed] = all(h.tree, 'Pressable');
+  const icon = (row: any) => all(row, 'View').find(node => flat(node.props.style).width === 40)!;
+  expect(icon(request).props.importantForAccessibility).toBe('no-hide-descendants');
+  expect(all(icon(request), 'AppSymbol')[0].props.name).toEqual({ android: 'person_add', ios: 'person.badge.plus' });
+  expect(all(icon(confirmed), 'AppSymbol')[0].props.name).toEqual({ android: 'check_circle', ios: 'checkmark.circle' });
+  expect(flat(icon(confirmed).props.style).backgroundColor).toBe('#E7F4EC');
+});
+
+it('marks unread rows with a dot and a bolder title, never colour alone and never a row-wide fill', () => {
   const h = inbox();
   const [unread, read] = all(h.tree, 'Pressable');
-  expect(flat(card(h, unread, false).props.style).backgroundColor).toBe('#E9EEFC');
-  expect(flat(card(h, unread, true).props.style).backgroundColor).toBe('#DCE4FA');
+  expect(flat(card(h, unread, false).props.style).backgroundColor).toBeUndefined();
   expect(flat(card(h, read, false).props.style).backgroundColor).toBeUndefined();
-  expect(all(unread, 'Text').some(node => node.props.children === 'Unread')).toBe(true);
-  expect(all(read, 'Text').some(node => node.props.children === 'Unread')).toBe(false);
-  expect(all(unread, 'View').some(node => flat(node.props.style).width === 8 && flat(node.props.style).height === 8)).toBe(true);
+  expect(all(unread, 'Text').some(node => node.props.children === 'Unread')).toBe(false);
+  const dot = (row: any) => all(row, 'View').some(node => flat(node.props.style).width === 8 && flat(node.props.style).height === 8);
+  expect(dot(unread)).toBe(true);
+  expect(dot(read)).toBe(false);
+  const title = (row: any) => all(row, 'Text').find(node => node.props.children === h.notifications.formatNotificationLabel(row === unread ? 'booking_request' : 'booking_confirmed'))!;
+  expect(flat(title(unread).props.style).fontWeight).toBe('700');
+  expect(flat(title(read).props.style).fontWeight).toBe('500'); // M3 Medium; unread stays bolder
+  expect(unread.props.accessibilityLabel).toContain(', unread');
+});
+
+it('keeps the last row clear of the system navigation bar', () => {
+  const h = inbox();
+  const scroll = all(h.tree, 'ScrollView')[0];
+  expect(flat(scroll.props.contentContainerStyle).paddingBottom).toBeGreaterThanOrEqual(24);
 });

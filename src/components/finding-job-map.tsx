@@ -10,6 +10,8 @@ import { readOpenJobLocation } from '@/lib/client-job-location';
 import type { JobPin } from '@/lib/job-location';
 import { markerPadding } from '@/lib/location-map-view';
 import { JOB_MAP_STYLE, jobMapRuntime } from '@/lib/native-job-map';
+import { MapTypeToggle } from '@/components/map-type-toggle';
+import { useMapStyle } from '@/lib/map-type';
 import { useReducedMotion } from '@/hooks/use-reduced-motion';
 
 const { colors, type, spacing } = SkillMatchTheme.ui;
@@ -21,7 +23,7 @@ const FALLBACK_CENTER: [number, number] = [121.0716, 14.5471];
  * focused, foreground and current; cleared on blur, background or loss of authority; never cached. Nothing about
  * any Worker is drawn (no Worker exists before acceptance, D-003).
  */
-export function FindingJobMap({ jobId, clientId, isOperationCurrent, insets, revision }: {
+export function FindingJobMap({ jobId, clientId, isOperationCurrent, insets, revision, sheetExpanded = false }: {
   jobId: string;
   clientId: string;
   isOperationCurrent: () => boolean;
@@ -29,6 +31,8 @@ export function FindingJobMap({ jobId, clientId, isOperationCurrent, insets, rev
   insets: { top: number; bottom: number };
   /** Bumped after the location editor closes, so an edited pin is re-read. */
   revision: number;
+  /** The details panel is pulled up over the map: the Map / Satellite toggle steps aside. */
+  sheetExpanded?: boolean;
 }) {
   const pin = useOpenJobPin(jobId, clientId, isOperationCurrent, revision);
   const reducedMotion = useReducedMotion();
@@ -38,6 +42,7 @@ export function FindingJobMap({ jobId, clientId, isOperationCurrent, insets, rev
   const Map = jobMapRuntime?.Map;
   const Camera = jobMapRuntime?.Camera;
   const Marker = jobMapRuntime?.Marker;
+  const mapStyle = useMapStyle(JOB_MAP_STYLE);
   const viewKey = `${insets.top}:${insets.bottom}:${pin?.latitude}:${pin?.longitude}`;
   useEffect(() => {
     if (!loaded || !camera.current || !pin) return;
@@ -57,7 +62,7 @@ export function FindingJobMap({ jobId, clientId, isOperationCurrent, insets, rev
     </View>;
   }
   return <MapBoundary onFailure={() => setFailed(true)}><View style={[StyleSheet.absoluteFill, styles.canvas]}>
-    <Map style={styles.map} mapStyle={JOB_MAP_STYLE} androidView="texture"
+    <Map style={styles.map} mapStyle={mapStyle} androidView="texture"
       accessibilityLabel={pin ? 'Map showing your job location' : 'Map. Job location loading'}
       onDidFinishRenderingMapFully={() => setLoaded(true)} onDidFailLoadingMap={() => setFailed(true)}>
       <Camera ref={camera} initialViewState={{ center: pin ? [pin.longitude, pin.latitude] : FALLBACK_CENTER, zoom: 15 }} />
@@ -68,6 +73,7 @@ export function FindingJobMap({ jobId, clientId, isOperationCurrent, insets, rev
     {pin ? null : <View pointerEvents="none" style={[styles.loading, { top: insets.top + spacing.md }]}>
       <InlineStatus variant="loading" skeleton="line" message="Loading job location" />
     </View>}
+    {sheetExpanded ? null : <MapTypeToggle style={{ top: insets.top + spacing.md, right: spacing.gutter }} />}
   </View></MapBoundary>;
 }
 

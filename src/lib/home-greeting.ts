@@ -24,3 +24,20 @@ export function homeDate(now: Date = new Date()): string {
   const day = new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric' }).format(now);
   return `${weekday} · ${day}`;
 }
+
+export type HomeRole = 'worker' | 'client' | 'admin';
+
+/** Today as a compact chip-sized date, e.g. "Tue, Nov 3", in the device locale's own order. */
+export function homeShortDate(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(now);
+}
+
+/**
+ * The name as a greeting addresses it: an all-lowercase account name gets a capital first letter
+ * ("clientb" -> "Clientb"); any name already written with capitals is left exactly as typed.
+ */
+export function greetingName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed !== trimmed.toLowerCase()) return trimmed;
+  return trimmed.charAt(0).toLocaleUpperCase() + trimmed.slice(1);
+}

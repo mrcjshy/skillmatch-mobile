@@ -10,6 +10,7 @@ import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import { PulseDots } from '@/components/skeleton';
 import { type SymbolViewProps } from 'expo-symbols';
 import { AppSymbol as SymbolView } from '@/components/app-symbol';
+import { COBALT_LIT, COBALT_LIT_PRESSED, COBALT_SHADOW } from '@/constants/cobalt-material';
 
 
 
@@ -66,6 +67,9 @@ export function AppButton({
       style={({ pressed }) => [
         styles.base,
         variantStyles[variant],
+        // Filled cobalt buttons wear the Post a job material: lit from above on a cobalt shadow
+        // (owner 2026-11-04). Blocked buttons stay the flat sunken grey, never a faded gradient.
+        (variant === 'primary' || variant === 'compact') && !blocked ? styles.lit : null,
         variant === 'primary' && pressed && !blocked ? styles.primaryPressed : null,
         variant !== 'primary' && pressed && !blocked
           ? variant === 'compact' ? styles.compactPressed : styles.pressed
@@ -111,14 +115,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.controlBorder,
   },
+  lit: {
+    experimental_backgroundImage: COBALT_LIT,
+    boxShadow: COBALT_SHADOW,
+  },
   primaryPressed: {
     backgroundColor: colors.accentPressed,
+    experimental_backgroundImage: COBALT_LIT_PRESSED,
   },
   pressed: {
     backgroundColor: colors.accentSubtle,
   },
   compactPressed: {
     backgroundColor: colors.accentPressed,
+    experimental_backgroundImage: COBALT_LIT_PRESSED,
   },
   blocked: {
     backgroundColor: colors.surfaceSunken,
@@ -143,33 +153,33 @@ const variantStyles = StyleSheet.create({
   primary: {
     alignSelf: 'stretch',
     minHeight: size.primaryButton,
-    borderRadius: radius.control,
+    borderRadius: radius.pill, // M3: buttons are fully rounded
     backgroundColor: colors.accent,
     borderColor: colors.accent,
   },
   secondary: {
     alignSelf: 'stretch',
     minHeight: size.secondaryButton,
-    borderRadius: radius.control,
+    borderRadius: radius.pill, // M3: buttons are fully rounded
     backgroundColor: 'transparent',
   },
   ghost: {
     borderWidth: 0,
     paddingHorizontal: spacing.sm,
-    borderRadius: radius.control,
+    borderRadius: radius.pill, // M3: buttons are fully rounded
     minHeight: size.ghostButton,
     backgroundColor: 'transparent',
   },
   destructive: {
     alignSelf: 'stretch',
     minHeight: size.secondaryButton,
-    borderRadius: radius.control,
+    borderRadius: radius.pill, // M3: buttons are fully rounded
     backgroundColor: 'transparent',
     borderColor: colors.error,
   },
   compact: {
     minHeight: size.compactButton,
-    borderRadius: radius.control,
+    borderRadius: radius.pill, // M3: buttons are fully rounded
     backgroundColor: colors.accent,
     borderColor: colors.accent,
     paddingHorizontal: spacing.lg,
@@ -177,7 +187,7 @@ const variantStyles = StyleSheet.create({
   inverse: {
     alignSelf: 'stretch',
     minHeight: size.primaryButton,
-    borderRadius: radius.control,
+    borderRadius: radius.pill, // M3: buttons are fully rounded
     backgroundColor: colors.surface,
     borderColor: colors.surface,
   },

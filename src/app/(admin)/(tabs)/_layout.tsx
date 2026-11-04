@@ -2,20 +2,24 @@ import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
 import { TabIcon, TabLabel, useAppTabScreenOptions } from '@/components/app-tab-bar';
+import { AdminTabBar } from '@/components/client-tab-bar';
+import { useFloatingTabBar } from '@/components/floating-tab-bar';
 import { SkillMatchTheme } from '@/constants/theme';
 
 const { size } = SkillMatchTheme.ui;
 
-// Four top-level destinations through the same bar as Worker and Client. Home owns its own sticky
+// Four top-level destinations in the same floating pill bar as Worker and Client. Home owns its own sticky
 // header (greeting and the bell), so it has no navigator header; the other tabs use the shared
 // centered title and carry no bell. ID reviews, details and Notifications stay pushed Stack
 // screens outside this shell, with normal Back and no tab bar underneath.
 export default function AdminTabsLayout() {
-  const screenOptions = useAppTabScreenOptions();
+  const baseOptions = useAppTabScreenOptions();
+  const floating = useFloatingTabBar();
+  const screenOptions = { ...baseOptions, sceneStyle: [baseOptions.sceneStyle, floating.sceneStyle] };
   return (
     <>
       <StatusBar style="dark" />
-      <Tabs backBehavior="initialRoute" screenOptions={screenOptions}>
+      <Tabs backBehavior="initialRoute" screenOptions={screenOptions} tabBar={(props) => <AdminTabBar {...props} onHeight={floating.onHeight} />}>
         <Tabs.Screen
           name="admin/index"
           options={{
@@ -23,7 +27,7 @@ export default function AdminTabsLayout() {
             tabBarAccessibilityLabel: 'Home',
             headerShown: false,
             tabBarIcon: ({ color }) => (
-              <TabIcon name={{ android: 'home', ios: 'house.fill' }} color={color} size={size.tabIcon} />
+              <TabIcon name={{ android: 'home', ios: 'house.fill' }} color={color} size={size.tabIcon} plain />
             ),
             tabBarLabel: ({ focused, color }) => <TabLabel focused={focused} color={color}>Home</TabLabel>,
           }}
@@ -34,7 +38,7 @@ export default function AdminTabsLayout() {
             title: 'Workers',
             tabBarAccessibilityLabel: 'Workers',
             tabBarIcon: ({ color }) => (
-              <TabIcon name={{ android: 'handyman', ios: 'wrench.and.screwdriver' }} color={color} size={size.tabIcon} />
+              <TabIcon name={{ android: 'handyman', ios: 'wrench.and.screwdriver' }} color={color} size={size.tabIcon} plain />
             ),
             tabBarLabel: ({ focused, color }) => <TabLabel focused={focused} color={color}>Workers</TabLabel>,
           }}
@@ -45,7 +49,7 @@ export default function AdminTabsLayout() {
             title: 'Clients',
             tabBarAccessibilityLabel: 'Clients',
             tabBarIcon: ({ color }) => (
-              <TabIcon name={{ android: 'group', ios: 'person.2' }} color={color} size={size.tabIcon} />
+              <TabIcon name={{ android: 'group', ios: 'person.2' }} color={color} size={size.tabIcon} plain />
             ),
             tabBarLabel: ({ focused, color }) => <TabLabel focused={focused} color={color}>Clients</TabLabel>,
           }}
@@ -56,7 +60,7 @@ export default function AdminTabsLayout() {
             title: 'Reports',
             tabBarAccessibilityLabel: 'Reports',
             tabBarIcon: ({ color }) => (
-              <TabIcon name={{ android: 'flag', ios: 'flag' }} color={color} size={size.tabIcon} />
+              <TabIcon name={{ android: 'flag', ios: 'flag' }} color={color} size={size.tabIcon} plain />
             ),
             tabBarLabel: ({ focused, color }) => <TabLabel focused={focused} color={color}>Reports</TabLabel>,
           }}

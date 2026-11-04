@@ -169,7 +169,7 @@ describe('collapsed booking sheet safe area', () => {
     expect(h.onCollapsedHeight).toHaveBeenLastCalledWith(headerHeight + bottom);
     // The visible strip after the header belongs to the opaque sheet, never to Booking reference/actions.
     expect(flat(body(tree).props.style).opacity).toBe(0);
-    expect(sheetStyle.backgroundColor).toBe('#FFFFFF');
+    expect(sheetStyle.backgroundColor).toBe('#F5F2FA'); // surfaceRaised = M3 surfaceContainerLow, opaque
     expect(body(tree).props.pointerEvents).toBe('none');
     expect(body(tree).props.importantForAccessibility).toBe('no-hide-descendants');
     expect(body(tree).props.accessibilityElementsHidden).toBe(true);

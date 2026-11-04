@@ -43,3 +43,21 @@ describe('homeGreeting', () => {
     expect(homeGreeting(new Date(2026, 0, 1, 21, 0, 0))).toBe('Good evening');
   });
 });
+
+describe('greeting name and role line', () => {
+  it('capitalises an all-lowercase name and leaves typed capitals alone', async () => {
+    const { greetingName } = await import('./home-greeting');
+    expect(greetingName('clientb')).toBe('Clientb');
+    expect(greetingName('  maria ')).toBe('Maria');
+    expect(greetingName('JC')).toBe('JC');
+    expect(greetingName('de la Cruz')).toBe('de la Cruz');
+    expect(greetingName('McArthur')).toBe('McArthur');
+    expect(greetingName('')).toBe('');
+  });
+  it('formats a compact local date for the greeting line', async () => {
+    const { homeShortDate } = await import('./home-greeting');
+    const date = new Date(2026, 10, 3);
+    expect(homeShortDate(date)).toBe(new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(date));
+    expect(homeShortDate(date)).not.toBe(homeShortDate(new Date(2026, 10, 4)));
+  });
+});
