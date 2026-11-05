@@ -1,5 +1,5 @@
 // @ts-expect-error -- Vitest runs in Node; the Expo app tsconfig omits Node declarations.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 // @ts-expect-error -- Vitest runs in Node; the Expo app tsconfig omits Node declarations.
 import { resolve } from 'node:path';
 
@@ -50,7 +50,8 @@ describe('retained parent and secondary navigation boundaries', () => {
       expect(wrapper).toContain(`title: '${title}'`);
       expect(wrapper).not.toMatch(/headerLeft|headerShown\s*:\s*false/);
     }
-    for (const screen of ['terms', 'privacy']) expect(readSource(`src/app/(${role})/${role}/${screen}.tsx`)).toContain('options={{ headerShown: false }}');
+    // Terms and Privacy are shown only during registration (owner 2026-11-05).
+    for (const screen of ['terms', 'privacy']) expect(existsSync(resolve(`src/app/(${role})/${role}/${screen}.tsx`))).toBe(false);
     expect(readSource('src/app/(auth)/_layout.tsx')).toContain('headerShown: false');
   });
 });

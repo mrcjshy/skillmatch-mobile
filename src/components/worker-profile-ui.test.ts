@@ -211,7 +211,7 @@ describe('Worker Profile overview and deliberate editing', () => {
   });
   it('keeps profile and portfolio maintenance without resume builder or Skill Gap actions', () => {
     const h = harness(); const tree = h.render(); const values = texts(tree);
-    const titles = ['Edit profile', 'Work skills', 'About me', 'Portfolio and resume', 'Contact', 'Support and legal', 'Sign out', 'SkillMatch · Barangay Santa Ana, Pateros'];
+    const titles = ['Edit profile', 'Work skills', 'About me', 'Portfolio and resume', 'Contact', 'Support', 'Sign out', 'SkillMatch · Barangay Santa Ana, Pateros'];
     for (const title of titles) expect(values).toContain(title);
     for (let i = 1; i < titles.length; i++) expect(values.indexOf(titles[i - 1])).toBeLessThan(values.indexOf(titles[i]));
     expect(values.at(-1)).toBe('SkillMatch · Barangay Santa Ana, Pateros');
@@ -227,15 +227,15 @@ describe('Worker Profile overview and deliberate editing', () => {
     // Contact sits after the professional content and before support, each labelled once.
     for (const contact of ['+63 917 123 4567', 'alexandra@example.test']) {
       expect(values.indexOf(contact)).toBeGreaterThan(values.indexOf('Contact'));
-      expect(values.indexOf(contact)).toBeLessThan(values.indexOf('Support and legal'));
+      expect(values.indexOf(contact)).toBeLessThan(values.indexOf('Support'));
     }
     expect(values.filter(value => value === 'Phone')).toHaveLength(1); expect(values.filter(value => value === 'Email')).toHaveLength(1);
     expect(values).not.toContain('About Me');
     for (const node of nodes(tree).filter(n => n.type === 'Text')) expect(node.props.numberOfLines).toBeUndefined();
     expect(visibleNodes(tree).filter(n => n.type === 'Pressable' && (n.props.accessibilityState as Props | undefined)?.expanded !== undefined).map(n => n.props.accessibilityLabel)).toEqual(['Edit profile']);
     expect(quickTiles(tree).map(n => n.props.accessibilityLabel)).toEqual(['Portfolio', 'Portfolio files', 'Resume', 'Resume details']);
-    for (const [label, path] of [['Portfolio', '/worker/portfolio'], ['Portfolio files', '/worker/portfolio-files'], ['Resume', '/worker/resume'], ['Resume details', '/worker/resume-details'], ['Help and FAQ', '/worker/help'], ['My reports', '/worker/my-reports'], ['Report an app issue', '/worker/report-app'], ['Terms and conditions', '/worker/terms'], ['Privacy policy', '/worker/privacy']]) { (action(tree, label).props.onPress as () => void)(); expect(h.push).toHaveBeenLastCalledWith(path); }
-    expect(h.push).toHaveBeenCalledTimes(9);
+    for (const [label, path] of [['Portfolio', '/worker/portfolio'], ['Portfolio files', '/worker/portfolio-files'], ['Resume', '/worker/resume'], ['Resume details', '/worker/resume-details'], ['Help and FAQ', '/worker/help'], ['My reports', '/worker/my-reports'], ['Report an app issue', '/worker/report-app']]) { (action(tree, label).props.onPress as () => void)(); expect(h.push).toHaveBeenLastCalledWith(path); }
+    expect(h.push).toHaveBeenCalledTimes(7);
     expect(h.handleSave).not.toHaveBeenCalled();
   });
   it('while the profile loads, the hero keeps the account but offers no Edit profile and invents no work facts', () => {

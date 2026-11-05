@@ -105,7 +105,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     category: 'account',
     question: 'Saan ang Terms and Conditions at Privacy Policy?',
     answer:
-      'Sa registration, i-check ang dalawang checkbox: Terms and Conditions at Privacy Policy. Naka-record ang consent bago ka makapasok sa app. Pwede mong buksan at basahin ang buong Terms at Privacy sa registration at sa Profile.',
+      'Sa registration, i-check ang dalawang checkbox: Terms and Conditions at Privacy Policy. Naka-record ang consent bago ka makapasok sa app. Pwede mong buksan at basahin ang buong Terms at Privacy sa registration lamang. Para humingi ng kopya pagkatapos, gamitin ang Report an app issue sa Profile.',
     keywords: ['terms', 'conditions', 'privacy', 'policy', 'consent', 'checkbox', 'legal', 'terms of service'],
   },
 

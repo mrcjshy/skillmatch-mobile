@@ -1,9 +1,10 @@
 /**
  * V3 Wave 1 — own-user Terms/Privacy consent RPCs.
  *
- * Versions are the current pair from legal-documents.ts (Terms 2026-09-v1,
- * Privacy 2026-10-v1). A stored older Privacy version is not current, so the
- * consent gate asks again.
+ * Versions are the current pair from legal-documents.ts (Terms 2026-11-v1,
+ * Privacy 2026-11-v1). Consent is asked only at registration (owner decision
+ * 2026-11-05): any saved consent counts, whatever version it records, so a
+ * new version never asks an existing account again.
  * Consent is never stored in Auth metadata. record_my_consent requires an
  * authenticated caller with a public.users row (42501 otherwise).
  */
@@ -77,9 +78,9 @@ export function parseUserConsentResult(data: unknown): UserConsent | null {
   return parseUserConsent(rows[0] ?? null);
 }
 
+/** True when the account has saved consent of any version. */
 export function isCurrentLegalConsent(consent: UserConsent | null): boolean {
-  if (consent === null) return false;
-  return consent.termsVersion === TERMS_VERSION && consent.privacyVersion === PRIVACY_VERSION;
+  return consent !== null;
 }
 
 /** Both registration/legal-consent checkboxes must be explicitly checked. */

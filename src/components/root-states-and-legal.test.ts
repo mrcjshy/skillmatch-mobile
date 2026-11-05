@@ -143,12 +143,14 @@ describe('Not found and loading states', () => {
 });
 
 describe('Legal document reading screen', () => {
-  function legal(canGoBack: boolean) {
+  function legal(canGoBack: boolean, language: 'en' | 'fil' = 'en') {
     const back = vi.fn();
     const replace = vi.fn();
+    const setLanguage = vi.fn();
     const sections = compile('src/lib/legal-document-sections.ts', {});
     const { LegalDocumentScreen } = compile('src/components/legal-document-screen.tsx', {
       'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
+      react: { useState: () => [language, setLanguage] },
       'expo-router': { useRouter: () => ({ canGoBack: () => canGoBack, back, replace }) },
       'expo-status-bar': { StatusBar: 'StatusBar' },
       'react-native': { Pressable: 'Pressable', ScrollView: 'ScrollView', StyleSheet: { create: (v: Props) => v }, Text: 'Text', View: 'View' },
@@ -160,10 +162,16 @@ describe('Legal document reading screen', () => {
     });
     const document = {
       title: 'Terms and Conditions',
-      version: '2026-09-v1',
+      version: '2026-11-v1',
+      effectiveDate: 'November 11, 2026',
       paragraphs: ['Bookings. After acceptance, both parties see a confirmed booking.', 'Creating a SkillMatch account does not by itself provide consent for unrelated research.'],
+      filipino: {
+        title: 'Mga Tuntunin at Kundisyon',
+        effectiveDate: 'Nobyembre 11, 2026',
+        paragraphs: ['Mga booking. Kapag tumanggap ang Worker, makikita ng dalawang panig ang confirmed booking.'],
+      },
     };
-    return { tree: LegalDocumentScreen({ document }) as El, back, replace, document };
+    return { tree: LegalDocumentScreen({ document }) as El, back, replace, setLanguage, document };
   }
 
   it('is a flat reading column: title, version, headed sections, then Back', () => {
@@ -176,7 +184,7 @@ describe('Legal document reading screen', () => {
     expect(flat(column.props.style)).toMatchObject({ maxWidth: 640, alignSelf: 'center' });
     const texts = ofType(tree, 'Text');
     expect(texts.map((node) => node.props.children).filter((child) => typeof child === 'string')).toEqual([
-      'Back', 'Terms and Conditions', 'Bookings', 'After acceptance, both parties see a confirmed booking.',
+      'Back', 'Terms and Conditions', 'English', 'Filipino', 'Bookings', 'After acceptance, both parties see a confirmed booking.',
       'Creating a SkillMatch account does not by itself provide consent for unrelated research.',
     ]);
     expect(texts.filter((node) => node.props.accessibilityRole === 'header').map((node) => node.props.children)).toEqual(['Terms and Conditions', 'Bookings']);
@@ -186,9 +194,28 @@ describe('Legal document reading screen', () => {
   it('renders the wording exactly as authored, 16sp body at a readable weight', () => {
     const { tree, document } = legal(true);
     const rendered = ofType(tree, 'Text').map((node) => node.props.children).filter((child) => typeof child === 'string');
-    expect(`${rendered[2]}. ${rendered[3]}`).toBe(document.paragraphs[0]);
-    const body = ofType(tree, 'Text').find((node) => node.props.children === rendered[3])!;
+    expect(`${rendered[4]}. ${rendered[5]}`).toBe(document.paragraphs[0]);
+    const body = ofType(tree, 'Text').find((node) => node.props.children === rendered[5])!;
     expect(flat(body.props.style)).toMatchObject({ fontSize: 16, lineHeight: 24, color: ui.colors.textPrimary });
+  });
+
+  it('offers English and Filipino, shows the version and effective date, and switches the whole text', () => {
+    const english = legal(true);
+    const radios = ofType(english.tree, 'Pressable').filter((node) => node.props.accessibilityRole === 'radio');
+    expect(radios.map((node) => [node.props.accessibilityLabel, node.props.accessibilityState.checked])).toEqual([
+      ['English', true], ['Filipino', false],
+    ]);
+    const versionLine = (tree: El) => JSON.stringify(ofType(tree, 'Text').find((node) => Array.isArray(node.props.children) && node.props.children.includes('2026-11-v1'))!.props.children);
+    expect(versionLine(english.tree)).toContain('November 11, 2026');
+    radios[1].props.onPress();
+    expect(english.setLanguage).toHaveBeenCalledExactlyOnceWith('fil');
+    const filipino = legal(true, 'fil');
+    const texts = ofType(filipino.tree, 'Text').map((node) => node.props.children).filter((child) => typeof child === 'string');
+    expect(texts).toContain('Mga Tuntunin at Kundisyon');
+    expect(texts).toContain('Mga booking');
+    expect(texts).not.toContain('Bookings');
+    expect(versionLine(filipino.tree)).toContain('Nobyembre 11, 2026');
+    expect(versionLine(filipino.tree)).toContain('Bersyon');
   });
 
   it('keeps both Back controls working, falling back to Login when there is no history', () => {

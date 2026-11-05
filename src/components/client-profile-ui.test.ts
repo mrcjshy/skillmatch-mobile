@@ -72,7 +72,7 @@ const flush = async () => { for (let i = 0; i < 4; i++) await Promise.resolve();
 /** The Profile hero: the one cobalt card drawn with the sheen. */
 const heroCard = (tree: unknown) => nodes(tree).find(n => n.type === 'View' && typeof style(n).experimental_backgroundImage === 'string')!;
 const stats = (tree: unknown) => nodes(heroCard(tree)).filter(n => /^(Open jobs|Home pin): /.test(String(n.props.accessibilityLabel ?? ''))).map(n => n.props.accessibilityLabel);
-const NAVIGATION = ['Edit details', 'Post a job', 'How to post a job', 'Your details', 'Help and FAQ', 'My reports', 'Report an app issue', 'Terms and conditions', 'Privacy policy'];
+const NAVIGATION = ['Edit details', 'Post a job', 'How to post a job', 'Your details', 'Help and FAQ', 'My reports', 'Report an app issue'];
 const ROWS_AND_TILES = NAVIGATION.slice(1);
 function flatten(value: unknown): Props {
   return Array.isArray(value) ? Object.assign({}, ...value.map(flatten)) : value && typeof value === 'object' ? value as Props : {};
@@ -116,7 +116,7 @@ describe('Client Profile composed presentation', () => {
     expect(texts(hero)).toEqual(['Alexandra Maria Santos Dela Cruz with a long family name', 'Client', 'Barangay with an exceptionally long name, Santa Ana, Pampanga', '2', 'Open jobs', '—', 'Home pin', 'Edit details']);
     expect(nodes(hero).find(node => node.props.accessibilityLabel === 'Area: Barangay with an exceptionally long name, Santa Ana, Pampanga')).toBeDefined();
     expect(nodes(hero).find(node => node.type === 'SkillMatchMascot')!.props).toMatchObject({ expression: 'hello', size: 84 });
-    const order = ['Alexandra Maria Santos Dela Cruz with a long family name', 'Quick actions', 'Contact', 'Support', 'Legal', 'Sign out', 'SkillMatch · Barangay Santa Ana, Pateros'];
+    const order = ['Alexandra Maria Santos Dela Cruz with a long family name', 'Quick actions', 'Contact', 'Support', 'Sign out', 'SkillMatch · Barangay Santa Ana, Pateros'];
     for (let i = 1; i < order.length; i++) expect(values.indexOf(order[i - 1])).toBeLessThan(values.indexOf(order[i]));
     expect(values.at(-1)).toBe('SkillMatch · Barangay Santa Ana, Pateros');
     expect(values).toContain('alexandra.maria.santos.delacruz@example.test'); expect(values).toContain('+63 917 123 4567');
@@ -145,7 +145,7 @@ describe('Client Profile composed presentation', () => {
   });
   it('preserves every existing destination and exposes no additional profile write action', () => {
     const s = harness(); const tree = s.render();
-    for (const [label, path] of [['Edit details', '/client/details'], ['Post a job', '/client/post-job'], ['How to post a job', '/client/onboarding'], ['Your details', '/client/details'], ['Help and FAQ', '/client/help'], ['My reports', '/client/my-reports'], ['Report an app issue', '/client/report-app'], ['Terms and conditions', '/client/terms'], ['Privacy policy', '/client/privacy']]) {
+    for (const [label, path] of [['Edit details', '/client/details'], ['Post a job', '/client/post-job'], ['How to post a job', '/client/onboarding'], ['Your details', '/client/details'], ['Help and FAQ', '/client/help'], ['My reports', '/client/my-reports'], ['Report an app issue', '/client/report-app']]) {
       (action(tree, label).props.onPress as () => void)(); expect(s.push).toHaveBeenLastCalledWith(path);
     }
     expect(nodes(tree).filter(node => node.type === 'Pressable').map(node => node.props.accessibilityLabel)).toEqual([...NAVIGATION, 'Sign out']);

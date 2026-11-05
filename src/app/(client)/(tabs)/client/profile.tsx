@@ -125,26 +125,6 @@ export default function ClientProfile() {
       </View>
 
       <View style={styles.section}>
-        <SectionHeader title="Legal" />
-        <SurfaceGroup inset={spacing.lg}>
-          <NavRow
-            label="Terms and conditions"
-            hint="Draft — not final legal text"
-            icon={{ android: 'description', ios: 'doc.text' }}
-            disabled={isSigningOut}
-            onPress={() => router.push('/client/terms' as Href)}
-          />
-          <NavRow
-            label="Privacy policy"
-            hint="Draft — not final legal text"
-            icon={{ android: 'lock', ios: 'lock' }}
-            disabled={isSigningOut}
-            onPress={() => router.push('/client/privacy' as Href)}
-          />
-        </SurfaceGroup>
-      </View>
-
-      <View style={styles.section}>
         <AppButton
           label="Sign out"
           variant="secondary"

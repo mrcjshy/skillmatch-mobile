@@ -32,7 +32,7 @@ describe('legal document section split (presentation only)', () => {
   it('finds a heading for every authored section and treats only the research continuation as unheaded', () => {
     const terms = toLegalSections(TERMS_PARAGRAPHS);
     expect(terms.every((section) => section.heading !== null)).toBe(true);
-    expect(terms.map((section) => section.heading).slice(0, 3)).toEqual(['About SkillMatch', 'Acceptance of these Terms', 'Accounts and roles']);
+    expect(terms.map((section) => section.heading).slice(0, 3)).toEqual(['About SkillMatch', 'Who can use SkillMatch', 'Acceptance of these Terms']);
     const privacy = toLegalSections(PRIVACY_PARAGRAPHS);
     expect(privacy.filter((section) => section.heading === null)).toHaveLength(1);
     expect(privacy.find((section) => section.heading === null)?.body).toMatch(/^Creating a SkillMatch account/);

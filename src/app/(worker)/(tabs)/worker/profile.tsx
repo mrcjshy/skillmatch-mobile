@@ -472,13 +472,11 @@ function WorkerProfileContent() {
       ) : null}
 
       <View style={styles.section}>
-        <SectionHeader title="Support and legal" />
+        <SectionHeader title="Support" />
         <SurfaceGroup inset={spacing.lg}>
           <NavRow label="Help and FAQ" hint="Common questions" icon={{ android: 'help_outline', ios: 'questionmark.circle' }} disabled={busy} onPress={() => router.push('/worker/help' as Href)} />
           <NavRow label="My reports" hint="Reports you submitted" icon={{ android: 'flag', ios: 'flag' }} disabled={busy} onPress={() => router.push('/worker/my-reports' as unknown as Href)} />
           <NavRow label="Report an app issue" hint="Send an app issue report" icon={{ android: 'warning', ios: 'exclamationmark.triangle' }} disabled={busy} onPress={() => router.push('/worker/report-app' as unknown as Href)} />
-          <NavRow label="Terms and conditions" hint="Draft — not final legal text" icon={{ android: 'description', ios: 'doc.text' }} disabled={busy} onPress={() => router.push('/worker/terms' as Href)} />
-          <NavRow label="Privacy policy" hint="Draft — not final legal text" icon={{ android: 'lock', ios: 'lock' }} disabled={busy} onPress={() => router.push('/worker/privacy' as Href)} />
         </SurfaceGroup>
       </View>
 

@@ -1,5 +1,6 @@
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -15,15 +16,24 @@ type LegalDocumentScreenProps = {
   document: LegalDocument;
 };
 
+type LegalLanguage = 'en' | 'fil';
+
+const LANGUAGES: { value: LegalLanguage; label: string }[] = [
+  { value: 'en', label: 'English' },
+  { value: 'fil', label: 'Filipino' },
+];
+
 /**
  * Reading layout for Terms and Privacy: one flat column at a comfortable measure, the document
- * title, then each section as a heading and a body. The wording is rendered exactly as authored.
- * Back stays a plain control at the top and again at the end of a long document.
+ * title, an English / Filipino switch, then each section as a heading and a body. The wording is
+ * rendered exactly as authored. Back stays a plain control at the top and again at the end.
  */
 export function LegalDocumentScreen({ document }: LegalDocumentScreenProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const sections = toLegalSections(document.paragraphs);
+  const [language, setLanguage] = useState<LegalLanguage>('en');
+  const shown = language === 'fil' ? document.filipino : document;
+  const sections = toLegalSections(shown.paragraphs);
 
   function handleBack() {
     if (router.canGoBack()) {
@@ -65,9 +75,36 @@ export function LegalDocumentScreen({ document }: LegalDocumentScreenProps) {
 
           <View style={styles.header}>
             <Text style={styles.heading} accessibilityRole="header">
-              {document.title}
+              {shown.title}
             </Text>
-            <Text style={styles.version}>Version {document.version}</Text>
+            <Text style={styles.version}>
+              {language === 'fil' ? 'Bersyon' : 'Version'} {document.version} ·{' '}
+              {language === 'fil' ? 'May bisa simula' : 'Effective'} {shown.effectiveDate}
+            </Text>
+          </View>
+
+          <View style={styles.languages} accessibilityRole="radiogroup" accessibilityLabel="Language">
+            {LANGUAGES.map((option) => {
+              const selected = option.value === language;
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="radio"
+                  accessibilityLabel={option.label}
+                  accessibilityState={{ checked: selected }}
+                  onPress={() => setLanguage(option.value)}
+                  style={({ pressed }) => [
+                    styles.language,
+                    selected ? styles.languageSelected : null,
+                    pressed && !selected ? styles.languagePressed : null,
+                  ]}
+                >
+                  <Text style={[styles.languageLabel, selected ? styles.languageLabelSelected : null]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
 
           <View style={styles.body}>
@@ -133,6 +170,33 @@ const styles = StyleSheet.create({
   version: {
     ...type.helper,
     color: colors.textSecondary,
+  },
+  languages: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  language: {
+    minHeight: size.ghostButton,
+    paddingHorizontal: spacing.lg,
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.controlBorder,
+    backgroundColor: colors.surface,
+  },
+  languageSelected: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSubtle,
+  },
+  languagePressed: {
+    backgroundColor: colors.accentSubtle,
+  },
+  languageLabel: {
+    ...type.button,
+    color: colors.textSecondary,
+  },
+  languageLabelSelected: {
+    color: colors.accent,
   },
   body: {
     gap: spacing.xl,

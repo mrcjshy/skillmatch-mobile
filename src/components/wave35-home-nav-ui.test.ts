@@ -99,22 +99,22 @@ describe('Worker Profile identity', () => {
   const profile = code(WORKER_PROFILE);
 
   it('opens with the shared hero and its Edit profile action, then the editor, work facts, quick actions, contact and support', () => {
-    const order = ['<ProfileHero', "label: 'Edit profile'", 'styles.editor', 'title="Work skills"', 'title="About me"', '<WorkerStrikeStatus', 'title="Portfolio and resume"', '<ProfileQuickActions', 'title="Contact"', 'title="Support and legal"', 'label="Sign out"', '<ProfileFooter'].map((marker) => profile.indexOf(marker));
+    const order = ['<ProfileHero', "label: 'Edit profile'", 'styles.editor', 'title="Work skills"', 'title="About me"', '<WorkerStrikeStatus', 'title="Portfolio and resume"', '<ProfileQuickActions', 'title="Contact"', 'title="Support"', 'label="Sign out"', '<ProfileFooter'].map((marker) => profile.indexOf(marker));
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(profile).not.toContain('<Collapsible');
     expect(profile.match(/<ProfileHero\b/g)).toHaveLength(1);
   });
 
-  it('leaves Support and legal with actions only', () => {
-    const support = profile.slice(profile.indexOf('title="Support and legal"'), profile.indexOf('<ProfileFooter'));
+  it('leaves Support with actions only', () => {
+    const support = profile.slice(profile.indexOf('title="Support"'), profile.indexOf('<ProfileFooter'));
     expect(support).not.toMatch(/FactRow|account\?\.phone|account\?\.email|account\.phone|account\.email/);
-    expect([...support.matchAll(/<NavRow label="([^"]+)"/g)].map((match) => match[1])).toEqual(['Help and FAQ', 'My reports', 'Report an app issue', 'Terms and conditions', 'Privacy policy']);
+    expect([...support.matchAll(/<NavRow label="([^"]+)"/g)].map((match) => match[1])).toEqual(['Help and FAQ', 'My reports', 'Report an app issue']);
     expect(support).toContain('label="Sign out"');
   });
 
   it('shows only the contact data the Worker account already carries', () => {
-    const contact = profile.slice(profile.indexOf('title="Contact"'), profile.indexOf('title="Support and legal"'));
+    const contact = profile.slice(profile.indexOf('title="Contact"'), profile.indexOf('title="Support"'));
     expect([...contact.matchAll(/<FactRow [^>]*label="([^"]+)"/g)].map((match) => match[1])).toEqual(['Phone', 'Email']);
     expect(contact).toContain('value={account.phone}');
     expect(contact).toContain('value={account.email}');

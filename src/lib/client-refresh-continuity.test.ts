@@ -183,8 +183,8 @@ describe('actual-provider refresh continuity regression', () => {
       user: { id: '11111111-1111-4111-8111-111111111111', email: 'client@example.test', user_metadata: {} } };
     boundary.account = { id: '11111111-1111-4111-8111-111111111111', email: 'client@example.test', full_name: 'Synthetic Client', phone: '09170000000',
       role: 'client', barangay: 'Santa Ana', city: 'Pateros', is_active: true };
-    boundary.consent = { user_id: '11111111-1111-4111-8111-111111111111', terms_version: '2026-09-v1', terms_accepted_at: '2026-09-25T00:00:00Z',
-      privacy_version: '2026-10-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
+    boundary.consent = { user_id: '11111111-1111-4111-8111-111111111111', terms_version: '2026-11-v1', terms_accepted_at: '2026-09-25T00:00:00Z',
+      privacy_version: '2026-11-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
     boundary.accountResponses = []; boundary.consentResponses = []; boundary.calls = []; boundary.sequence = [];
     boundary.createResponses = []; boundary.workerVerified = true;
     boundary.blockRender = false; suspendRender.mockClear(); boundary.workerResponses = [];
@@ -265,7 +265,7 @@ describe('actual-provider refresh continuity regression', () => {
     await act(async () => boundary.authListener!('TOKEN_REFRESHED', { ...boundary.session, access_token: syntheticToken(2) }));
     expect(boundary.mounts - boundary.unmounts).toBe(0); expect(before.isOwnerCurrent()).toBe(false);
     boundary.account = { ...boundary.account, role: 'client', is_active: true };
-    boundary.consent = { user_id: boundary.account.id, terms_version: '2026-09-v1', terms_accepted_at: '2026-09-25T00:00:00Z', privacy_version: '2026-10-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
+    boundary.consent = { user_id: boundary.account.id, terms_version: '2026-11-v1', terms_accepted_at: '2026-09-25T00:00:00Z', privacy_version: '2026-11-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
     await act(async () => boundary.latestAccount!.retryAccountBootstrap());
     expect(boundary.latest!.draft.description).toBe(''); expect(boundary.latest!.beginPost).not.toBe(before.beginPost);
   });

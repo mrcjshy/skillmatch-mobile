@@ -126,8 +126,8 @@ describe('Option B refresh account recheck', () => {
     b.session = { access_token: token(1), refresh_token: 'r', user: { id: '11111111-1111-4111-8111-111111111111', email: 'client@example.test', user_metadata: {} } };
     b.account = { id: '11111111-1111-4111-8111-111111111111', email: 'client@example.test', full_name: 'Synthetic Client', phone: '09170000000',
       role: 'client', barangay: 'Santa Ana', city: 'Pateros', is_active: true };
-    b.consent = { user_id: b.account.id, terms_version: '2026-09-v1', terms_accepted_at: '2026-09-25T00:00:00Z',
-      privacy_version: '2026-10-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
+    b.consent = { user_id: b.account.id, terms_version: '2026-11-v1', terms_accepted_at: '2026-09-25T00:00:00Z',
+      privacy_version: '2026-11-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
     Object.assign(b, { selects: [], selectCalls: 0, inserts: [], rpcs: [], protectedMounts: 0, protectedUnmounts: 0, failureShown: 0, messages: [] });
     b.signOut.mockReset(); b.signOutCurrentUser.mockReset(); b.deactivate.mockReset();
     sessionRouteContinuation.clear();
@@ -262,8 +262,8 @@ describe('Option B rework: confirmed-user rechecks stay read-only', () => {
     b.session = { access_token: token(1), refresh_token: 'r', user: { id: '11111111-1111-4111-8111-111111111111', email: 'client@example.test', user_metadata: { ...REGISTRATION } } };
     b.account = { id: '11111111-1111-4111-8111-111111111111', email: 'client@example.test', full_name: 'Synthetic Client', phone: '09170000000',
       role: 'client', barangay: 'Santa Ana', city: 'Pateros', is_active: true };
-    b.consent = { user_id: b.account.id, terms_version: '2026-09-v1', terms_accepted_at: '2026-09-25T00:00:00Z',
-      privacy_version: '2026-10-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
+    b.consent = { user_id: b.account.id, terms_version: '2026-11-v1', terms_accepted_at: '2026-09-25T00:00:00Z',
+      privacy_version: '2026-11-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
     Object.assign(b, { selects: [], selectCalls: 0, inserts: [], rpcs: [], protectedMounts: 0, protectedUnmounts: 0, failureShown: 0, messages: [],
       pathname: '/client', params: {}, lifetime: null, consentRead: null });
     b.signOut.mockReset(); b.signOutCurrentUser.mockReset(); b.deactivate.mockReset();
@@ -462,8 +462,8 @@ describe('Option B recheck deadline: Worker identity-verification stage', () => 
       user_metadata: { registration_full_name: 'Synthetic Worker', registration_phone: '09170000002', registration_role_intent: 'worker' } } };
     b.account = { id: WORKER, email: 'worker@example.test', full_name: 'Synthetic Worker', phone: '09170000002',
       role: 'worker', barangay: 'Santa Ana', city: 'Pateros', is_active: true };
-    b.consent = { user_id: WORKER, terms_version: '2026-09-v1', terms_accepted_at: '2026-09-25T00:00:00Z',
-      privacy_version: '2026-10-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
+    b.consent = { user_id: WORKER, terms_version: '2026-11-v1', terms_accepted_at: '2026-09-25T00:00:00Z',
+      privacy_version: '2026-11-v1', privacy_acknowledged_at: '2026-09-25T00:00:00Z' };
     Object.assign(b, { selects: [], selectCalls: 0, inserts: [], rpcs: [], protectedMounts: 0, protectedUnmounts: 0, failureShown: 0, messages: [],
       pathname: '/worker', params: {}, lifetime: null, consentRead: null,
       workerReads: [], workerDefault: verified, workerReadCalls: 0, workerMounts: 0, workerUnmounts: 0, lastAccount: null });
