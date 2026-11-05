@@ -106,6 +106,7 @@ describe('Login', () => {
     const tree = h.render();
     expect(tree.type).toBe('AuthScreen');
     expect(tree.props.title).toBe('Sign in');
+    expect(tree.props.showTitle).toBe(false); // owner 2026-11-05: no "Sign in" heading under Itik
     expect(nodes(tree).filter((node) => node.type === 'AppField' || node.type === 'PasswordField').map((node) => node.props.label)).toEqual(['Email', 'Password']);
     expect(h.field('Password').type).toBe('PasswordField');
     const primary = ofType(tree, 'AppButton');

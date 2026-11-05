@@ -97,6 +97,13 @@ describe('AuthScreen shell', () => {
     expect(order.indexOf('Child')).toBeLessThan(order.indexOf('Footer'));
   });
 
+  it('hides the visible title when showTitle is false but keeps the brand and the form (owner, 2026-11-05)', () => {
+    const tree = AuthScreen({ title: 'Sign in', showTitle: false, children: element('Child', {}) });
+    expect(ofType(tree, 'Text').some((node: any) => node.props.children === 'Sign in')).toBe(false);
+    expect(ofType(tree, 'Image')).toHaveLength(1);
+    expect(nodes(tree).some((node: any) => node.type === 'Child')).toBe(true);
+  });
+
   it('shows Itik alone (no tile, no name), centred, by default and omits it for later steps (owner, 2026-11-05)', () => {
     const withBrand = AuthScreen({ title: 'T' });
     expect(ofType(withBrand, 'Image')[0].props.source).toBe('logo');

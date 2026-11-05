@@ -250,6 +250,7 @@ export default function LoginScreen() {
       <AuthScreen
         scrollRef={scrollRef}
         title="Sign in"
+        showTitle={false}
         footer={footer}
       >
         {sessionNotice ? <FormMessage tone={sessionNotice.tone} message={sessionNotice.text} /> : null}
@@ -339,6 +340,7 @@ export default function LoginScreen() {
     <AuthScreen
       scrollRef={scrollRef}
       title="Sign in"
+      showTitle={false}
       footer={footer}
     >
       {sessionNotice ? <FormMessage tone={sessionNotice.tone} message={sessionNotice.text} /> : null}

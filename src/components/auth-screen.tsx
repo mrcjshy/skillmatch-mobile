@@ -21,6 +21,8 @@ type AuthScreenProps = {
   /** From `useAuthScroll()`; lets the screen scroll a focused invalid field clear of the top edge. */
   scrollRef?: RefObject<ScrollView | null>;
   title: string;
+  /** False hides the visible title (Sign in: Itik alone carries the screen, owner 2026-11-05). */
+  showTitle?: boolean;
   description?: string;
   /** Compact wordmark above the title; on for entry screens, off for later steps. */
   brand?: boolean;
@@ -65,7 +67,7 @@ export function useAuthScroll() {
   return { scrollRef, focusField };
 }
 
-export function AuthScreen({ scrollRef, title, description, brand = true, children, footer, stickyFooter }: AuthScreenProps) {
+export function AuthScreen({ scrollRef, title, showTitle = true, description, brand = true, children, footer, stickyFooter }: AuthScreenProps) {
   const ui = useUiTheme();
   const styles = createStyles(ui);
   const insets = useSafeAreaInsets();
@@ -83,12 +85,16 @@ export function AuthScreen({ scrollRef, title, description, brand = true, childr
         >
           <View style={styles.column}>
             {brand ? <BrandMark /> : null}
-            <View style={styles.header}>
-              <Text accessibilityRole="header" style={styles.title}>
-                {title}
-              </Text>
-              {description ? <Text style={styles.description}>{description}</Text> : null}
-            </View>
+            {showTitle || description ? (
+              <View style={styles.header}>
+                {showTitle ? (
+                  <Text accessibilityRole="header" style={styles.title}>
+                    {title}
+                  </Text>
+                ) : null}
+                {description ? <Text style={styles.description}>{description}</Text> : null}
+              </View>
+            ) : null}
             {children}
             {footer ? <View style={styles.footer}>{footer}</View> : null}
           </View>
