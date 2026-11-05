@@ -9,6 +9,12 @@ const CATALOG_IDS = [
   '63b4db38-c7d4-415f-8e87-6e4e98506af8', 'f73ea827-3e32-44a9-98a2-4cb59978c83a', '45a65bb3-c7dc-4a7c-ae47-5db1ced919f4',
   '02be35a0-4c39-4f91-a684-93a3d5b54248', 'f2f28666-6ada-42a8-adf4-caf6e5c553c9', 'aab5b18c-de07-4de0-b888-464b3bd83913',
   '17e02f3a-1b75-428f-98a2-75bb9cfd13ae',
+  // The 14 skills added by 20261105140000_skills_4ps_catalog.sql (4Ps catalog, owner 2026-11-05).
+  '186526be-1633-4470-9d50-356dbe65cc31', 'c619288a-aa55-49c3-a65a-f92d20e847e9', 'd724bcf8-4dc1-43d7-b972-c09302326990',
+  '45d9636f-e396-4ef9-8295-1f92e79c8800', '591426b4-3e3c-42c1-9afd-cdf46d7dac07', 'eeed1bad-d9e5-4879-bffc-c548f3baed68',
+  'b1ca2177-a90e-473f-a3be-4bd5253072ea', 'd7e7d525-9d07-448a-8b79-b1f1565f39b3', '05c8676d-0836-46ae-9994-d4b7b80f9a12',
+  'e97fc357-8f6c-4c46-90d8-e1f4f24f999e', '86953d01-06b1-406e-ab42-94549204b054', 'f9abc619-dacf-4897-99e7-46ac47abf8c1',
+  '2276d8c6-1e54-4f0e-b7b2-406bd85ffd64', '9858d5fb-8e86-461a-9e29-06e4f2638716',
 ];
 
 describe('description presets', () => {
