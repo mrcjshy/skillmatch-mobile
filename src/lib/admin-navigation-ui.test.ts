@@ -147,8 +147,11 @@ describe('Admin navigation configuration (static composition, not native layout)
       'Reports', '3 reports need attention', '3 open',
       'Platform summary', 'Workers', '1,234,567', '3 verified', 'Bookings', '3 completed',
       'Payments', 'QR Ph (PayMongo TEST)', 'Pending 1 · Paid 2 · Refunded 0 · Not set 0',
-      'Reports by status', 'Account', 'Signed in as', 'Alma Reyes Santos', 'Sign out',
+      'Reports by status', 'Account', 'Signed in as', 'Alma Reyes Santos', 'Settings', 'Notifications and password', 'Sign out',
     ]));
+    // Settings sits in the account section, before Sign out (owner 2026-11-06).
+    expect(strings.indexOf('Account')).toBeLessThan(strings.indexOf('Settings'));
+    expect(strings.indexOf('Settings')).toBeLessThan(strings.indexOf('Sign out'));
     // Attention comes before the summary, and the account section is last.
     expect(strings.indexOf('Needs attention')).toBeLessThan(strings.indexOf('Platform summary'));
     expect(strings.indexOf('Platform summary')).toBeLessThan(strings.indexOf('Account'));
@@ -163,6 +166,7 @@ describe('Admin navigation configuration (static composition, not native layout)
       ['admin/identity-reviews', { title: 'ID reviews' }],
       ['admin/verification-details', { title: 'ID review' }],
       ['admin/report-details', { title: 'Report details' }],
+      ['admin/settings', { title: 'Settings' }],
     ]);
     expect(nodes.filter((node) => node.props.role === 'administrator')).toHaveLength(1);
     for (const node of nodes.filter((entry) => entry.props.options !== undefined)) {
@@ -231,7 +235,7 @@ describe('Admin navigation configuration (static composition, not native layout)
     expect(text(home())).not.toContain(expected);
     expect(seams.push).not.toHaveBeenCalled();
   });
-  it('keeps long content uncapped, scaling enabled, and exactly three Home actions', () => {
+  it('keeps long content uncapped, scaling enabled, and exactly four Home actions (Settings added 2026-11-06)', () => {
     seams.cells[0] = view;
     const nodes = home();
     for (const node of nodes) {
@@ -242,7 +246,7 @@ describe('Admin navigation configuration (static composition, not native layout)
       expect(node.props.accessibilityRole).not.toBe('menu');
     }
     expect(nodes.filter((node) => node.props.accessibilityRole === 'button')
-      .map((node) => node.props.accessibilityLabel)).toEqual([ID_REVIEWS, REPORTS, 'Sign out']);
+      .map((node) => node.props.accessibilityLabel)).toEqual([ID_REVIEWS, REPORTS, 'Settings', 'Sign out']);
   });
   it('composes header token colors with readable foreground contrast', () => {
     const stack = elements(AdminLayout()).find((node) => node.props.screenOptions !== undefined)!;

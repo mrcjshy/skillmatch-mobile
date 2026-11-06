@@ -6,11 +6,15 @@ import { AdminRow } from '@/components/admin-rows';
 import { AppButton } from '@/components/app-button';
 import { AppChip } from '@/components/app-chip';
 import { AppField } from '@/components/app-field';
+import { AppSegment } from '@/components/app-segment';
 import { groupPosition, groupedRowStyle } from '@/components/grouped-row';
 import { InitialsAvatar } from '@/components/initials-avatar';
 import { InlineStatus } from '@/components/inline-status';
 import { RefinementThemeProvider, useUiTheme, type UiTheme } from '@/components/refinement-theme';
-import { directoryEmptyMessage, loadAdminDirectory, prepareDirectorySearch, type DirectoryItem, type DirectoryKind, type DirectoryPage } from '@/lib/admin-directories';
+import {
+  DIRECTORY_STATUS_OPTIONS, directoryEmptyMessage, loadAdminDirectory, prepareDirectorySearch, strikeLabel,
+  type DirectoryItem, type DirectoryKind, type DirectoryPage, type DirectoryStatus,
+} from '@/lib/admin-directories';
 import { availabilityLabel, directoryRowStatus, workerVerificationStatus } from '@/lib/admin-presentation';
 import { formatCardDateTime } from '@/lib/date-time';
 import { useAccount } from '@/providers/account-provider';
@@ -22,6 +26,8 @@ function summary(item: DirectoryItem, kind: DirectoryKind): string {
   if (kind === 'worker') {
     if (!item.is_active) parts.push(workerVerificationStatus(item).label);
     if (item.has_profile) parts.push(availabilityLabel(item.availability_status));
+    const strikes = strikeLabel(item);
+    if (strikes) parts.push(strikes);
   }
   const joined = formatCardDateTime(item.created_at);
   if (joined) parts.push(`Joined ${joined}`);
@@ -43,9 +49,10 @@ function AdminDirectoryContent({ kind }: { kind: DirectoryKind }) {
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<DirectoryStatus>('all');
   const [reload, setReload] = useState(0);
   const [result, setResult] = useState<{
-    ownerId: string; search: string; page: number; reload: number; value: DirectoryPage;
+    ownerId: string; search: string; filter: DirectoryStatus; page: number; reload: number; value: DirectoryPage;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,21 +62,21 @@ function AdminDirectoryContent({ kind }: { kind: DirectoryKind }) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    loadAdminDirectory(kind, search, page)
+    loadAdminDirectory(kind, search, page, filter)
       .then((value) => {
-        if (!cancelled) setResult({ ownerId: adminId, search, page, reload, value });
+        if (!cancelled) setResult({ ownerId: adminId, search, filter, page, reload, value });
       })
       .catch((reason: unknown) => {
         if (!cancelled) setError(reason instanceof Error ? reason.message : 'Unable to load the directory. Please try again.');
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [adminId, kind, search, page, reload]));
+  }, [adminId, kind, search, filter, page, reload]));
 
   if (!adminId) return <InlineStatus variant="error" message="Admin access is required." />;
 
-  const current = result?.ownerId === adminId && result.search === search && result.page === page && result.reload === reload
-    ? result.value : null;
+  const current = result?.ownerId === adminId && result.search === search && result.filter === filter &&
+    result.page === page && result.reload === reload ? result.value : null;
   const totalPages = current ? Math.max(1, Math.ceil(current.total_count / current.page_size)) : 1;
   const title = kind === 'worker' ? 'Workers' : 'Clients';
   const preparedSearch = prepareDirectorySearch(draft);
@@ -120,6 +127,16 @@ function AdminDirectoryContent({ kind }: { kind: DirectoryKind }) {
               setDraft(''); setSearch(''); setPage(1); setReload((n) => n + 1);
             }} disabled={!draft && !search} style={styles.button} />
           </View>
+          <View style={styles.filter}>
+            <Text style={styles.filterLabel}>Account status</Text>
+            <AppSegment
+              accessibilityLabel="Account status"
+              options={DIRECTORY_STATUS_OPTIONS}
+              value={filter}
+              onChange={(next) => { setFilter(next); setPage(1); }}
+            />
+            <Text style={styles.count}>Inactive means banned by an Administrator or suspended at 3 no-show strikes.</Text>
+          </View>
           {error ? <InlineStatus variant="error" message={error}
             action={<AppButton label="Retry" variant="secondary" onPress={() => setReload((n) => n + 1)} />} /> : null}
           {loading && !current ? <InlineStatus variant="loading" skeleton="rows" message={`Loading ${title.toLowerCase()}…`} /> : null}
@@ -127,7 +144,7 @@ function AdminDirectoryContent({ kind }: { kind: DirectoryKind }) {
         </View>
       }
       ListEmptyComponent={!loading && !error && current?.items.length === 0
-        ? <InlineStatus variant="empty" icon={{ android: 'person', ios: 'person' }} message={directoryEmptyMessage(current, kind, search)} />
+        ? <InlineStatus variant="empty" icon={{ android: 'person', ios: 'person' }} message={directoryEmptyMessage(current, kind, search, filter)} />
         : null}
       ListFooterComponent={current && current.total_count > 0 ?
         <View style={[styles.buttons, styles.footer]}>
@@ -148,5 +165,7 @@ function createStyles(ui: UiTheme) {
     button: { flexGrow: 1, flexBasis: 120 },
     footer: { paddingTop: spacing.lg },
     count: { ...type.helper, color: colors.textSecondary },
+    filter: { gap: spacing.xs },
+    filterLabel: { ...type.label, color: colors.textPrimary },
   });
 }

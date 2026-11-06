@@ -299,6 +299,15 @@ describe('push-notifications', () => {
     );
   });
 
+  it('NTF-01: routes Admin ID and registration alerts to the list they are about', () => {
+    expect(notificationActivationHref('administrator', 'identity_submitted')).toBe('/admin/identity-reviews');
+    expect(notificationActivationHref('administrator', 'worker_registered')).toBe('/admin/workers');
+    expect(notificationActivationHref('administrator', 'client_registered')).toBe('/admin/clients');
+    // The types are Admin-only: Workers and Clients keep their own inbox.
+    expect(notificationActivationHref('worker', 'identity_submitted')).toBe('/worker/notifications');
+    expect(notificationActivationHref('client', 'client_registered')).toBe('/client/notifications');
+  });
+
   it('preserves Worker and Client destinations regardless of notification type', () => {
     expect(notificationActivationHref('worker', 'report_submitted')).toBe(
       WORKER_NOTIFICATIONS_HREF

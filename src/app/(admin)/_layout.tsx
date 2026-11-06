@@ -15,6 +15,7 @@ export default function AdminLayout() {
         <Stack.Screen name="admin/identity-reviews" options={{ title: 'ID reviews' }} />
         <Stack.Screen name="admin/verification-details" options={{ title: 'ID review' }} />
         <Stack.Screen name="admin/report-details" options={{ title: 'Report details' }} />
+        <Stack.Screen name="admin/settings" options={{ title: 'Settings' }} />
       </Stack>
     </>
   );

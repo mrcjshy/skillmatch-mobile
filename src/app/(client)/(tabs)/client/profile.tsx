@@ -105,8 +105,15 @@ export default function ClientProfile() {
       </View>
 
       <View style={styles.section}>
-        <SectionHeader title="Support" />
+        <SectionHeader title="Settings and support" />
         <SurfaceGroup inset={spacing.lg}>
+          <NavRow
+            label="Settings"
+            hint="Notifications, map and password"
+            icon={{ android: 'settings', ios: 'gearshape' }}
+            disabled={isSigningOut}
+            onPress={() => router.push('/client/settings' as unknown as Href)}
+          />
           <NavRow
             label="My reports"
             hint="Reports you submitted"

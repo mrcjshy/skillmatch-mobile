@@ -1,6 +1,13 @@
 import { supabase } from './supabase';
 
 export type DirectoryKind = 'worker' | 'client';
+/** ADM-01 (owner 2026-11-06): 'inactive' is banned by an Administrator or suspended at three strikes. */
+export type DirectoryStatus = 'all' | 'active' | 'inactive';
+export const DIRECTORY_STATUS_OPTIONS: readonly { value: DirectoryStatus; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+];
 export type DirectoryItem = {
   user_id: string;
   full_name: string;
@@ -9,6 +16,8 @@ export type DirectoryItem = {
   has_profile?: boolean;
   is_verified?: boolean | null;
   availability_status?: string | null;
+  /** No-show strikes, 0 to 3; null when the Worker has no profile yet. */
+  strike_count?: number | null;
 };
 export type DirectoryPage = {
   total_count: number;
@@ -19,7 +28,7 @@ export type DirectoryPage = {
 
 const WORKER_KEYS = [
   'user_id', 'full_name', 'is_active', 'created_at',
-  'has_profile', 'is_verified', 'availability_status',
+  'has_profile', 'is_verified', 'availability_status', 'strike_count',
 ];
 const CLIENT_KEYS = ['user_id', 'full_name', 'is_active', 'created_at'];
 
@@ -28,11 +37,17 @@ export function prepareDirectorySearch(value: string): { search: string; tooLong
   return { search, tooLong: [...search].length > 100 };
 }
 
-export function directoryEmptyMessage(page: DirectoryPage, kind: DirectoryKind, search: string): string {
+export function directoryEmptyMessage(page: DirectoryPage, kind: DirectoryKind, search: string, status: DirectoryStatus = 'all'): string {
   if (page.total_count > 0) return page.page > 1
     ? 'No items on this page. Go to the previous page.' : 'No items on this page.';
   const title = kind === 'worker' ? 'workers' : 'clients';
-  return search ? `No ${title} match that name.` : `No ${title} found.`;
+  const which = status === 'all' ? title : `${status} ${title}`;
+  return search ? `No ${which} match that name.` : `No ${which} found.`;
+}
+
+/** "1 of 3 strikes" for a Worker with a profile; null otherwise. */
+export function strikeLabel(item: DirectoryItem): string | null {
+  return item.has_profile && Number.isSafeInteger(item.strike_count) ? `${item.strike_count} of 3 strikes` : null;
 }
 
 function count(value: unknown): number {
@@ -62,17 +77,19 @@ export function parseDirectoryPage(value: unknown, kind: DirectoryKind): Directo
         (kind === 'worker' && (typeof item.has_profile !== 'boolean' ||
           (item.is_verified !== null && typeof item.is_verified !== 'boolean') ||
           (item.availability_status !== null && typeof item.availability_status !== 'string') ||
-          (!item.has_profile && (item.is_verified !== null || item.availability_status !== null))))) {
+          (item.strike_count !== null && (!Number.isSafeInteger(item.strike_count) || (item.strike_count as number) < 0)) ||
+          (!item.has_profile && (item.is_verified !== null || item.availability_status !== null || item.strike_count !== null))))) {
       throw Error('Invalid directory response');
     }
   }
   return { ...row, total_count: totalCount } as DirectoryPage;
 }
 
-export async function loadAdminDirectory(kind: DirectoryKind, search: string, page: number): Promise<DirectoryPage> {
-  const name = kind === 'worker' ? 'get_admin_worker_directory' : 'get_admin_client_directory';
+/** ADM-01 _v2 reads: the v1 directory plus a status filter, and strike_count on Worker rows. */
+export async function loadAdminDirectory(kind: DirectoryKind, search: string, page: number, status: DirectoryStatus = 'all'): Promise<DirectoryPage> {
+  const name = kind === 'worker' ? 'get_admin_worker_directory_v2' : 'get_admin_client_directory_v2';
   const { data, error } = await supabase.rpc(name, {
-    p_search: search, p_page: page, p_page_size: 20,
+    p_search: search, p_page: page, p_page_size: 20, p_status: status,
   });
   if (error) throw Error(error.code === '42501'
     ? 'You no longer have access to Admin directories.'

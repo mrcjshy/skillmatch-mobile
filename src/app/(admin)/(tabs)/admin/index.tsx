@@ -7,6 +7,7 @@ import { AppButton } from '@/components/app-button';
 import { AppNotice } from '@/components/app-notice';
 import { FactRow } from '@/components/fact-row';
 import { HomeStickyHeader } from '@/components/home-header';
+import { NavRow } from '@/components/nav-row';
 import { RefinementThemeProvider } from '@/components/refinement-theme';
 import { SectionHeader } from '@/components/section-header';
 import { SurfaceGroup } from '@/components/surface-group';
@@ -96,6 +97,15 @@ export default function AdminHome() {
               <SurfaceGroup>
                 <FactRow label="Signed in as" value={fullName || null} />
                 <FactRow label="Role" value="Administrator" />
+              </SurfaceGroup>
+              <SurfaceGroup inset={spacing.lg}>
+                <NavRow
+                  label="Settings"
+                  hint="Notifications and password"
+                  icon={{ android: 'settings', ios: 'gearshape' }}
+                  disabled={isSigningOut}
+                  onPress={() => router.push('/admin/settings' as Href)}
+                />
               </SurfaceGroup>
               <AppButton
                 label="Sign out"

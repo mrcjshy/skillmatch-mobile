@@ -34,6 +34,10 @@ function stringLiterals(file: ts.SourceFile): string[] {
 describe('Admin notification route integration', () => {
   it('presents the trusted report type without replacing the backend message', () => {
     expect(formatNotificationLabel('report_submitted')).toBe('Report submitted');
+    // NTF-01 (owner 2026-11-06)
+    expect(formatNotificationLabel('identity_submitted')).toBe('ID submitted for review');
+    expect(formatNotificationLabel('worker_registered')).toBe('New Worker registered');
+    expect(formatNotificationLabel('client_registered')).toBe('New Client registered');
     const list = source('src/components/notification-list.tsx');
     expect(list.getText()).toContain('{n.message}');
     expect(stringLiterals(list)).not.toContain('A new report needs Admin review.');

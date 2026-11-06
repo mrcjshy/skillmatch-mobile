@@ -58,6 +58,10 @@ const NOTIFICATION_LABEL: Record<string, string> = {
   payment_received: 'Payment received',
   worker_verified: 'Profile verified',
   report_submitted: 'Report submitted',
+  // NTF-01 (owner 2026-11-06): Administrator alerts.
+  identity_submitted: 'ID submitted for review',
+  worker_registered: 'New Worker registered',
+  client_registered: 'New Client registered',
 };
 
 /**
@@ -190,6 +194,7 @@ const NOTIFICATION_KIND: Record<string, NotificationKind> = {
   payment_received: 'payment',
   worker_verified: 'verified',
   report_submitted: 'report',
+  identity_submitted: 'request',
 };
 export function notificationKind(type: string): NotificationKind {
   return NOTIFICATION_KIND[type] ?? 'general';

@@ -367,11 +367,18 @@ function WorkerProfileContent() {
             {profileSkills.length === 0 ? (
               <Text style={styles.value}>No skills added yet.</Text>
             ) : (
-              <View style={styles.skillChips}>
+              // One row that scrolls sideways when the skills don't fit (owner 2026-11-06).
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                accessibilityLabel="Work skills"
+                style={styles.skillCarousel}
+                contentContainerStyle={styles.skillChips}
+              >
                 {profileSkills.map((skill) => (
                   <AppChip key={skill.id} label={skill.skill_name} variant="neutral" />
                 ))}
-              </View>
+              </ScrollView>
             )}
           </View>
 
@@ -472,8 +479,9 @@ function WorkerProfileContent() {
       ) : null}
 
       <View style={styles.section}>
-        <SectionHeader title="Support" />
+        <SectionHeader title="Settings and support" />
         <SurfaceGroup inset={spacing.lg}>
+          <NavRow label="Settings" hint="Notifications, map and password" icon={{ android: 'settings', ios: 'gearshape' }} disabled={busy} onPress={() => router.push('/worker/settings' as unknown as Href)} />
           <NavRow label="Help and FAQ" hint="Common questions" icon={{ android: 'help_outline', ios: 'questionmark.circle' }} disabled={busy} onPress={() => router.push('/worker/help' as Href)} />
           <NavRow label="My reports" hint="Reports you submitted" icon={{ android: 'flag', ios: 'flag' }} disabled={busy} onPress={() => router.push('/worker/my-reports' as unknown as Href)} />
           <NavRow label="Report an app issue" hint="Send an app issue report" icon={{ android: 'warning', ios: 'exclamationmark.triangle' }} disabled={busy} onPress={() => router.push('/worker/report-app' as unknown as Href)} />
@@ -520,11 +528,16 @@ function createStyles(ui: UiTheme) {
       color: colors.textPrimary,
       flexShrink: 1,
     },
+    // Runs edge to edge so a cut-off chip shows there is more to swipe.
+    skillCarousel: {
+      flexGrow: 0,
+      marginHorizontal: -spacing.gutter,
+    },
     skillChips: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
       alignItems: 'center',
       gap: spacing.sm,
+      paddingHorizontal: spacing.gutter,
     },
     modalFlex: {
       flex: 1,

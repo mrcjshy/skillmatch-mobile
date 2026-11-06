@@ -28,6 +28,10 @@ export const WORKER_NOTIFICATIONS_HREF = '/worker/notifications';
 export const CLIENT_NOTIFICATIONS_HREF = '/client/notifications';
 export const ADMIN_NOTIFICATIONS_HREF = '/admin/notifications';
 export const ADMIN_REPORTS_HREF = '/admin/reports';
+/** NTF-01 (owner 2026-11-06): Administrator alerts open the list they are about. */
+export const ADMIN_ID_REVIEWS_HREF = '/admin/identity-reviews';
+export const ADMIN_WORKERS_HREF = '/admin/workers';
+export const ADMIN_CLIENTS_HREF = '/admin/clients';
 export const PERMISSION_SETTLE_MS = 800;
 /** The only R5B navigation intent. Role/route are never taken from the payload. */
 export const OPEN_NOTIFICATIONS_INBOX = 'OPEN_NOTIFICATIONS_INBOX';
@@ -52,7 +56,10 @@ export type InboxHref =
   | typeof WORKER_NOTIFICATIONS_HREF
   | typeof CLIENT_NOTIFICATIONS_HREF
   | typeof ADMIN_NOTIFICATIONS_HREF
-  | typeof ADMIN_REPORTS_HREF;
+  | typeof ADMIN_REPORTS_HREF
+  | typeof ADMIN_ID_REVIEWS_HREF
+  | typeof ADMIN_WORKERS_HREF
+  | typeof ADMIN_CLIENTS_HREF;
 
 export type PushDeliveryHint = {
   /** Untrusted delivery metadata. Never a business record. */
@@ -327,9 +334,11 @@ export function notificationActivationHref(
   trustedNotificationType: unknown
 ): InboxHref | null {
   if (role === 'administrator') {
-    return trustedNotificationType === 'report_submitted'
-      ? ADMIN_REPORTS_HREF
-      : ADMIN_NOTIFICATIONS_HREF;
+    if (trustedNotificationType === 'report_submitted') return ADMIN_REPORTS_HREF;
+    if (trustedNotificationType === 'identity_submitted') return ADMIN_ID_REVIEWS_HREF;
+    if (trustedNotificationType === 'worker_registered') return ADMIN_WORKERS_HREF;
+    if (trustedNotificationType === 'client_registered') return ADMIN_CLIENTS_HREF;
+    return ADMIN_NOTIFICATIONS_HREF;
   }
   return inboxHrefForRole(role);
 }

@@ -24,6 +24,7 @@ function load(file: string): Props {
       if (name === '@/components/app-symbol') return { AppSymbol: 'SymbolView' };
       if (name === 'expo-image') return { Image: 'Image' };
       if (name === 'react') return { useState: (v: any) => [v, () => {}] };
+      if (name === './supabase') return { supabase: {} };
       if (name.startsWith('@/')) return load('src/' + name.slice(2) + (name.startsWith('@/components/') ? '.tsx' : '.ts'));
       throw Error(name);
     } });
@@ -127,6 +128,7 @@ it('preserves ActiveBooking header gutter, real View-all control and separate st
 it('retains real directory row and user-detail compositions, dates, navigation arguments and static detail rows', () => {
   const dates = load('src/lib/date-time.ts');
   const presentation = load('src/lib/admin-presentation.ts');
+  const directories = load('src/lib/admin-directories.ts');
   const { AdminRow } = load('src/components/admin-rows.tsx');
   const { InitialsAvatar } = load('src/components/initials-avatar.tsx');
   const { AppChip } = load('src/components/app-chip.tsx');
@@ -138,10 +140,10 @@ it('retains real directory row and user-detail compositions, dates, navigation a
   const summarySource = source.slice(source.indexOf('function summary('), source.indexOf('export function AdminDirectory'));
   const exports: Props = {};
   runInNewContext(ts.transpileModule(summarySource + '\nexports.summary = summary;', { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText,
-    { exports, formatCardDateTime: dates.formatCardDateTime, workerVerificationStatus: presentation.workerVerificationStatus, availabilityLabel: presentation.availabilityLabel });
+    { exports, formatCardDateTime: dates.formatCardDateTime, workerVerificationStatus: presentation.workerVerificationStatus, availabilityLabel: presentation.availabilityLabel, strikeLabel: directories.strikeLabel });
   for (const kind of ['worker', 'client']) {
     const pushed: any[] = [];
-    const item = { user_id: 'worker-fixture', full_name: longName, is_active: true, has_profile: true, is_verified: true, availability_status: 'available', created_at: timestamp };
+    const item = { user_id: 'worker-fixture', full_name: longName, is_active: true, has_profile: true, is_verified: true, availability_status: 'available', strike_count: 1, created_at: timestamp };
     const chip = presentation.directoryRowStatus(kind, item);
     const tree = render(callerExpression('src/components/admin-directory.tsx', 'AdminRow', {
       AdminRow, InitialsAvatar, AppChip, groupPosition, groupedRowStyle, item, index: 0, items: [item], kind, chip,
@@ -153,6 +155,8 @@ it('retains real directory row and user-detail compositions, dates, navigation a
     expect(texts.some(x => typeof x === 'string' && x.includes(formatted))).toBe(true);
     expect(texts).toContain(kind === 'worker' ? 'Verified' : 'Active');
     if (kind === 'worker') expect(texts.some(x => typeof x === 'string' && x.includes('Available'))).toBe(true);
+    // ADM-01: a Worker row also says how many no-show strikes they have.
+    expect(texts.some(x => typeof x === 'string' && x.includes('1 of 3 strikes'))).toBe(kind === 'worker');
     tree.props.onPress();
     expect(pushed).toEqual([{ pathname: '/admin/user-detail', params: { userId: item.user_id, kind } }]);
     checkContrast(tree); checkContrast(tree, true);
