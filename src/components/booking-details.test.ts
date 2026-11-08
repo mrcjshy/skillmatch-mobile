@@ -99,9 +99,9 @@ const ID='11111111-1111-4111-8111-111111111111';
 const name='Maria Ysabel dela Cruz Villanueva de los Santos';
 function booking(role='client', status='confirmed', id=ID): Props { return { booking_id:id,job_id:'job-a', booking_status:status,payment_status:'unpaid',booked_at:'2030-12-30T07:00:00Z',completed_at:null, job_title:'Masusing pagkukumpuni ng malaking bahay at paglilinis ng tahanan',job_description:'Long supplied description with Unicode ñ',job_scheduled_at:'2030-12-31T07:00:00Z',job_address:'EXACT PRIVATE ADDRESS',job_barangay:'Barangay San Isidro Labrador na may mahabang pangalan',job_city:'Santa Ana Pampanga',job_budget:987654321.75, ...(role==='client' ? { worker_user_id:'worker-a',worker_full_name:name,worker_phone:'09171234567',worker_barangay:'Worker barangay',worker_skills:['Plumbing','Carpentry'],worker_is_verified:true,worker_rating_avg:4.9,worker_rating_count:1234 } : {client_user_id:'client-a',client_full_name:name,client_phone:'09171234567'}) }; }
 function detail(role='client',status='confirmed',overrides: Props={}) { return {booking:booking(role,status),workerProgress:{bookingId:ID,arrivedAt:'2026-10-30T01:00:00Z',serviceCompletedAt:'2026-10-30T02:00:00Z'},payment:{id:'payment-a',payment_method:'cod',payment_status:'paid'},paymentReadSucceeded:true,jobPaymentMethod:'cash',jobPaymentReady:true,isRated:false,reportReadSucceeded:true,isReported:false,exactLocation:{status:'skipped'},jobPhotos:{status:'skipped'},...overrides}; }
-function detailTree(role='client',status='confirmed',overrides:Props={},suppress=false) { disclosureStates.clear(); return render(Details,{role,bookingId:ID},[detail(role,status,overrides),false,false,null,null,suppress]); }
+function detailTree(role='client',status='confirmed',overrides:Props={},suppress=false) { disclosureStates.clear(); return render(Details,{role,bookingId:ID},[detail(role,status,overrides),false,null,null,suppress]); }
 function contrast(tree:any,parent=theme.colors.canvas,pressed=false,opacity=1) { if(Array.isArray(tree)){tree.forEach(x=>contrast(x,parent,pressed,opacity));return;} if(!tree || typeof tree!=='object')return; const style=flat(typeof tree.props.style==='function'?tree.props.style({pressed}):tree.props.style), bg=style.backgroundColor && style.backgroundColor!=='transparent'?style.backgroundColor:parent, alpha=opacity*(style.opacity??1); if(tree.type==='Text' && style.color && /^#[0-9a-f]{6}$/i.test(bg)) { const lum=(c:string)=>c.slice(1).match(/../g)!.map(x=>parseInt(x,16)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4).reduce((a,x,i)=>a+x*[.2126,.7152,.0722][i],0); const a=lum(style.color),b=lum(bg); expect(alpha).toBe(1); expect((Math.max(a,b)+.05)/(Math.min(a,b)+.05)).toBeGreaterThanOrEqual(4.5); } contrast(tree.props.children,bg,pressed,alpha); }
-function expandedWorkerTree(overrides:Props={}) { disclosureStates.clear(); return render(Details,{role:'worker',bookingId:ID,initialSheetPosition:'expanded'},[detail('worker','confirmed',overrides),false,false,null,null,false]); }
+function expandedWorkerTree(overrides:Props={}) { disclosureStates.clear(); return render(Details,{role:'worker',bookingId:ID,initialSheetPosition:'expanded'},[detail('worker','confirmed',overrides),false,null,null,false]); }
 const disclosures = (tree: any) => all(tree, 'Pressable').filter(node => node.props.accessibilityState?.expanded !== undefined);
 const statusesFor = (role: string) => ['pending', 'confirmed', 'completed', 'cancelled', 'no_show'].map(status => [role, status]);
 
@@ -182,12 +182,12 @@ it('SKL-03 (owner 2026-11-08): Booking details leave the Worker skills to Resume
 
 it('keeps the placeholder when no read has answered yet, instead of claiming the booking is unavailable', () => {
   // The first read is skipped while the app is still coming to the foreground: loading has ended with no answer.
-  const tree = render(Details, { role: 'client', bookingId: ID }, [null, false, false, null, null, false]);
+  const tree = render(Details, { role: 'client', bookingId: ID }, [null, false, null, null, false]);
   expect(visibleText(tree)).toContain('Loading booking…');
   expect(visibleText(tree)).not.toContain('This booking is unavailable.');
 });
 it('says a booking is unavailable only when a finished read found none', () => {
-  const tree = render(Details, { role: 'client', bookingId: ID }, [null, false, false, 'This booking is unavailable.', null, false]);
+  const tree = render(Details, { role: 'client', bookingId: ID }, [null, false, 'This booking is unavailable.', null, false]);
   expect(visibleText(tree)).toContain('This booking is unavailable.');
 });
 
@@ -203,7 +203,7 @@ it('the Worker status chip reflects persisted arrival rather than a conflicting 
 it('keeps details scrollable above the dock when large text leaves too little map-panel space', () => {
   accountExtra = { is_active: true, role: 'worker' };
   try {
-    const tree = render(Details, { role: 'worker', bookingId: ID }, [detail('worker'), false, false, null, null, false, 0, 220, 300, 640]);
+    const tree = render(Details, { role: 'worker', bookingId: ID }, [detail('worker'), false, null, null, false, 0, 220, 300, 640]);
     expect(all(tree, 'ScrollView')).toHaveLength(1);
     expect(all(tree, 'BookingLocationMap')).toHaveLength(0);
   } finally { accountExtra = {}; }
@@ -212,7 +212,7 @@ it('keeps details scrollable above the dock when large text leaves too little ma
 it('reserves both the measured panel and stationary Worker dock in the actual map inset', () => {
   accountExtra = { is_active: true, role: 'worker' };
   try {
-    const tree = render(Details, { role: 'worker', bookingId: ID }, [detail('worker'), false, false, null, null, false, 0, 220, 160]);
+    const tree = render(Details, { role: 'worker', bookingId: ID }, [detail('worker'), false, null, null, false, 0, 220, 160]);
     const map = all(tree, 'BookingLocationMap')[0];
     expect(map.props.insets.bottom).toBe(380);
   } finally { accountExtra = {}; }
@@ -659,16 +659,16 @@ const toggleOf = (panel: any) => all(panel, 'Pressable').find(x => ['Show bookin
 
 it('retains the expanded detent when focus refresh remounts the protected map and its sheet', () => {
   const Sheet = load('src/components/booking-sheet.tsx').BookingSheet;
-  const seeds = [detail('client', 'confirmed', { exactLocation: pinLocation }), false, false, null, null, false, 0, 0];
+  const seeds = [detail('client', 'confirmed', { exactLocation: pinLocation }), false, null, null, false, 0, 0];
   accountExtra = { is_active: true, role: 'client' }; unrendered.add('BookingSheet');
   try {
     let tree = render(Details, { role: 'client', bookingId: ID }, seeds);
     all(panelOf(tree), Sheet)[0].props.onPositionChange?.('expanded');
     // Blur/refresh suppresses protected fields and replaces the map/sheet subtree.
-    seeds[5] = true;
+    seeds[4] = true;
     tree = render(Details, { role: 'client', bookingId: ID }, seeds);
     expect(all(tree, Sheet)[0].props.initialPosition).toBe('expanded');
-    seeds[5] = false;
+    seeds[4] = false;
     tree = render(Details, { role: 'client', bookingId: ID }, seeds);
     expect(all(panelOf(tree), Sheet)[0].props.initialPosition).toBe('expanded');
   } finally { accountExtra = {}; unrendered.delete('BookingSheet'); }
@@ -805,4 +805,61 @@ it('copies the full Booking ID only from the Client booking action', () => {
   copy.props.onPress();
   expect(copiedIds).toEqual([ID]);
   expect(all(detailTree('worker'), 'Pressable').some(node => node.props.accessibilityLabel === 'Copy Booking ID')).toBe(false);
+});
+
+it('PERF-02 (owner 2026-11-08): every wait in Booking details has the shape of what replaces it', () => {
+  const shapes = (tree: any) => all(tree, 'Skeleton').map(node => node.props.shape);
+  expect(shapes(render(Details, { role: 'client', bookingId: ID }, [null, true, null, null, false]))).toEqual(['booking']);
+  const checking = shapes(detailTree('worker', 'confirmed', {}, true));
+  expect(checking).toContain('participant');
+  expect(checking).not.toContain('detail');
+  // The controls placeholder appears only once their height is known (a ref from an earlier layout).
+  const source = readFileSync(path.resolve('src/components/booking-details.tsx'), 'utf8');
+  expect(source).toContain('<InlineStatus variant="loading" skeleton="action" message="Checking booking controls" />');
+});
+
+it('PERF-02: the payment method is read alongside the payment, not after it', () => {
+  const source = readFileSync(path.resolve('src/components/booking-details.tsx'), 'utf8');
+  const read = source.slice(source.indexOf('const paymentRead = (async () => {'), source.indexOf('const ratedRead ='));
+  expect(read.indexOf('fetchJobPaymentMethod(booking.job_id)')).toBeGreaterThan(-1);
+  expect(read.indexOf('fetchJobPaymentMethod(booking.job_id)')).toBeLessThan(read.indexOf("await timed('payments'"));
+});
+
+it('PERF-02: the own-topic catch-up waits for the Booking topic, so one re-read covers both channels', () => {
+  const source = readFileSync(path.resolve('src/components/booking-details.tsx'), 'utf8');
+  expect(source).toMatch(/if \(!bookingTopicReady\) \{ deferredKeep = true; return; \}/);
+  expect(source).toMatch(/bookingTopicReady = true;\s*deferredKeep = false;/);
+  expect(source).toContain('clearTimeout(deferTimer)');
+});
+
+it('PERF-03 (owner 2026-11-08, "mawawala yung often loadings?"): reopening a booking shows its last snapshot at once', () => {
+  const snapshots = load('src/lib/booking-detail-snapshots.ts');
+  snapshots.forgetBookingSnapshots();
+  try {
+    // A completed booking: everything it shows is non-protected, so the snapshot is the whole screen.
+    snapshots.rememberBookingSnapshot(accountId, 'client', ID, detail('client', 'completed'));
+    const completed = render(Details, { role: 'client', bookingId: ID });
+    expect(all(completed, 'Skeleton').map((node: any) => node.props.shape)).toEqual([]);
+    expect(visibleText(completed)).toContain('Masusing pagkukumpuni');
+    // A confirmed booking: the card shows at once; contact, address and controls wait for the fresh read (R6-8D).
+    snapshots.rememberBookingSnapshot(accountId, 'client', ID, detail('client', 'confirmed'));
+    const confirmed = render(Details, { role: 'client', bookingId: ID });
+    const shapes = all(confirmed, 'Skeleton').map((node: any) => node.props.shape);
+    expect(shapes).not.toContain('booking');
+    expect(shapes).toContain('participant');
+    expect(visibleText(confirmed)).toContain('Masusing pagkukumpuni');
+    expect(visibleText(confirmed)).not.toContain(name);
+    // Without a snapshot, the first open still waits in the booking's shape.
+    snapshots.forgetBookingSnapshots();
+    expect(all(render(Details, { role: 'client', bookingId: ID }), 'Skeleton').map((node: any) => node.props.shape)).toEqual(['booking']);
+  } finally { snapshots.forgetBookingSnapshots(); }
+});
+
+it('PERF-03: only a protected-stripped snapshot is ever kept', () => {
+  const source = readFileSync(path.resolve('src/components/booking-details.tsx'), 'utf8');
+  const keep = source.slice(source.indexOf('function toBookingSnapshot('), source.indexOf('function toBookingSnapshot(') + 400);
+  expect(keep).toContain('booking: stripProtectedBookingFields(detail.booking)');
+  expect(keep).toContain("exactLocation: { status: 'skipped' }");
+  expect(keep).toContain("jobPhotos: { status: 'skipped' }");
+  expect(source).toMatch(/rememberBookingSnapshot\(accountId, role, bookingId, toBookingSnapshot\(visibleDetail\)\)/);
 });

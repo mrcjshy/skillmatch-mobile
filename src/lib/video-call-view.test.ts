@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { callPresentation, counterpartLabel, callToAutoJoin, ringEffects } from './video-call-view';
+import { callPresentation, counterpartLabel, callToAutoJoin, formatCallDuration, ringEffects } from './video-call-view';
 import type { VideoCall, VideoSessionView } from './video-call';
 
 vi.mock('./supabase', () => ({ supabase: {} }));
@@ -40,7 +40,7 @@ describe('immersive call states', () => {
 
   it('a call ended on this device never offers to start or rejoin again, only a pending cleanup retry', () => {
     expect(callPresentation({ view: view({ call: call('accepted'), connected: true }), ended: true }))
-      .toEqual({ stage: 'closed', status: 'Call closed on this device', actions: [] });
+      .toEqual({ stage: 'closed', status: 'Call ended', actions: [] });
     expect(callPresentation({ view: view({ call: call('ended'), cleanupPending: true }), ended: true }).actions).toEqual(['retry_end']);
     expect(callPresentation({ view: view({ call: call('accepted'), connected: true, cleanupPending: true }), ended: false }).actions).toEqual(['end', 'retry_end']);
   });
@@ -92,5 +92,15 @@ describe('RTC-05 Answer from the call notification (owner, 2026-11-06)', () => {
     expect(callPresentation({ view: { ...base, call: ringing }, ended: false, answering: true }))
       .toEqual({ stage: 'connecting', status: 'Connecting…', actions: ['end'] });
     expect(callPresentation({ view: { ...base, call: ringing }, ended: false }).stage).toBe('incoming');
+  });
+});
+
+describe('RTC-07: Messenger-style call timer', () => {
+  it('shows minutes and seconds, then hours, and never a negative time', () => {
+    expect(formatCallDuration(0)).toBe('0:00');
+    expect(formatCallDuration(9_400)).toBe('0:09');
+    expect(formatCallDuration(65_000)).toBe('1:05');
+    expect(formatCallDuration(3_725_000)).toBe('1:02:05');
+    expect(formatCallDuration(-5_000)).toBe('0:00');
   });
 });

@@ -27,7 +27,7 @@ export function callPresentation({ view, ended, answering = false }: { view: Vid
 } {
   const call = view.call;
   const retry: CallAction[] = view.cleanupPending ? ['retry_end'] : [];
-  if (ended) return { stage: 'closed', status: 'Call closed on this device', actions: retry };
+  if (ended) return { stage: 'closed', status: 'Call ended', actions: retry };
   if (!call) return { stage: 'idle', status: 'Ready to call', actions: ['start', ...retry] };
   if (terminalCall(call)) {
     return { stage: 'finished', status: TERMINAL_COPY[call.state as keyof typeof TERMINAL_COPY], actions: ['start', ...retry] };
@@ -65,4 +65,12 @@ export function callToAutoJoin(view: VideoSessionView, ended: boolean, attempted
   const call = view.call;
   if (ended || !call || call.role !== 'caller' || call.state !== 'accepted' || view.connected || view.busy) return null;
   return call.call_id === attempted ? null : call.call_id;
+}
+
+/** RTC-07 (owner 2026-11-08, Messenger-style): the live call timer, m:ss then h:mm:ss. */
+export function formatCallDuration(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600), minutes = Math.floor((total % 3600) / 60), seconds = total % 60;
+  const ss = String(seconds).padStart(2, '0');
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${ss}` : `${minutes}:${ss}`;
 }

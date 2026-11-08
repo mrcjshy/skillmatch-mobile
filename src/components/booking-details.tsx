@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   AppState,
   Linking,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -90,6 +89,7 @@ import {
   stripProtectedBookingFields,
 } from '@/lib/booking-details-freshness';
 import {
+  BOOKING_PROGRESS_CHANGED,
   BOOKING_STATUS_CHANGED,
   NOTIFICATION_INSERTED,
   bookingMessagesTopic,
@@ -98,6 +98,7 @@ import {
 } from '@/lib/realtime';
 import { bookingDialUrl } from '@/lib/booking-call';
 import { createDetailsAppStateHandler } from '@/lib/booking-details-app-state';
+import { recallBookingSnapshot, rememberBookingSnapshot } from '@/lib/booking-detail-snapshots';
 import { mapInsetsForPanel, type SheetPosition } from '@/lib/booking-sheet';
 import { sessionRouteContinuation } from '@/lib/session-route-continuation';
 import { systemPromptPending } from '@/lib/system-prompt';
@@ -131,6 +132,19 @@ type DetailState = {
     | { status: 'error' };
 };
 
+/**
+ * PERF-03: what a later open may show at once. The protected projection never leaves this screen: contact,
+ * exact address (R6-8D), the authorized map location and Job photos are removed before the snapshot is kept.
+ */
+function toBookingSnapshot(detail: DetailState): DetailState {
+  return {
+    ...detail,
+    booking: stripProtectedBookingFields(detail.booking),
+    exactLocation: { status: 'skipped' },
+    jobPhotos: { status: 'skipped' },
+  };
+}
+
 export default function BookingDetails({ role, bookingId, initialSheetPosition, onSheetPositionChange, postingWarning }: {
   role: BookingRole; bookingId: string | null;
   initialSheetPosition?: SheetPosition; onSheetPositionChange?: (position: SheetPosition) => void;
@@ -143,12 +157,14 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   const accountId = account?.id ?? null;
   const { sessionLifetime } = useSession();
   const pathname = usePathname(), params = useGlobalSearchParams();
-  const [detail, setDetail] = useState<DetailState | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  // PERF-03 (owner 2026-11-08, "mawawala yung often loadings?"): a booking opened before starts from its last
+  // snapshot instead of a skeleton; the fresh read below still runs and replaces it. A confirmed snapshot keeps the
+  // protected projection hidden until that read answers.
+  const [detail, setDetail] = useState<DetailState | null>(() => recallBookingSnapshot<DetailState>(accountId, role, bookingId));
+  const [isLoading, setIsLoading] = useState(() => recallBookingSnapshot(accountId, role, bookingId) === null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mapsNote, setMapsNote] = useState<string | null>(null);
-  const [suppressProtected, setSuppressProtected] = useState(false);
+  const [suppressProtected, setSuppressProtected] = useState(() => recallBookingSnapshot<DetailState>(accountId, role, bookingId)?.booking.booking_status === 'confirmed');
   const [pinsSession, setPinsSession] = useState(0);
   // Map-first layout: the collapsed panel height frames markers in the visible map above it.
   const [panelHeight, setPanelHeight] = useState(0);
@@ -170,7 +186,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   }, [sheetOwner, onSheetPositionChange, role, account?.id, sessionLifetime, pathname, params]);
   const safeArea = useSafeAreaInsets();
   const loadGate = useRef(createLoadGenerationTracker());
-  const hasLoaded = useRef(false);
+  const hasLoaded = useRef(recallBookingSnapshot(accountId, role, bookingId) !== null);
   const displayedStatusRef = useRef<string | null>(null);
   const focused = useRef(false);
   // Retain geometry only; protected values are still stripped before every read.
@@ -179,6 +195,10 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   const controlsHeight = useRef(0);
   const visibleDetail =
     detail !== null && bookingId !== null && detail.booking.booking_id === bookingId ? detail : null;
+  // PERF-03: keep what this screen shows, protected fields removed, so the next open starts from it.
+  useEffect(() => {
+    if (accountId && bookingId && visibleDetail) rememberBookingSnapshot(accountId, role, bookingId, toBookingSnapshot(visibleDetail));
+  }, [accountId, bookingId, role, visibleDetail]);
 
   const ui = defaultUi;
   const { colors } = ui;
@@ -208,7 +228,11 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
       return;
     }
 
-    const rows = role === 'worker' ? await loadWorkerBookings() : await loadClientBookings();
+    // PERF-02 (owner 2026-11-08, "find why our app is slowing down"): when each read finished, in ms from the start.
+    const started = Date.now();
+    const timings: Record<string, number> = {};
+    const timed = <T,>(label: string, work: Promise<T>): Promise<T> => work.finally(() => { timings[label] = Date.now() - started; });
+    const rows = role === 'worker' ? await timed('list', loadWorkerBookings()) : await timed('list', loadClientBookings());
     if (!loadGate.current.isCurrent(token)) return;
     const booking = rows.find((row) => row.booking_id === bookingId) ?? null;
     if (booking === null) {
@@ -227,15 +251,25 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     const progressRead = (async (): Promise<WorkerProgress | null> => {
       if (booking.booking_status !== 'confirmed') return null;
       // PAY-02: the Client reads the Worker's progress too, to know when payment may start.
-      try { return role === 'worker' ? await loadWorkerProgress(booking.booking_id) : await loadBookingServiceProgress(booking.booking_id); }
+      try { return await timed('progress', role === 'worker' ? loadWorkerProgress(booking.booking_id) : loadBookingServiceProgress(booking.booking_id)); }
       catch { return null; /* Missing migration/read evidence keeps progress disabled. */ }
     })();
     const paymentRead = (async () => {
+      // PERF-02: the agreed method needs only the Job id, so it is read alongside the payment instead of after it.
+      // It is still used only when the payment read succeeds; its failure never rejects unhandled.
+      const methodRead = payable
+        ? timed('method', fetchJobPaymentMethod(booking.job_id)).then(
+          (method) => ({ ok: true as const, method }),
+          (error: unknown) => {
+            if (error instanceof Error && error.message) console.warn('[R4] job payment_method read failed:', error.message);
+            return { ok: false as const, method: null };
+          })
+        : null;
       let payments = new Map<string, BookingPaymentState>();
       let paymentReadSucceeded = !payable;
       if (payable) {
         try {
-          payments = await fetchBookingPayments([booking.booking_id]);
+          payments = await timed('payments', fetchBookingPayments([booking.booking_id]));
           paymentReadSucceeded = payments.has(booking.booking_id);
         } catch (error: unknown) {
           if (error instanceof Error && error.message) {
@@ -246,27 +280,21 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
       }
       let jobPaymentMethod: JobPaymentMethod | null = null;
       let jobPaymentReady = !payable;
-      if (payable && paymentReadSucceeded) {
-        try {
-          jobPaymentMethod = await fetchJobPaymentMethod(booking.job_id);
-          jobPaymentReady = true;
-        } catch (error: unknown) {
-          if (error instanceof Error && error.message) {
-            console.warn('[R4] job payment_method read failed:', error.message);
-          }
-          jobPaymentReady = false;
-        }
+      if (payable && paymentReadSucceeded && methodRead) {
+        const method = await methodRead;
+        jobPaymentMethod = method.method;
+        jobPaymentReady = method.ok;
       }
       return { payments, paymentReadSucceeded, jobPaymentMethod, jobPaymentReady };
     })();
     const ratedRead =
       role === 'client' && isRateableStatus(booking.booking_status)
-        ? fetchMyRatedBookingIds([booking.booking_id])
+        ? timed('rated', fetchMyRatedBookingIds([booking.booking_id]))
         : Promise.resolve(new Set<string>());
     const reportRead = (async () => {
       if (!isBookingReportableStatus(booking.booking_status)) return { reportReadSucceeded: true, isReported: false };
       try {
-        return { reportReadSucceeded: true, isReported: (await loadMyReportedBookingIds([booking.booking_id])).has(booking.booking_id) };
+        return { reportReadSucceeded: true, isReported: (await timed('report', loadMyReportedBookingIds([booking.booking_id]))).has(booking.booking_id) };
       } catch {
         return { reportReadSucceeded: false, isReported: false };
       }
@@ -274,7 +302,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     const locationRead = (async (): Promise<DetailState['exactLocation']> => {
       if (booking.booking_status !== 'confirmed') return { status: 'skipped' };
       try {
-        return { status: 'ready', location: await getAuthorizedJobLocation(booking.job_id) };
+        return { status: 'ready', location: await timed('location', getAuthorizedJobLocation(booking.job_id)) };
       } catch (error: unknown) {
         const code = error instanceof JobLocationError ? error.code : null;
         console.warn('[R5E-M2] get_authorized_job_location failed:', code);
@@ -284,7 +312,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     const photosRead = (async (): Promise<DetailState['jobPhotos']> => {
       if (booking.booking_status !== 'confirmed' || !isWorkerBooking(booking)) return { status: 'skipped' };
       try {
-        return { status: 'ready', photos: await listJobPhotos({ clientId: booking.client_user_id, jobId: booking.job_id }) };
+        return { status: 'ready', photos: await timed('photos', listJobPhotos({ clientId: booking.client_user_id, jobId: booking.job_id })) };
       } catch {
         console.warn('[V4-9] authorized Job photo load failed');
         return { status: 'error' };
@@ -298,6 +326,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
       exactLocation,
       jobPhotos,
     ] = await Promise.all([progressRead, paymentRead, ratedRead, reportRead, locationRead, photosRead]);
+    console.info(`[PERF-02] ${role} booking details load ${booking.booking_status} ${JSON.stringify({ ...timings, total: Date.now() - started })}`);
 
     if (!loadGate.current.isCurrent(token)) return;
     displayedStatusRef.current = booking.booking_status;
@@ -328,6 +357,8 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     }
     setLoadError(loadErrorCopy(error));
   }, [role]);
+  // LIVE-01: the viewer's own payment and progress steps cannot leave confirmed, so their re-read keeps the details.
+  const refreshKeepingDetails = useCallback(() => load({ preserveProtected: true }), [load]);
 
   function hideProtectedProjection() {
     loadGate.current.start();
@@ -404,7 +435,18 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     if (bookingId === null || !UUID_PATTERN.test(bookingId)) return;
     if (!isBookingStatusChangedListenStatus(listenStatus)) return;
 
-    const run = { cancelled: false, inFlight: false, pending: false, initialCatchUp: true };
+    // A re-read requested while one is in flight runs after it: 'hide' (status/subscription) outranks 'keep' (LIVE-01).
+    const run: { cancelled: boolean; inFlight: boolean; pending: 'hide' | 'keep' | null; justStarted: boolean; initialCatchUp: boolean } =
+      { cancelled: false, inFlight: false, pending: null, justStarted: false, initialCatchUp: true };
+    // PERF-02: one channel delivery calls its listeners back to back. A re-read started in that same delivery
+    // already covers the others, so they do not queue a second full re-read behind it.
+    const markStarted = () => { run.justStarted = true; queueMicrotask(() => { run.justStarted = false; }); };
+    const runPending = () => {
+      const next = run.pending;
+      run.pending = null;
+      if (run.cancelled || next === null) return;
+      if (next === 'hide') revalidate(); else reloadKeepingDetails();
+    };
     const revalidate = () => {
       if (run.cancelled) return;
       const preserveProtected = !shouldSuppressProtectedBeforeRefresh({
@@ -415,10 +457,11 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
       run.initialCatchUp = false;
       if (!preserveProtected) hideProtectedProjection();
       if (run.inFlight) {
-        run.pending = true;
+        run.pending = 'hide';
         return;
       }
       run.inFlight = true;
+      markStarted();
       load({ preserveProtected })
         .catch((error: unknown) => {
           if (error instanceof Error && error.message) {
@@ -427,19 +470,51 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
         })
         .finally(() => {
           run.inFlight = false;
-          if (run.pending && !run.cancelled) {
-            run.pending = false;
-            revalidate();
-          }
+          runPending();
+        });
+    };
+    // LIVE-01 (owner 2026-11-08, "gusto ko live lahat"): the other participant's arrival, completion and payment
+    // steps, and own-topic notifications, re-read with the details kept on screen. The Booking stays confirmed for
+    // these signals; leaving confirmed is announced by BOOKING_STATUS_CHANGED, which hides first.
+    const reloadKeepingDetails = () => {
+      if (run.cancelled || run.justStarted) return;
+      if (run.inFlight) { run.pending = run.pending === 'hide' ? 'hide' : 'keep'; return; }
+      run.inFlight = true;
+      markStarted();
+      load({ preserveProtected: true })
+        .catch(() => { console.warn('[R6-8D-FIX] booking detail live revalidate failed'); })
+        .finally(() => {
+          run.inFlight = false;
+          runPending();
         });
     };
 
+    // PERF-02: the own-topic channel is usually open already, so its catch-up arrives at once, while the Booking
+    // topic needs a round trip to join. Until the Booking topic is in, an own-topic catch-up waits: the Booking
+    // topic's catch-up re-read starts later and covers both, so opening a confirmed Booking re-reads once, not twice.
+    // If the Booking topic never joins, the waiting re-read runs after 3 s.
+    let bookingTopicReady = false;
+    let deferredKeep = false;
+    const deferTimer = setTimeout(() => {
+      bookingTopicReady = true;
+      if (deferredKeep) { deferredKeep = false; reloadKeepingDetails(); }
+    }, 3000);
     const cleanup = subscribeInvalidation({
       topic: bookingMessagesTopic(bookingId),
       events: [BOOKING_STATUS_CHANGED],
       onBroadcastEvent: hideProtectedProjection,
-      onInvalidate: revalidate,
+      onInvalidate: () => {
+        bookingTopicReady = true;
+        deferredKeep = false;
+        revalidate();
+      },
       onUnavailable: hideProtectedProjection,
+    });
+    // LIVE-01: a separate listener on the same Booking topic with no hide-on-event, so progress never blanks.
+    const cleanupProgress = subscribeInvalidation({
+      topic: bookingMessagesTopic(bookingId),
+      events: [BOOKING_PROGRESS_CHANGED],
+      onInvalidate: reloadKeepingDetails,
     });
     // Payment, completion and cancellation each notify the participant, so the
     // own-notification topic keeps a confirmed Booking current without a manual pull.
@@ -448,21 +523,16 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
       topic: userNotificationsTopic(accountId),
       events: [NOTIFICATION_INSERTED],
       onInvalidate: () => {
-        if (run.cancelled) return;
-        if (run.inFlight) { run.pending = true; return; }
-        run.inFlight = true;
-        load({ preserveProtected: true })
-          .catch(() => { console.warn('[R6-8D-FIX] booking detail notification revalidate failed'); })
-          .finally(() => {
-            run.inFlight = false;
-            if (run.pending && !run.cancelled) { run.pending = false; revalidate(); }
-          });
+        if (!bookingTopicReady) { deferredKeep = true; return; }
+        reloadKeepingDetails();
       },
     }) : undefined;
 
     return () => {
       run.cancelled = true;
+      clearTimeout(deferTimer);
       cleanup();
+      cleanupProgress();
       cleanupOwn?.();
     };
   }, [accountId, bookingId, listenStatus, load]);
@@ -478,18 +548,6 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     }
   }
 
-  async function refresh() {
-    if (isRefreshing) return;
-    setIsRefreshing(true);
-    try {
-      await load();
-    } catch (error: unknown) {
-      applyError(error);
-    } finally {
-      setIsRefreshing(false);
-    }
-  }
-
   // Refresh continuation (Option B): only the Booking Details ROUTE rebuilds its parents, and only after this
   // participant read found the Booking. Embedded in Client Job details, the Job route owns that decision. The
   // screen's own route decides (the app-wide URL names whichever screen is in front).
@@ -502,7 +560,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   if (visibleDetail === null && (isLoading || loadError === null)) {
     return (
       <View style={styles.center}>
-        <InlineStatus variant="loading" skeleton="detail" message="Loading booking…" />
+        <InlineStatus variant="loading" skeleton="booking" message="Loading booking…" />
       </View>
     );
   }
@@ -704,7 +762,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
       {paymentShown ? <View style={styles.paymentBody}>
         {showPayment && clientPaymentWaits ? <Text style={styles.note}>Payment opens after the Worker marks the job as completed.</Text> : null}
         {showPayment && workerPaymentVisible && !clientPaymentWaits ? jobPaymentReady ? <BookingPayment role={role} bookingId={booking.booking_id} payment={payment}
-          jobPaymentMethod={jobPaymentMethod} onChanged={load} embedded />
+          jobPaymentMethod={jobPaymentMethod} onChanged={refreshKeepingDetails} embedded />
           : <Text style={styles.note}>Could not load the agreed payment method.</Text> : null}
         {paymentUnavailable ? <Text style={styles.note}>Could not load the authoritative payment state. Payment and lifecycle actions are unavailable.</Text> : null}
         {/* One paid-Client closing action, beside authoritative payment state. */}
@@ -720,7 +778,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     <View style={[styles.section, suppressProtected && { minHeight: participantHeight.current }]}
       onLayout={event => { if (!suppressProtected) participantHeight.current = event.nativeEvent.layout.height; }}>
       <SectionHeader title={role === 'worker' ? 'Client details' : 'Worker details'} />
-      {suppressProtected ? <InlineStatus variant="loading" skeleton="lines" message="Checking booking details" /> : !released ? (
+      {suppressProtected ? <InlineStatus variant="loading" skeleton="participant" message="Checking booking details" /> : !released ? (
         <Text style={styles.note}>
           {role === 'worker'
             ? 'Client contact is not available for this booking status.'
@@ -844,20 +902,21 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
     {lifecycleAtBottom && (showLifecycle || (suppressProtected && controlsHeight.current > 0)) ? <View
       style={[styles.destructiveArea, suppressProtected && { minHeight: controlsHeight.current }]}
       onLayout={event => { if (!suppressProtected) controlsHeight.current = event.nativeEvent.layout.height; }}>
-      {suppressProtected ? <InlineStatus variant="loading" skeleton="line" message="Checking booking controls" /> : <>
+      {suppressProtected ? <InlineStatus variant="loading" skeleton="action" message="Checking booking controls" /> : <>
       <BookingLifecycle role={role} bookingId={booking.booking_id} showCompletion={actionPresentation.showCompletion}
         showCancellation={actionPresentation.showCancellation} onChanged={load} />
       </>}
     </View> : null}
   </>;
 
-  const refreshControl = <RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.accent} colors={[colors.accent]} />;
+  // LIVE-02 (owner 2026-11-08): no pull-to-refresh. Live events, the channel's reconnect catch-up, focus and app
+  // foreground keep this screen current.
   const showWorkerProgress = role === 'worker' && booking.booking_status === 'confirmed' && protectedReleased && account?.is_active === true && account.role === 'worker';
   const progressDock = showWorkerProgress ? <View onLayout={event => setProgressDockHeight(event.nativeEvent.layout.height)}>
     <WorkerBookingProgress key={`${account.id}:${booking.booking_id}:${visibleDetail.progressReadGeneration ?? 0}`}
       frameStyle={[styles.progressDock, { paddingBottom: Math.max(safeArea.bottom, ui.spacing.md) }]}
       bookingId={booking.booking_id} progress={workerProgress} paymentStatus={paymentReadSucceeded ? payment?.payment_status ?? null : null}
-      onChanged={load} isCurrent={() => sessionLifetime?.isCurrent() === true}
+      onChanged={refreshKeepingDetails} isCurrent={() => sessionLifetime?.isCurrent() === true}
       // On the map layout the swipe appears only once the Worker pulls the details sheet fully up.
       actionVisible={!mapFirst || sheetPosition === 'expanded'} />
   </View> : null;
@@ -873,7 +932,6 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
         contentContainerStyle={styles.content}
         contentInsetAdjustmentBehavior="automatic"
         keyboardDismissMode="on-drag"
-        refreshControl={refreshControl}
       >
         {statusBlock}
         {summaryBlock}
@@ -892,7 +950,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   // Map-first layout. The floating header replaces the stack header; the panel reserves the space under it.
   const headerBottom = safeArea.top + ui.spacing.sm + ui.size.iconButton + ui.spacing.sm;
   const panel = (sharing: LocationPanel) => (
-    <BookingSheet topReserve={headerBottom} bottomReserve={showWorkerProgress ? progressDockHeight : 0} onCollapsedHeight={setPanelHeight} refreshControl={refreshControl}
+    <BookingSheet topReserve={headerBottom} bottomReserve={showWorkerProgress ? progressDockHeight : 0} onCollapsedHeight={setPanelHeight}
       initialPosition={sheetPosition} onPositionChange={rememberSheetPosition}
       header={<>
         <View style={styles.sheetTitleRow}>

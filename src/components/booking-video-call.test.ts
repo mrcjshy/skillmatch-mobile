@@ -51,7 +51,7 @@ function compileCallTracks(component = '__CallTracks', props: Record<string, unk
     'react-native': { Text: 'Text', View: 'View', Pressable: 'Pressable', AppState: {}, PermissionsAndroid: {}, Platform: {},
       StyleSheet: { absoluteFill: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, create: (styles: object) => styles } },
     'expo-status-bar': { StatusBar: 'StatusBar' }, 'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24, bottom: 16 }) },
-    '@/components/app-symbol': { AppSymbol: 'AppSymbol' }, '@/lib/video-call-view': {},
+    '@/components/app-symbol': { AppSymbol: 'AppSymbol' }, '@/lib/video-call-view': {}, 'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
     'expo-router': { useFocusEffect: () => {}, useRouter: () => ({}) },
     '@/components/app-button': { AppButton: 'AppButton' },
     '@/providers/account-provider': { useAccount: () => ({}) },
@@ -268,4 +268,23 @@ it('microphone and camera toggles mute the existing published tracks and follow 
   expect([mic.props.selected, camera.props.selected]).toEqual([true, true]);
   // No call action is reachable from the toggles: ending stays the explicit End control.
   expect(find(view.rerenderIfScheduled(), n => /End call|Decline|Cancel/.test(String(n.props.label ?? '')))).toBeUndefined();
+});
+
+it('RTC-07: in a live call the controls sit in one icon-only dock, still named for screen readers', () => {
+  const room = fakeRoom();
+  Object.assign(room.localParticipant, { isMicrophoneEnabled: true, isCameraEnabled: true, setMicrophoneEnabled: vi.fn(), setCameraEnabled: vi.fn() });
+  const tree = compileCallTracks('__MediaToggles', { facing: 'user', compact: true })(room).tree;
+  const controls = (Array.isArray(tree) ? tree : (tree as Node).props.children as Node[]).filter(n => n && typeof n.type === 'function');
+  expect(controls.map(n => n.props.label)).toEqual(['Mute microphone', 'Turn camera off', 'Switch camera']);
+  expect(controls.every(n => n.props.compact === true)).toBe(true);
+});
+
+it('RTC-07: every call text uses the Android system font, so OEM fonts never clip the status, and no technical copy shows', () => {
+  const source = readFileSync(path.resolve('src/components/booking-video-call.tsx'), 'utf8');
+  expect(source).toMatch(/const FONT: TextStyle = Platform\.OS === 'android' \? \{ fontFamily: 'sans-serif' \} : \{\};/);
+  const styles = source.slice(source.indexOf('const styles = StyleSheet.create('));
+  for (const [, name, body] of styles.matchAll(/\n {2}(\w+): \{([^}]*)\}/g)) {
+    if (/fontSize/.test(body)) expect(`${name}: ${body}`).toMatch(/\.\.\.FONT/);
+  }
+  expect(source).not.toMatch(/Provider cleanup|closed on this device/);
 });

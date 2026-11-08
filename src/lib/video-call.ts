@@ -91,8 +91,9 @@ export function createVideoSession(deps: { bookingId: string; request: CallReque
       if (result.call?.call_id === call.call_id) unfinished = result.call;
       const ended = result.call && terminalCall(result.call);
       if (ended) unfinished = null;
-      set({ cleanupPending: !ended, message: ended ? 'Call ended locally. Provider cleanup is handled by the server.' : 'End is not confirmed. Retry ending the call.' });
-    } catch { set({ cleanupPending: true, message: 'Camera and microphone are off. Server end is not confirmed; retry.' }); }
+      // RTC-07: a clean end says nothing more; an unconfirmed one asks for Retry in plain words.
+      set({ cleanupPending: !ended, message: ended ? null : 'The call may still be open. Tap Retry to end it.' });
+    } catch { set({ cleanupPending: true, message: 'Your camera and microphone are off, but the call could not be ended. Tap Retry.' }); }
   };
   const apply = (call: VideoCall | null, authoritative = false) => {
     if (call && call.booking_id !== deps.bookingId) return false;

@@ -51,6 +51,12 @@ export const MESSAGE_INSERTED = 'message_inserted';
  */
 export const BOOKING_STATUS_CHANGED = 'booking_status_changed';
 
+/**
+ * LIVE-01 (hosted 20261108140000): emitted on the Booking topic when the Worker's arrival or completion,
+ * or the payment, changes while the Booking stays `confirmed`. Payload is the booking id only.
+ */
+export const BOOKING_PROGRESS_CHANGED = 'booking_progress_changed';
+
 /** Emitted AFTER INSERT on `public.notifications`, on the own-user topic. */
 export const NOTIFICATION_INSERTED = 'notification_inserted';
 

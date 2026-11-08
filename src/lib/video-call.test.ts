@@ -155,3 +155,19 @@ it('optional backend invitation observability leaves the legacy start response u
     expect(await api.request('start', booking)).toEqual({ call, ok: undefined, reason: undefined });
   }
 });
+
+it('RTC-07: end messages speak plainly: none after a clean end, a short Retry hint otherwise', async () => {
+  const settle = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
+  const clean = createVideoSession({ bookingId: booking, request: async action => action === 'status' ? { call } : { ok: true, call: { ...call, state: 'declined' as const } }, media: vi.fn(), onChange: () => {} });
+  clean.setActive(true); await clean.refresh(); clean.end(); await settle();
+  expect(clean.view).toMatchObject({ cleanupPending: false, message: null });
+  const unconfirmed = createVideoSession({ bookingId: booking, request: async () => ({ ok: true, call }), media: vi.fn(), onChange: () => {} });
+  unconfirmed.setActive(true); await unconfirmed.refresh(); unconfirmed.end(); await settle();
+  const offline = createVideoSession({ bookingId: booking, request: async action => { if (action === 'status') return { call }; throw Error('offline'); }, media: vi.fn(), onChange: () => {} });
+  offline.setActive(true); await offline.refresh(); offline.end(); await settle();
+  for (const owner of [unconfirmed, offline]) {
+    expect(owner.view.cleanupPending).toBe(true);
+    expect(owner.view.message).toMatch(/Retry/);
+    expect(owner.view.message).not.toMatch(/server|provider|locally|confirmed/i);
+  }
+});

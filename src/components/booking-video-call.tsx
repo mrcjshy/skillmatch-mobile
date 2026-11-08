@@ -1,21 +1,30 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { AppState, PermissionsAndroid, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { AccessibilityInfo, Animated, AppState, Easing, PermissionsAndroid, Platform, Pressable, StyleSheet, Text, View, type TextStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Room } from 'livekit-client';
 import { AppSymbol } from '@/components/app-symbol';
 import { useAccount } from '@/providers/account-provider';
 import { createVideoCallApi, createVideoSession, validCallId, type VideoSessionView } from '@/lib/video-call';
-import { callPresentation, callToAutoJoin, counterpartLabel, ringEffects, type CallAction } from '@/lib/video-call-view';
+import { callPresentation, callToAutoJoin, counterpartLabel, formatCallDuration, ringEffects, type CallAction } from '@/lib/video-call-view';
 import { callAlert } from '@/lib/call-alert';
 import { takePendingCallChoice } from '@/lib/push-notifications';
 import { createNativeCallMedia, loadVideoRuntime, localCameraFacing, switchLocalCamera, type CameraFacing } from '@/lib/native-video-call';
 import { subscribeInvalidation, userNotificationsTopic } from '@/lib/realtime';
 
 /** Call surfaces are always dark so video and white controls keep their contrast in either theme. */
-const CALL = { canvas: '#0B0F14', panel: 'rgba(255,255,255,0.14)', text: '#FFFFFF', muted: 'rgba(255,255,255,0.72)',
-  danger: '#E5484D', accept: '#2F9E44', active: '#FFFFFF', onActive: '#0B0F14' };
+const CALL = { canvas: '#05070D', panel: 'rgba(255,255,255,0.16)', dock: 'rgba(16,18,26,0.78)', text: '#FFFFFF', muted: 'rgba(255,255,255,0.74)',
+  faint: 'rgba(255,255,255,0.12)', danger: '#F0443A', accept: '#22C55E', active: '#FFFFFF', onActive: '#0B0F14' };
+/** RTC-07 (owner 2026-11-08, "premium like Messenger"): SkillMatch cobalt fading to night behind every non-video state. */
+const LOBBY = ['#2B4FD8', '#142A7A', '#070B1A'] as const;
+const AVATAR = ['#5B7CFF', '#2440B8'] as const;
+const SCRIM_TOP = ['rgba(0,0,0,0.62)', 'rgba(0,0,0,0)'] as const;
+const SCRIM_BOTTOM = ['rgba(0,0,0,0)', 'rgba(0,0,0,0.66)'] as const;
+/** OEM fonts (Infinix XOS) render wider than React Native measures and clip the last word; the system font does not. */
+const FONT: TextStyle = Platform.OS === 'android' ? { fontFamily: 'sans-serif' } : {};
+const PRIVACY = 'Camera and microphone are shared only with this booking’s participant. No recording or screen sharing. Leaving this screen ends your call; backgrounding stops camera and microphone.';
 
 export default function BookingVideoCall({ bookingId }: { bookingId: string | null }) {
   const { account, status } = useAccount();
@@ -111,39 +120,100 @@ function CallScreen({ bookingId, accountId, role }: { bookingId: string; account
   const who = counterpartLabel(role);
   const live = room !== null && view.connected && !ended;
   const leavable = presentation.stage === 'idle' || presentation.stage === 'finished' || presentation.stage === 'closed';
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace((role === 'worker' ? '/worker/bookings' : '/client/bookings') as Href);
+  };
+  // RTC-07: like Messenger, a call you end or decline here closes its screen once the end is confirmed, so a
+  // locked phone goes straight back to its lock screen. An unconfirmed end keeps the screen with Retry.
+  const closedHere = useRef(false);
+  const finishHere = () => { closedHere.current = true; finish(); };
+  useEffect(() => {
+    if (!ended || !closedHere.current || view.cleanupPending) return;
+    const timer = setTimeout(() => { if (focused.current) goBack(); }, 1200);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ended, view.cleanupPending]);
+  // RTC-07: the live call timer.
+  const [connectedAt, setConnectedAt] = useState<number | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
+  /* eslint-disable react-hooks/set-state-in-effect -- the timer starts and stops with the live connection */
+  useEffect(() => {
+    if (!live) { setConnectedAt(null); return; }
+    setConnectedAt(at => at ?? Date.now());
+    setClock(Date.now());
+    const tick = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [live]);
+  /* eslint-enable react-hooks/set-state-in-effect */
   const run: Record<CallAction, () => void> = {
     start: () => void act('start'), accept: () => { callAlert.cancelIncoming(); void act('accept'); }, join: () => void act('rejoin'),
-    decline: finish, cancel: finish, end: finish, retry_end: () => owner.current?.retryEnd(),
+    decline: finishHere, cancel: finishHere, end: finishHere, retry_end: () => owner.current?.retryEnd(),
   };
-  const controls = presentation.actions.map(action => <RoundControl key={action} {...CONTROL[action]} disabled={view.busy && action !== 'end' && action !== 'cancel' && action !== 'decline' && action !== 'retry_end'} onPress={run[action]} />);
+  const controls = presentation.actions.map(action => {
+    const control = action === 'start' && presentation.stage === 'finished' ? { ...CONTROL.start, label: 'Call again' } : CONTROL[action];
+    return <RoundControl key={action} {...control} compact={live} disabled={view.busy && action !== 'end' && action !== 'cancel' && action !== 'decline' && action !== 'retry_end'} onPress={run[action]} />;
+  });
+  const ringing = presentation.stage === 'incoming' || presentation.stage === 'outgoing' || presentation.stage === 'connecting';
+  const note = permissionNote ?? view.message ?? (view.call?.counterpart_away ? 'The other participant is away.' : null);
   return <View style={styles.root}>
     <StatusBar style="light" />
-    {live ? <CallTracks room={room} counterpart={who} previewTop={insets.top + 72} facing={facing} /> : null}
+    {live ? <CallTracks room={room} counterpart={who} previewTop={insets.top + 76} facing={facing} />
+      : <LinearGradient colors={LOBBY} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />}
+    {live ? <LinearGradient colors={SCRIM_TOP} pointerEvents="none" style={[styles.scrimTop, { height: insets.top + 132 }]} /> : null}
+    {live ? <LinearGradient colors={SCRIM_BOTTOM} pointerEvents="none" style={[styles.scrimBottom, { height: insets.bottom + 200 }]} /> : null}
     <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-      {leavable ? <Pressable accessibilityRole="button" accessibilityLabel="Navigate up" style={styles.iconButton} onPress={() => router.back()}>
+      {leavable ? <Pressable accessibilityRole="button" accessibilityLabel="Navigate up" style={styles.iconButton} onPress={goBack}>
         <AppSymbol name={{ android: 'arrow_back', ios: 'chevron.left' }} size={24} tintColor={CALL.text} />
       </Pressable> : <View style={styles.iconSpacer} />}
-      <View style={styles.topCopy}>
-        <Text numberOfLines={1} style={styles.topTitle}>{who}</Text>
-        {live ? <Text accessibilityLiveRegion="polite" style={styles.topStatus}>{presentation.status}</Text> : null}
-      </View>
       {/* Status stays live through call_state_changed, the ring deadline and foreground reads. */}
-      <View style={styles.iconSpacer} />
+      {live ? <View style={styles.topCopy}>
+        <Text numberOfLines={1} style={styles.topTitle}>{who}</Text>
+        <Text accessibilityLiveRegion="polite" style={styles.topStatus}>{connectedAt === null ? presentation.status : formatCallDuration(clock - connectedAt)}</Text>
+      </View> : <View style={styles.topCopy} />}
     </View>
     {!live ? <View style={styles.center}>
-      <View style={styles.avatar}><AppSymbol name={{ android: 'person', ios: 'person.fill' }} size={56} tintColor={CALL.text} /></View>
-      <Text style={styles.name}>{who}</Text>
-      <Text accessibilityLiveRegion="polite" style={styles.status}>{presentation.status}</Text>
-      <Text style={styles.privacy}>Camera and microphone are shared only with this booking’s participant. No recording or screen sharing. Leaving this screen ends your call; backgrounding stops camera and microphone.</Text>
-    </View> : null}
-    <View style={[styles.bottom, { paddingBottom: insets.bottom + 24 }]}>
-      {permissionNote || view.message ? <Text accessibilityLiveRegion="polite" style={styles.message}>{permissionNote ?? view.message}</Text> : null}
-      {view.call?.counterpart_away ? <Text style={styles.message}>The other participant is away.</Text> : null}
-      <View style={styles.controls}>
-        {live ? <MediaToggles room={room} facing={facing} onFacing={setFacing} /> : null}
-        {controls}
+      <PulseAvatar pulsing={ringing} />
+      <Text numberOfLines={2} style={styles.name}>{who}</Text>
+      <Text accessibilityLiveRegion="polite" numberOfLines={2} style={styles.status}>{presentation.status}</Text>
+      <View style={styles.privacyPill} accessible accessibilityLabel={PRIVACY}>
+        <AppSymbol name={{ android: 'lock', ios: 'lock.fill' }} size={13} tintColor={CALL.muted} />
+        <Text style={styles.privacyText}>Private to this booking · Not recorded</Text>
       </View>
+    </View> : null}
+    <View style={[styles.bottom, { paddingBottom: insets.bottom + (live ? 20 : 40) }]}>
+      {note ? <Text accessibilityLiveRegion="polite" style={styles.message}>{note}</Text> : null}
+      {live ? <View style={styles.dock}>
+        <MediaToggles room={room} facing={facing} onFacing={setFacing} compact />
+        {controls}
+      </View> : <View style={styles.lobbyControls}>{controls}</View>}
     </View>
+  </View>;
+}
+
+/** RTC-07: the counterpart's circle; while a call rings it sends out two soft rings, like Messenger. */
+function PulseAvatar({ pulsing }: { pulsing: boolean }) {
+  const [waves] = useState(() => [new Animated.Value(0), new Animated.Value(0)]);
+  useEffect(() => {
+    if (!pulsing) return;
+    let stopped = false;
+    const loops = waves.map(wave => Animated.loop(Animated.timing(wave, { toValue: 1, duration: 2000, easing: Easing.out(Easing.quad), useNativeDriver: true })));
+    let second: ReturnType<typeof setTimeout> | undefined;
+    void AccessibilityInfo.isReduceMotionEnabled().then(reduce => {
+      if (stopped || reduce) return;
+      loops[0].start();
+      second = setTimeout(() => { if (!stopped) loops[1].start(); }, 1000);
+    });
+    return () => { stopped = true; clearTimeout(second); for (const loop of loops) loop.stop(); for (const wave of waves) wave.setValue(0); };
+  }, [pulsing, waves]);
+  return <View style={styles.avatarWrap}>
+    {waves.map((wave, index) => <Animated.View key={index} pointerEvents="none" style={[styles.ring, {
+      opacity: wave.interpolate({ inputRange: [0, 1], outputRange: [0.32, 0] }),
+      transform: [{ scale: wave.interpolate({ inputRange: [0, 1], outputRange: [1, 1.7] }) }],
+    }]} />)}
+    <LinearGradient colors={AVATAR} style={styles.avatarLarge}>
+      <AppSymbol name={{ android: 'person', ios: 'person.fill' }} size={64} tintColor={CALL.text} />
+    </LinearGradient>
   </View>;
 }
 
@@ -157,17 +227,19 @@ const CONTROL: Record<CallAction, { label: string; icon: { android: string; ios:
   retry_end: { label: 'Retry ending call', icon: { android: 'refresh', ios: 'arrow.clockwise' }, tone: 'neutral' },
 };
 
-function RoundControl({ label, icon, tone, onPress, disabled = false, selected }: {
+/** A round call button: large and captioned before a call connects; icon-only inside the live dock (RTC-07). */
+function RoundControl({ label, icon, tone, onPress, disabled = false, selected, compact = false }: {
   label: string; icon: { android: string; ios: string }; tone: 'danger' | 'accept' | 'neutral' | 'active';
-  onPress: () => void; disabled?: boolean; selected?: boolean;
+  onPress: () => void; disabled?: boolean; selected?: boolean; compact?: boolean;
 }) {
   const fill = tone === 'danger' ? CALL.danger : tone === 'accept' ? CALL.accept : tone === 'active' ? CALL.active : CALL.panel;
-  return <View style={styles.control}>
+  return <View style={compact ? styles.controlCompact : styles.control}>
     <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled, selected }} disabled={disabled} onPress={onPress}
-      style={({ pressed }) => [styles.controlButton, { backgroundColor: fill, opacity: disabled ? 0.45 : pressed ? 0.8 : 1 }]}>
-      <AppSymbol name={icon as never} size={26} tintColor={tone === 'active' ? CALL.onActive : CALL.text} />
+      style={({ pressed }) => [compact ? styles.controlButtonCompact : styles.controlButton,
+        { backgroundColor: fill, opacity: disabled ? 0.4 : 1, transform: [{ scale: pressed ? 0.92 : 1 }] }]}>
+      <AppSymbol name={icon as never} size={compact ? 24 : 30} tintColor={tone === 'active' ? CALL.onActive : CALL.text} />
     </Pressable>
-    <Text numberOfLines={2} style={styles.controlLabel}>{label}</Text>
+    {compact ? null : <Text numberOfLines={2} style={styles.controlLabel}>{label}</Text>}
   </View>;
 }
 
@@ -175,7 +247,7 @@ function RoundControl({ label, icon, tone, onPress, disabled = false, selected }
  * Microphone and camera toggles over the existing published tracks (LiveKit mute/unmute; no new native API),
  * and RTC-02's Switch camera, which re-opens the camera track with the other facing.
  */
-function MediaToggles({ room, facing = 'user', onFacing }: { room: Room; facing?: CameraFacing; onFacing?: (next: CameraFacing) => void }) {
+function MediaToggles({ room, facing = 'user', onFacing, compact = false }: { room: Room; facing?: CameraFacing; onFacing?: (next: CameraFacing) => void; compact?: boolean }) {
   // Reads the mutable LiveKit participant on every redraw (see CallTracks).
   'use no memo';
   const [, redraw] = useState(0);
@@ -202,15 +274,15 @@ function MediaToggles({ room, facing = 'user', onFacing }: { room: Room; facing?
   };
   return <>
     <RoundControl label={micOn ? 'Mute microphone' : 'Unmute microphone'} icon={micOn ? { android: 'mic', ios: 'mic.fill' } : { android: 'mic_off', ios: 'mic.slash.fill' }}
-      tone={micOn ? 'neutral' : 'active'} selected={!micOn} onPress={() => toggle(local.setMicrophoneEnabled(!micOn))} />
+      tone={micOn ? 'neutral' : 'active'} selected={!micOn} compact={compact} onPress={() => toggle(local.setMicrophoneEnabled(!micOn))} />
     <RoundControl label={cameraOn ? 'Turn camera off' : 'Turn camera on'} icon={cameraOn ? { android: 'videocam', ios: 'video.fill' } : { android: 'videocam_off', ios: 'video.slash.fill' }}
-      tone={cameraOn ? 'neutral' : 'active'} selected={!cameraOn} onPress={() => toggle(local.setCameraEnabled(!cameraOn).then(() => {
+      tone={cameraOn ? 'neutral' : 'active'} selected={!cameraOn} compact={compact} onPress={() => toggle(local.setCameraEnabled(!cameraOn).then(() => {
         // RTC-04: LiveKit re-opens the camera when it is turned back on; follow the camera it really opened.
         const now = cameraOn ? null : localCameraFacing(room);
         if (now) onFacing?.(now);
       }))} />
     <RoundControl label="Switch camera" icon={{ android: 'cameraswitch', ios: 'camera.rotate' }}
-      tone="neutral" disabled={!cameraOn || switching} onPress={flip} />
+      tone="neutral" disabled={!cameraOn || switching} compact={compact} onPress={flip} />
   </>;
 }
 
@@ -254,27 +326,36 @@ function CallTracks({ room, counterpart, previewTop, facing = 'user' }: { room: 
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: CALL.canvas },
-  topBar: { position: 'absolute', left: 0, right: 0, top: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.28)', paddingBottom: 8 },
+  scrimTop: { position: 'absolute', left: 0, right: 0, top: 0 },
+  scrimBottom: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  topBar: { position: 'absolute', left: 0, right: 0, top: 0, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 4, paddingBottom: 8 },
   topCopy: { flex: 1, minWidth: 0 },
-  topTitle: { color: CALL.text, fontSize: 18, fontWeight: '700' },
-  topStatus: { color: CALL.muted, fontSize: 13 },
+  topTitle: { ...FONT, color: CALL.text, fontSize: 18, fontWeight: '700' },
+  topStatus: { ...FONT, color: CALL.muted, fontSize: 14, fontVariant: ['tabular-nums'] },
   iconButton: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   iconSpacer: { width: 48, height: 48 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 12 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, paddingBottom: 120, gap: 10 },
+  avatarWrap: { width: 132, height: 132, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
+  ring: { position: 'absolute', width: 132, height: 132, borderRadius: 66, backgroundColor: 'rgba(255,255,255,0.9)' },
+  avatarLarge: { width: 132, height: 132, borderRadius: 66, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.28)' },
   avatar: { width: 112, height: 112, borderRadius: 56, backgroundColor: CALL.panel, alignItems: 'center', justifyContent: 'center' },
-  name: { color: CALL.text, fontSize: 26, fontWeight: '700', textAlign: 'center' },
-  status: { color: CALL.muted, fontSize: 17, textAlign: 'center' },
-  privacy: { color: CALL.muted, fontSize: 13, textAlign: 'center', marginTop: 12 },
-  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, gap: 12, paddingTop: 16, backgroundColor: 'rgba(0,0,0,0.28)' },
-  message: { color: CALL.text, fontSize: 14, textAlign: 'center' },
-  controls: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 20 },
-  control: { alignItems: 'center', width: 84, gap: 6 },
-  controlButton: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  controlLabel: { color: CALL.text, fontSize: 12, textAlign: 'center' },
-  remotePlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 32 },
+  name: { ...FONT, color: CALL.text, fontSize: 32, fontWeight: '700', textAlign: 'center', letterSpacing: -0.3 },
+  status: { ...FONT, color: CALL.muted, fontSize: 17, textAlign: 'center' },
+  privacyPill: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: CALL.faint },
+  privacyText: { ...FONT, color: CALL.muted, fontSize: 12 },
+  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, gap: 14, paddingTop: 16, alignItems: 'center' },
+  message: { ...FONT, color: CALL.text, fontSize: 14, textAlign: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.38)', overflow: 'hidden' },
+  lobbyControls: { flexDirection: 'row', justifyContent: 'center', gap: 64 },
+  dock: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 40, backgroundColor: CALL.dock,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.14)' },
+  control: { alignItems: 'center', width: 96, gap: 10 },
+  controlCompact: { alignItems: 'center' },
+  controlButton: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
+  controlButtonCompact: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  controlLabel: { ...FONT, color: CALL.text, fontSize: 13, textAlign: 'center' },
+  remotePlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 32, backgroundColor: '#0E1530' },
   preview: { position: 'absolute', right: 16, width: 112, height: 150, borderRadius: 16, overflow: 'hidden', backgroundColor: '#1C232B',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.24)' },
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.24)', elevation: 8 },
   previewOff: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 8 },
-  previewText: { color: CALL.muted, fontSize: 12, textAlign: 'center' },
+  previewText: { ...FONT, color: CALL.muted, fontSize: 12, textAlign: 'center' },
 });

@@ -5,7 +5,7 @@ import { MotionView, useKeyboardRoom, useLoadingDots, useLoadingPulse } from '@/
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 
 /** What is about to appear, so the placeholder holds the same place on screen as the content. */
-export type SkeletonShape = 'lines' | 'line' | 'rows' | 'jobs' | 'bookings' | 'detail' | 'chat' | 'fill';
+export type SkeletonShape = 'lines' | 'line' | 'rows' | 'jobs' | 'bookings' | 'detail' | 'booking' | 'participant' | 'action' | 'chat' | 'fill';
 
 type SkeletonProps = {
   shape?: SkeletonShape;
@@ -39,8 +39,9 @@ export function Skeleton({ shape = 'lines', label, style }: SkeletonProps) {
   );
 }
 
-function Bone({ ui, width = '100%', height = 14, radius }: { ui: UiTheme; width?: DimensionValue; height?: number; radius?: number }) {
-  return <View style={{ width, height, borderRadius: radius ?? ui.radius.sm, backgroundColor: ui.colors.hairline }} />;
+function Bone({ ui, width = '100%', height = 14, radius, flex }: { ui: UiTheme; width?: DimensionValue; height?: number; radius?: number; flex?: number }) {
+  const size = flex === undefined ? { width } : { flex };
+  return <View style={{ ...size, height, borderRadius: radius ?? ui.radius.sm, backgroundColor: ui.colors.hairline }} />;
 }
 
 function Lines({ ui, widths }: { ui: UiTheme; widths: readonly DimensionValue[] }) {
@@ -74,6 +75,56 @@ function Bones({ shape, ui }: { shape: SkeletonShape; ui: UiTheme }): ReactNode 
       <View style={styles.rowCopy}><Lines ui={ui} widths={['60%', '80%', '45%']} /></View>
     </View>);
   }
+  // PERF-02 (owner 2026-11-08, "correct the skeleton loading base on the content"): Booking details, bone for bone.
+  if (shape === 'booking') {
+    return <>
+      <Bone ui={ui} width={96} height={28} radius={ui.radius.pill} />
+      <View style={styles.card}>
+        <View style={styles.row}>
+          <Bone ui={ui} width={44} height={44} radius={ui.radius.control} />
+          <View style={styles.rowCopy}><Bone ui={ui} width="60%" height={22} /></View>
+        </View>
+        <View style={styles.row}>
+          <View style={styles.rowCopy}><Bone ui={ui} width="30%" height={12} /><Bone ui={ui} width="90%" /></View>
+          <Bone ui={ui} width={44} height={44} radius={ui.radius.pill} />
+        </View>
+        <View style={styles.lines}><Bone ui={ui} width="30%" height={12} /><Bone ui={ui} width="65%" height={16} /></View>
+        <View style={styles.row}>
+          <Bone ui={ui} width={20} height={20} radius={ui.radius.pill} />
+          <Bone ui={ui} width="45%" />
+        </View>
+        <View style={[styles.row, styles.divided]}>
+          <Bone ui={ui} width={36} height={36} radius={ui.radius.pill} />
+          <View style={styles.rowCopy}><Bone ui={ui} width="35%" /></View>
+          <Bone ui={ui} width={64} height={22} />
+        </View>
+      </View>
+      <Bone ui={ui} width="40%" height={20} />
+      <View style={[styles.row, styles.card]}>
+        <Bone ui={ui} width={48} height={48} radius={ui.radius.pill} />
+        <View style={styles.rowCopy}><Lines ui={ui} widths={['65%', '40%']} /></View>
+      </View>
+      <Bone ui={ui} width="35%" height={20} />
+      <Lines ui={ui} widths={['85%', '50%']} />
+      <Bone ui={ui} height={48} radius={ui.radius.pill} />
+    </>;
+  }
+  // The other participant's card: avatar, name and rating, barangay, and the Call / Open chat buttons.
+  if (shape === 'participant') {
+    return <View style={styles.card}>
+      <View style={styles.row}>
+        <Bone ui={ui} width={48} height={48} radius={ui.radius.pill} />
+        <View style={styles.rowCopy}><Lines ui={ui} widths={['30%', '65%', '40%']} /></View>
+      </View>
+      <Lines ui={ui} widths={['25%', '45%']} />
+      <View style={styles.row}>
+        <Bone ui={ui} flex={1} height={48} radius={ui.radius.pill} />
+        <Bone ui={ui} flex={1} height={48} radius={ui.radius.pill} />
+      </View>
+    </View>;
+  }
+  // One full-width button.
+  if (shape === 'action') return <Bone ui={ui} height={48} radius={ui.radius.pill} />;
   if (shape === 'chat') {
     return ([['flex-start', '68%'], ['flex-end', '52%'], ['flex-start', '74%'], ['flex-end', '44%']] as const).map(([alignSelf, width], row) =>
       <View key={row} style={{ alignSelf, width }}><Bone ui={ui} height={64} radius={ui.radius.card} /></View>);
@@ -133,5 +184,6 @@ function createStyles(ui: UiTheme) {
     group: { borderRadius: radius.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.hairline, backgroundColor: colors.surface },
     groupRow: { alignItems: 'flex-start', padding: spacing.md },
     groupDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.hairline },
+    divided: { paddingTop: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.hairline },
   });
 }

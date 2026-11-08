@@ -47,7 +47,7 @@ async function mount(element: unknown) {
 beforeEach(() => { native.nodes = []; native.repeats = []; native.reduced = false; native.cancelled = 0; });
 afterEach(async () => { if (root) await act(async () => root!.unmount()); root = null; vi.unstubAllGlobals(); });
 
-const shapes = ['lines', 'line', 'rows', 'jobs', 'bookings', 'detail', 'chat', 'fill'] as const;
+const shapes = ['lines', 'line', 'rows', 'jobs', 'bookings', 'detail', 'booking', 'participant', 'action', 'chat', 'fill'] as const;
 
 it.each(shapes)('%s placeholder is one announced busy region whose bones screen readers skip', async (shape) => {
   await mount(createElement(Skeleton, { shape, label: 'Loading your jobs…' }));
@@ -102,4 +102,23 @@ function sources(dir: string): string[] {
 it('no production screen draws a spinner: pull-to-refresh is the only circle left, and it is the system gesture', () => {
   const offenders = sources('src').filter(file => readFileSync(file, 'utf8').includes('ActivityIndicator'));
   expect(offenders).toEqual([]);
+});
+
+it('PERF-02 (owner 2026-11-08, "correct the skeleton loading base on the content"): Booking details waits in its own shape', async () => {
+  const boxes = () => native.nodes.filter(node => node.name === 'View' && node.style && typeof node.style === 'object' && 'backgroundColor' in node.style && node.style.backgroundColor === '#hairline');
+  await mount(createElement(Skeleton, { shape: 'booking', label: 'Loading booking…' }));
+  const booking = boxes();
+  // Status chip, the booking card (service icon, title, ID with its copy button, date, place, payment icon and amount),
+  // two section titles, the counterpart's avatar and one action.
+  expect(booking.filter(b => b.style.width === 44 && b.style.height === 44).length).toBe(2);
+  expect(booking.filter(b => b.style.height === 48 && b.style.width === '100%').length).toBe(1);
+  expect(booking.length).toBeGreaterThanOrEqual(14);
+  await act(async () => root!.unmount()); root = null; native.nodes = [];
+  await mount(createElement(Skeleton, { shape: 'participant', label: 'Checking booking details' }));
+  const participant = boxes();
+  expect(participant.filter(b => b.style.width === 48 && b.style.height === 48).length).toBe(1);
+  expect(participant.filter(b => b.style.height === 48 && b.style.flex === 1).length).toBe(2);
+  await act(async () => root!.unmount()); root = null; native.nodes = [];
+  await mount(createElement(Skeleton, { shape: 'action', label: 'Checking booking controls' }));
+  expect(boxes().map(b => [b.style.width, b.style.height])).toEqual([['100%', 48]]);
 });
