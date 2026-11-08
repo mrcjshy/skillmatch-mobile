@@ -19,7 +19,7 @@ vi.mock('react-native', () => {
 vi.mock('expo-router/react-navigation', () => ({ CommonActions: { navigate: vi.fn() } }));
 vi.mock('@/components/app-symbol', () => ({ AppSymbol: () => null }));
 vi.mock('@/components/app-tab-bar', () => ({ TAB_ACTIVE_COLOR: 'blue', TAB_INACTIVE_COLOR: 'gray' }));
-vi.mock('@/components/motion', () => ({ MotionView: ({ children }) => <div>{children}</div>, usePressScale: () => ({ style: {} }) }));
+vi.mock('@/components/motion', () => ({ MotionView: ({ children }) => <div>{children}</div>, usePressScale: () => ({ style: {} }), useTabIndicator: () => ({}) }));
 
 
 describe('Client bottom navigation', () => {

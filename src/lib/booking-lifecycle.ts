@@ -168,6 +168,19 @@ export const COPY = {
   cancelConflict: 'This booking is no longer available for cancellation.',
   cancelGeneric: 'The booking could not be cancelled. Please try again.',
 
+  // NOSHOW-01 (owner 2026-11-06): the Client closes a booking the Worker did not come to.
+  noShow: "Worker didn't show up",
+  noShowing: 'Closing…',
+  noShowConfirmTitle: 'Close as a no-show?',
+  noShowConfirmBody:
+    'Do this only if the Worker did not come. The booking and the job close, the Worker is told, and a no-show report goes to an Administrator, who decides on any strike. You can post the job again.',
+  noShowConfirmAction: 'Close as no-show',
+  noShowForbidden: 'You are not allowed to close this booking as a no-show.',
+  noShowBlocked: 'This booking cannot be closed in its current payment state.',
+  noShowConflict:
+    'This booking cannot be closed as a no-show. The Worker may have confirmed arrival, or the scheduled time has not come yet.',
+  noShowGeneric: 'The booking could not be closed. Please try again.',
+
   /** The transition IS committed; only the follow-up read failed. */
   refreshFailed: 'That worked, but the list could not be refreshed. Pull down to refresh.',
 } as const;
@@ -188,6 +201,35 @@ export function completeErrorCopy(e: unknown): string {
   if (code === CONFLICT) return COPY.completeConflict;
   if (code === PAYMENT_BLOCKED) return COPY.completePaymentRequired;
   return COPY.completeGeneric;
+}
+
+export function noShowErrorCopy(e: unknown): string {
+  const code = e instanceof LifecycleError ? e.code : null;
+  if (code === FORBIDDEN) return COPY.noShowForbidden;
+  if (code === PAYMENT_BLOCKED) return COPY.noShowBlocked;
+  if (code === CONFLICT) return COPY.noShowConflict;
+  return COPY.noShowGeneric;
+}
+
+/**
+ * Whether to offer "Worker didn't show up": from the Job's exact scheduled time (NOSHOW-02, owner
+ * 2026-11-08; NOSHOW-01 waited 1 hour). The Client cannot see the Worker's arrival, so the server
+ * makes the final check (arrival, payment, time) and answers SM409 when it refuses.
+ */
+export function canReportNoShow(bookingStatus: string, scheduledAt: string | null, cancellable: boolean, now: number = Date.now()): boolean {
+  if (bookingStatus !== 'confirmed' || !cancellable || !scheduledAt) return false;
+  const at = Date.parse(scheduledAt);
+  return Number.isFinite(at) && now >= at;
+}
+
+/** NOSHOW-02: the longest wait an open Booking details screen keeps a timer for (a later visit re-checks). */
+const NO_SHOW_TIMER_LIMIT_MS = 24 * 60 * 60 * 1000;
+
+/** NOSHOW-02: milliseconds until the no-show button is due, so an open screen can redraw then; null when there is nothing to wait for. */
+export function msUntilNoShow(scheduledAt: string | null, now: number = Date.now()): number | null {
+  if (!scheduledAt) return null;
+  const wait = Date.parse(scheduledAt) - now;
+  return Number.isFinite(wait) && wait > 0 && wait <= NO_SHOW_TIMER_LIMIT_MS ? wait : null;
 }
 
 export function cancelErrorCopy(e: unknown): string {
@@ -242,6 +284,17 @@ export async function cancelBooking(
     p_reason_code: validated.reasonCode,
     p_reason_detail: validated.detail,
   });
+  if (res.error) {
+    throw new LifecycleError(res.error.message || 'The request failed.', res.error.code ?? null);
+  }
+}
+
+/**
+ * NOSHOW-01: the Client closes a confirmed booking the Worker did not come to. The server sets the
+ * Booking to `no_show` and the Job to `cancelled`, files a no-show report and tells the Worker.
+ */
+export async function reportWorkerNoShow(bookingId: string): Promise<void> {
+  const res = await supabase.rpc('report_worker_no_show', { p_booking_id: bookingId });
   if (res.error) {
     throw new LifecycleError(res.error.message || 'The request failed.', res.error.code ?? null);
   }

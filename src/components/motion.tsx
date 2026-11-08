@@ -97,6 +97,21 @@ export function usePressScale(pressedScale: number = scale.pressAction) {
 }
 
 /**
+ * The bottom navigation's one selection capsule gliding to the selected tab (owner 2026-11-06:
+ * the transition of Instagram's floating nav, motion only). `x` is where the capsule's left edge
+ * belongs; when it changes the capsule slides there in `duration.large` on the slide curve, at a
+ * constant size. It starts where it first belongs (no slide in from 0); reduced motion jumps.
+ */
+export function useTabIndicator(x: number) {
+  const reduced = useReducedMotion();
+  const offset = useSharedValue(x);
+  useEffect(() => {
+    offset.set(reduced ? x : withTiming(x, { duration: duration.large, easing: curve(easing.slide), reduceMotion: NEVER }));
+  }, [offset, reduced, x]);
+  return useAnimatedStyle(() => ({ transform: [{ translateX: offset.get() }] }));
+}
+
+/**
  * The Home greeting's hand: two quick waves from the wrist each time `play` changes (arriving on
  * Home), then still. Finite, transform-only, and still under reduced motion.
  */

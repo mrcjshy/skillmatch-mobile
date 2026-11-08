@@ -282,7 +282,7 @@ function AdminVerificationDetailsContent() {
         </SurfaceGroup>
       </View>
 
-      {/* 3b. REG-01 resume: name, birth date, address, contact, education, skills with years, past jobs. */}
+      {/* 3b. REG-01 resume: name, birth date, address, contact, education, skills, past jobs. */}
       <AdminAccountProfileSection userId={worker.userId} />
 
       {/* 4. Skills the Worker offers. */}

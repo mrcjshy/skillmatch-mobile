@@ -109,7 +109,14 @@ vi.mock('@/lib/supabase', () => ({ supabase: {
   }) }),
   rpc: (name: string) => { b.rpc(name); return b.bookingReply ?? Promise.resolve({ data: [], error: null }); },
   storage: { from: () => ({ list: (...args: any[]) => { b.list(...args); return b.listReply ?? Promise.resolve({ data: [], error: null }); },
-    createSignedUrls: (...args: any[]) => { b.sign(...args); return b.signReply ?? Promise.resolve({ data: args[0].map((path: string) => ({ path, signedUrl: 'signed-private', error: null })), error: null }); } }) },
+    // PERF-01: photos are one batch sign of the three canonical slots (no folder listing). As on hosted
+    // Storage, the sign answers per path; listReply still models what the Job folder holds.
+    createSignedUrls: (...args: any[]) => { b.sign(...args); return b.signReply ?? Promise.resolve(b.listReply ?? { data: [], error: null }).then((listed: any) => {
+      if (listed.error) return { data: null, error: listed.error };
+      const names = new Set((listed.data ?? []).map((object: any) => object.name));
+      return { data: args[0].map((path: string) => names.has(path.split('/').pop()) ? { path, signedUrl: 'signed-private/' + path.split('/').pop(), error: null }
+        : { path, signedUrl: null, error: 'Either the object does not exist or you do not have access to it' }), error: null };
+    }); } }) },
 } }));
 const CLIENT = '11111111-1111-4111-8111-111111111111', JOB = '22222222-2222-4222-8222-222222222222';
 const nodes = (kind: string) => [...b.nodes.values()].filter(n => n.kind === kind);
@@ -340,7 +347,7 @@ describe('actual owner-provider / detail / private-photo composition', () => {
       oldPhotos.resolve({ data: [{ name: '1' }], error: null });
     }); await flush();
     expect(nodes('BookingDetails')[0]).toMatchObject({ bookingId: 'fresh-after-resume' });
-    expect(nodes('Image')).toHaveLength(0); expect(b.sign).not.toHaveBeenCalled();
+    expect(nodes('Image')).toHaveLength(0); expect(b.list).not.toHaveBeenCalled();
   });
   it('shows a notification transport failure and recovers through Refresh job with fresh booking context', async () => {
     await mount(); expect(nodes('FindingWorkerCarousel')).toHaveLength(1);
@@ -375,14 +382,15 @@ describe('actual owner-provider / detail / private-photo composition', () => {
   it('renders provider description and only resolved open/no-booking waiting context', async () => {
     await mount(); expect(text()).toContain('Real provider description\nUnicode ñ');
     expect(text()).toContain('1,500'); expect(text()).toContain('Date & time'); expect(text()).toContain('Hang tight! Your job is open to eligible workers.'); expect(text()).toContain('Waiting for a worker'); expect(text()).not.toContain('Booking ID'); expect(text()).not.toMatch(/being connected|assigned to you|selected/i); expect(text()).toContain('Job ID'); expect(nodes('FindingWorkerCarousel')).toHaveLength(1); expect(nodes('FindingJobMap')).toHaveLength(1); expect(nodes('BookingSheet')).toHaveLength(1); expect(nodes('ScrollView')).toHaveLength(0); expect(text()).toContain('Skills'); expect(text()).toContain('None');
-    expect(b.rpc).toHaveBeenCalledWith('list_my_client_bookings'); expect(b.list).toHaveBeenCalledWith(CLIENT + '/' + JOB, expect.any(Object));
+    expect(b.rpc).toHaveBeenCalledWith('list_my_client_bookings'); expect(b.list).not.toHaveBeenCalled();
+    expect(b.sign).toHaveBeenCalledWith([1, 2, 3].map(slot => CLIENT + '/' + JOB + '/' + slot), 60);
     expect(text()).toContain('No job photos'); expect(button('View or edit location')).toBeDefined();
   });
   it.each([null, '', '   '])('uses missing description fallback for %s', async description => {
     b.jobs[0].description = description; await mount(); expect(text()).toContain('No description provided.');
   });
   it.each([null, '', 'bad', [JOB], '33333333-3333-4333-8333-333333333333'])('does no protected reader for invalid/foreign ID %s', async id => {
-    await mount(id); expect(b.list).not.toHaveBeenCalled(); expect(b.rpc).not.toHaveBeenCalled(); expect(text()).not.toContain('Real provider description');
+    await mount(id); expect(b.sign).not.toHaveBeenCalled(); expect(b.rpc).not.toHaveBeenCalled(); expect(text()).not.toContain('Real provider description');
   });
   it('does not invent waiting or assignment for pending/failed booking context', async () => {
     const pending = deferred(); b.bookingReply = pending.promise; await mount(); expect(text()).not.toContain('Waiting for acceptance');
@@ -395,8 +403,8 @@ describe('actual owner-provider / detail / private-photo composition', () => {
     expect(nodes('BookingDetails')[0]).toMatchObject({ role: 'client', bookingId: 'booking-a', initialSheetPosition: 'collapsed' });
     expect(b.push).not.toHaveBeenCalled(); expect(nodes('FindingWorkerCarousel')).toHaveLength(0);
   });
-  it.each(['blur', 'background', 'session', 'termination', 'pending-account', 'route', 'suspense'])('irreversibly invalidates pending listing on %s then permits a new lifetime', async kind => {
-    const pending = deferred(); b.listReply = pending.promise; const h = await mount(); expect(b.list).toHaveBeenCalledTimes(1);
+  it.each(['blur', 'background', 'session', 'termination', 'pending-account', 'route', 'suspense'])('irreversibly invalidates a pending photo read on %s then permits a new lifetime', async kind => {
+    const pending = deferred(); b.listReply = pending.promise; const h = await mount(); expect(b.sign).toHaveBeenCalledTimes(1);
     if (kind === 'blur') { b.focus = false; await h.render(); }
     if (kind === 'background') await act(async () => { b.active = 'background'; for (const fn of b.appEvents) fn('background'); });
     if (kind === 'session') await act(async () => { b.account.status = 'loading'; b.session.advance(); });
@@ -405,14 +413,14 @@ describe('actual owner-provider / detail / private-photo composition', () => {
     if (kind === 'route') await h.route('bad');
     if (kind === 'suspense') await h.suspend();
     b.listReply = null;
-    await act(async () => pending.resolve({ data: [{ name: '1' }], error: null })); await flush(); expect(b.sign).not.toHaveBeenCalled();
+    await act(async () => pending.resolve({ data: [{ name: '1' }], error: null })); await flush(); expect(b.sign).toHaveBeenCalledTimes(1);
     expect(nodes('Image')).toHaveLength(0);
     if (kind === 'session') b.account.status = 'resolved';
     if (kind === 'termination') b.owner = createClientPostJobDraftOwner(CLIENT, undefined, () => b.account.status === 'resolved');
     if (kind === 'blur') b.focus = true;
     if (kind === 'background') await act(async () => { b.active = 'active'; for (const fn of b.appEvents) fn('active'); });
     if (kind === 'route') await h.route(JOB); else if (kind === 'suspense') await h.resume(); else await h.render();
-    expect(b.list.mock.calls.length).toBeGreaterThan(1);
+    expect(b.sign.mock.calls.length).toBeGreaterThan(1);
   });
   it('does not publish URLs when signing settles after route replacement', async () => {
     b.listReply = Promise.resolve({ data: [{ name: '1' }], error: null }); const pending = deferred(); b.signReply = pending.promise;
@@ -433,7 +441,7 @@ describe('actual owner-provider / detail / private-photo composition', () => {
   });
   it('releases subscriptions registered by a synchronous invalidation without dispatch', async () => {
     const release = vi.fn(); b.session.subscribeSessionLifecycle = (fn: () => void) => { fn(); return release; };
-    await mount(); expect(b.list).not.toHaveBeenCalled(); expect(b.rpc).not.toHaveBeenCalled(); expect(release).toHaveBeenCalled();
+    await mount(); expect(b.sign).not.toHaveBeenCalled(); expect(b.rpc).not.toHaveBeenCalled(); expect(release).toHaveBeenCalled();
   });
   it('cancels missing-row refresh errors and stale callbacks across blur', async () => {
     b.jobs = []; const h = await mount(); const retry = button('Refresh job');
@@ -452,10 +460,10 @@ describe('actual owner-provider / detail / private-photo composition', () => {
     const old = deferred(); b.listReply = old.promise; const h = await mount();
     b.account.status = 'loading'; await h.render();
     b.listReply = Promise.resolve({ data: [{ name: '3' }], error: null }); b.account.status = 'resolved'; await h.render();
-    expect(nodes('Image')).toHaveLength(1); expect(b.sign).toHaveBeenCalledTimes(1);
+    expect(nodes('Image')).toHaveLength(1); expect(b.sign).toHaveBeenCalledTimes(2);
     await act(async () => old.resolve({ data: [{ name: '1' }], error: null })); await flush();
-    expect(b.sign).toHaveBeenCalledTimes(1); expect(nodes('Image')).toHaveLength(1);
-    expect(b.sign.mock.calls[0][0]).toEqual([CLIENT + '/' + JOB + '/3']);
+    expect(b.sign).toHaveBeenCalledTimes(2); expect(nodes('Image')).toHaveLength(1);
+    expect(JSON.stringify(nodes('Image')[0].source)).toContain('signed-private/3');
   });
   it('clears settled photos and actions when authoritative membership disappears', async () => {
     b.listReply = Promise.resolve({ data: [{ name: '1' }], error: null }); await mount(); expect(nodes('Image')).toHaveLength(1);

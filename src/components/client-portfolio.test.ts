@@ -50,7 +50,7 @@ function harness() {
     '@/providers/account-provider': { useAccount: () => ({ account, status: accountStatus, hasCurrentConsent: consent }) },
     '@/providers/session-provider': { useSession: () => ({ session: { user: { id: account.id } }, isSessionLoading: false, sessionError: null, recoveryStatus: 'idle', sessionRevision: guardAvailable ? revision : undefined, isSessionRevisionCurrent: guardAvailable ? isRevisionCurrent : undefined }) },
     '@/constants/theme': { SkillMatchTheme: { ui: { colors: {}, type: {}, spacing: {}, radius: {} } } },
-    ...Object.fromEntries(['app-button', 'initials-avatar', 'inline-status', 'section-header', 'surface-group'].map(name => [
+    ...Object.fromEntries(['app-button', 'initials-avatar', 'inline-status', 'section-header', 'surface-group', 'skill-chips'].map(name => [
       '@/components/' + name, { [name.split('-').map(word => word[0].toUpperCase() + word.slice(1)).join('')]: name },
     ])),
   };
@@ -97,12 +97,20 @@ function deferred() { let resolve!: (result: Props) => void; const promise = new
 it('shows the automatic professional resume and portfolio in one virtualized accessible view', async () => {
   const h = harness(); const item = { id: 'project-a', title: 'Saved project', description: 'Saved details', projectScale: 'small', images: [] };
   h.load.mockResolvedValue(ready('Synthetic Worker', [item])); h.render(); await settle(); const tree = h.render();
-  expect(text(tree)).toContain('Carpentry'); expect(text(tree)).toContain('09170000000'); expect(text(tree)).toContain('4.5');
+  // SKL-02: skills are pills now; the chips receive them.
+  expect(nodes(tree).find(node => node.type === 'skill-chips').props.skills).toContain('Carpentry'); expect(text(tree)).toContain('09170000000'); expect(text(tree)).toContain('4.5');
   const list = nodes(tree).find(node => node.type === 'FlatList'); expect(list).toBeDefined();
   expect(list.props.initialNumToRender).toBeLessThanOrEqual(3); expect(list.props.data).toEqual([item]);
   expect(text(h.expand(list.props.renderItem({ item })))).toContain('Saved details');
   expect(nodes(tree).some(node => node.props.accessibilityRole === 'header')).toBe(true);
   expect(nodes(tree).some(node => /Generate|Share|Export/.test(node.props.label ?? ''))).toBe(false);
+});
+
+it('SKL-02: the resume shows the Worker skills as pills', async () => {
+  const h = harness(); h.load.mockResolvedValue(ready()); h.render(); await settle();
+  const chips = nodes(h.render()).filter(node => node.type === 'skill-chips');
+  expect(chips).toHaveLength(1);
+  expect(chips[0].props.skills).toEqual(['Carpentry']);
 });
 
 it('fails closed without the session authority guard', () => {

@@ -1,7 +1,48 @@
 import { expect, it, vi } from 'vitest';
-import { createNativeCallMedia } from './native-video-call';
+import { createNativeCallMedia, localCameraFacing, switchLocalCamera } from './native-video-call';
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+const cameraSdk = { client: { Track: { Source: { Camera: 'camera' } } }, native: {} };
+it('RTC-06: re-opens the camera with the other facing even where applyConstraints exists, and reports the camera it really opened', async () => {
+  // Infinix + TECNO (11-08): LiveKit's WebRTC fork keeps the first camera for applyConstraints, so the old
+  // in-place switch only un-mirrored the front camera. Only a restart opens the other camera.
+  const applyConstraints = vi.fn(async () => {});
+  const track = { kind: 'video', mediaStreamTrack: { applyConstraints, getSettings: () => ({ facingMode: 'user' }) },
+    restartTrack: vi.fn(async ({ facingMode }: { facingMode: string }) => { track.mediaStreamTrack = { applyConstraints, getSettings: () => ({ facingMode }) }; }) };
+  const getTrackPublication = vi.fn(() => ({ track }));
+  const room = { localParticipant: { getTrackPublication } };
+  await expect(switchLocalCamera(room as never, 'environment', cameraSdk as never)).resolves.toBe('environment');
+  expect(getTrackPublication).toHaveBeenCalledWith('camera');
+  expect(track.restartTrack).toHaveBeenCalledWith({ facingMode: 'environment' });
+  await expect(switchLocalCamera(room as never, 'user', cameraSdk as never)).resolves.toBe('user');
+  expect(track.restartTrack).toHaveBeenLastCalledWith({ facingMode: 'user' });
+  expect(applyConstraints).not.toHaveBeenCalled();
+});
+it('RTC-06: reports the camera still in use when the restart did not change it, so the preview is not un-mirrored', async () => {
+  const track = { kind: 'video', restartTrack: vi.fn(async () => {}), mediaStreamTrack: { getSettings: () => ({ facingMode: 'user' }) } };
+  const room = { localParticipant: { getTrackPublication: () => ({ track }) } };
+  await expect(switchLocalCamera(room as never, 'environment', cameraSdk as never)).resolves.toBe('user');
+});
+it('RTC-04: reads which camera the published track really uses (LiveKit re-opens the camera when it is turned back on)', () => {
+  const room = (facingMode?: string) => ({ localParticipant: { getTrackPublication: () => ({ track: { kind: 'video', mediaStreamTrack: { getSettings: () => ({ facingMode }) } } }) } });
+  expect(localCameraFacing(room('environment') as never, cameraSdk as never)).toBe('environment');
+  expect(localCameraFacing(room('user') as never, cameraSdk as never)).toBe('user');
+  expect(localCameraFacing(room(undefined) as never, cameraSdk as never)).toBeNull();
+  expect(localCameraFacing({ localParticipant: { getTrackPublication: () => undefined } } as never, cameraSdk as never)).toBeNull();
+});
+it('RTC-02: re-opens the published camera track with the other facing; an unknown facing reports the requested one', async () => {
+  const restartTrack = vi.fn(async () => {});
+  const room = { localParticipant: { getTrackPublication: () => ({ track: { kind: 'video', restartTrack, mediaStreamTrack: {} } }) } };
+  await expect(switchLocalCamera(room as never, 'environment', cameraSdk as never)).resolves.toBe('environment');
+  expect(restartTrack).toHaveBeenCalledWith({ facingMode: 'environment' });
+});
+it('RTC-02: refuses without a published camera track or without the video runtime', async () => {
+  const none = { localParticipant: { getTrackPublication: () => undefined } };
+  await expect(switchLocalCamera(none as never, 'user', cameraSdk as never)).rejects.toThrow();
+  const audioOnly = { localParticipant: { getTrackPublication: () => ({ track: { kind: 'audio' } }) } };
+  await expect(switchLocalCamera(audioOnly as never, 'user', cameraSdk as never)).rejects.toThrow();
+  await expect(switchLocalCamera(none as never, 'user', null)).rejects.toThrow();
+});
 it('stops acquired but unpublished tracks immediately when backgrounded during publication', async () => {
   const pending = deferred<void>();
   const stop = vi.fn(); const publish = vi.fn(() => pending.promise); const onRoom = vi.fn();

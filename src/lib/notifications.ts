@@ -62,6 +62,8 @@ const NOTIFICATION_LABEL: Record<string, string> = {
   identity_submitted: 'ID submitted for review',
   worker_registered: 'New Worker registered',
   client_registered: 'New Client registered',
+  // NOSHOW-01 (owner 2026-11-06): told to the Worker.
+  booking_no_show: 'No-show reported',
 };
 
 /**
@@ -195,6 +197,7 @@ const NOTIFICATION_KIND: Record<string, NotificationKind> = {
   worker_verified: 'verified',
   report_submitted: 'report',
   identity_submitted: 'request',
+  booking_no_show: 'warning',
 };
 export function notificationKind(type: string): NotificationKind {
   return NOTIFICATION_KIND[type] ?? 'general';

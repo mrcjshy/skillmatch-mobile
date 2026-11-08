@@ -35,6 +35,21 @@ export function jobStatusVariant(status: string): AppChipVariant {
   return 'neutral';
 }
 
+/**
+ * NOSHOW-01 (owner 2026-11-06): an open Job whose scheduled time has passed no longer reaches Workers
+ * and cannot be accepted. Shown to the Client as "Date passed".
+ */
+export function isOpenJobPastDate(status: string, scheduledAt: string | null, now: number = Date.now()): boolean {
+  if (status !== 'open' || !scheduledAt) return false;
+  const at = Date.parse(scheduledAt);
+  return Number.isFinite(at) && at <= now;
+}
+
+export const PAST_DATE_COPY = {
+  chip: 'Date passed',
+  note: 'The date for this job has passed, so Workers can no longer see or accept it. Cancel it and post the job again with a new date.',
+} as const;
+
 /** `open` -> `Open`, `matched` -> `Matched`. */
 export function jobStatusLabel(status: string): string {
   const spaced = status.replace(/_/g, ' ');

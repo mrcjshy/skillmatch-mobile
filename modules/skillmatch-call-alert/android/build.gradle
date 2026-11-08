@@ -1,0 +1,33 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.mrcjshy.skillmatch'
+version = '1.0.0'
+
+android {
+  namespace "expo.modules.skillmatchcallalert"
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // RTC-03: the call push service extends Expo's push service, so every other push still goes to Expo.
+  // SDK 57 links expo-notifications as a prebuilt AAR from its local-maven-repo, not as a Gradle project
+  // (EAS build f6fcb374 failed on project(':expo-notifications')). The app already ships it through
+  // :expo, so this module only compiles against it. Keep the version in step with package-lock.json.
+  def expoNotifications = rootProject.findProject(':expo-notifications')
+  if (expoNotifications != null) {
+    compileOnly expoNotifications
+  } else {
+    compileOnly 'host.exp.exponent:expo.modules.notifications:57.0.18'
+  }
+  // Same versions as expo-notifications 57.0.18.
+  implementation 'com.google.firebase:firebase-messaging:25.0.1'
+  implementation 'androidx.core:core:1.17.0'
+  // RTC-05: HeadlessJsTaskService runs the background Decline (version comes from the React Native plugin).
+  implementation 'com.facebook.react:react-android'
+}

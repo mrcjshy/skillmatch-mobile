@@ -8,12 +8,13 @@ type Element = { type: any; props: Props };
 type Frame = { values: any[]; effects: { deps: any[]; cleanup?: () => void }[]; cursor: number };
 
 /** Runs the actual component and map callback props; framework/native/network boundaries are seams. */
-function harness(runtimeAvailable = true) {
+function harness(runtimeAvailable = true, options: { pinsView?: Props; panel?: (parts: Props) => any; stopAll?: () => void } = {}) {
   const frames = new Map<any, Frame>();
   let frame: Frame;
   let writes = 0;
   let map: Element | null = null;
   let output: Element;
+  let worker: Element;
   let sharingReady = false;
   const pending: (() => void)[] = [];
   const element = (type: any, props: Props) => ({ type, props });
@@ -40,14 +41,15 @@ function harness(runtimeAvailable = true) {
     'react/jsx-runtime': { jsx: element, jsxs: element, Fragment: 'Fragment' },
     'react-native': { View: 'View', Text: 'Text', Alert: {}, Linking: {}, PixelRatio: { getFontScale: () => 1 }, StyleSheet: { create: (styles: Props) => styles } },
     '@/components/app-button': { AppButton: 'AppButton' },
+    '@/components/app-dialog': { AppDialog: 'AppDialog' },
     '@/components/map-pin-label': { MapPinLabel: 'MapPinLabel' },
     '@/components/share-location-fab': { ShareLocationFab: 'ShareLocationFab' },
     '@/components/refinement-theme': { useUiTheme: () => ({ colors: {}, type: {}, spacing: {} }) },
     '@/hooks/use-location-sharing': { useLocationSharing: (_booking: string, _account: string, ready: boolean) => {
       sharingReady = ready;
-      return { shareId: null, state: { status: 'off' }, stop: () => {}, start: () => {} };
+      return { shareId: null, state: { status: 'off' }, stop: () => {}, start: () => {}, stopAll: options.stopAll ?? (() => {}) };
     } },
-    '@/hooks/use-booking-pins': { useBookingPins: () => ({ now: 0, view: { status: 'ready', counterpart: null } }) },
+    '@/hooks/use-booking-pins': { useBookingPins: () => ({ now: 0, view: options.pinsView ?? { status: 'ready', counterpart: null } }) },
     '@/lib/native-job-map': { JOB_MAP_STYLE: {}, jobMapRuntime: runtimeAvailable ? { Map: 'NativeMap', Camera: 'NativeCamera', Marker: 'NativeMarker' } : null },
     '@/components/map-type-toggle': { MapTypeToggle: 'MapTypeToggle' }, '@/lib/map-type': { useMapStyle: (style: unknown) => style },
     '@/lib/location-pins': { mergeOverlap: () => [], pinFreshness: () => 'expired' },
@@ -78,8 +80,8 @@ function harness(runtimeAvailable = true) {
   };
   const render = () => {
     const role = exported.BookingLocationMap({ role: 'worker', bookingId: 'booking', accountId: 'worker', destination: null,
-      insets: { top: 0, bottom: 0 }, renderPanel: () => null });
-    const worker = run(role.type, role.props);
+      insets: { top: 0, bottom: 0 }, renderPanel: options.panel ?? (() => null) });
+    worker = run(role.type, role.props);
     const inline = worker.props.children[0];
     output = run(inline.type, inline.props);
     map = null; visit(output);
@@ -93,11 +95,37 @@ function harness(runtimeAvailable = true) {
     get output() { return JSON.stringify(output); },
     get ready() { return sharingReady; },
     get writes() { return writes; },
+    get worker() { return worker; },
     unmount: () => { frames.forEach(owner => owner.effects.forEach(item => item?.cleanup?.())); },
   };
 }
 
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+
+describe('Stop sharing on all devices', () => {
+  const find = (node: any, match: (n: Element) => boolean): Element | undefined => {
+    if (Array.isArray(node)) { for (const child of node) { const hit = find(child, match); if (hit) return hit; } return undefined; }
+    if (!node || typeof node !== 'object' || !('props' in node)) return undefined;
+    return match(node) ? node : find(node.props?.children, match);
+  };
+  it('asks in the app dialog, never the native alert, and stops every device only on Stop all', () => {
+    const stopAll = vi.fn();
+    const h = harness(true, { pinsView: { status: 'ready', counterpart: null, myShare: 'active_on_other_device' }, panel: ({ secondary }) => secondary, stopAll });
+    h.render();
+    const dialog = () => find(h.worker, n => n.type === 'AppDialog')!;
+    const action = (label: string) => [dialog().props.actions.props.children].flat().find((b: Element) => b.props.label === label)!;
+    expect(dialog().props).toMatchObject({ visible: false, title: 'Stop on all devices?' });
+    find(h.worker, n => n.type === 'AppButton' && n.props.label === 'Stop sharing on all devices')!.props.onPress(); h.render();
+    expect(dialog().props.visible).toBe(true);
+    expect(action('Stop all').props.variant).toBe('destructive');
+    action('Keep sharing').props.onPress(); h.render();
+    expect(dialog().props.visible).toBe(false); expect(stopAll).not.toHaveBeenCalled();
+    find(h.worker, n => n.type === 'AppButton' && n.props.label === 'Stop sharing on all devices')!.props.onPress(); h.render();
+    action('Stop all').props.onPress(); h.render();
+    expect(stopAll).toHaveBeenCalledOnce(); expect(dialog().props.visible).toBe(false);
+    h.unmount();
+  });
+});
 
 describe('confirmed booking map initial render deadline', () => {
   it('shows the existing fallback after twenty seconds without a fully rendered map', () => {

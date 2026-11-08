@@ -1,6 +1,6 @@
 {
   "name": "skillmatch-mobile",
-  "main": "expo-router/entry",
+  "main": "index.js",
   "version": "1.0.0",
   "dependencies": {
     "@config-plugins/react-native-webrtc": "15.0.2",

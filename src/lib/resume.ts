@@ -53,7 +53,8 @@ export type Proficiency = 'beginner' | 'intermediate' | 'expert';
 export type ProjectScale = 'small' | 'medium' | 'large';
 export type Availability = 'available' | 'busy' | 'offline';
 
-export type ResumeSkill = { name: string; proficiency: Proficiency | null; /** REG-01; absent or null when not given. */ years?: number | null };
+/** REG-03 (owner, 2026-11-06): no years of experience. The level is never printed (owner, 2026-11-05). */
+export type ResumeSkill = { name: string; proficiency: Proficiency | null };
 
 /** REG-01 work history entry; `endYear` null means the current job. */
 export type ResumeJob = { employer: string; role: string; startYear: number; endYear: number | null };
@@ -209,7 +210,7 @@ export async function loadResume(account: AccountRecord): Promise<ResumeModel | 
   if (workerId === null) return null;
 
   const [skillRowsRes, projectsRes] = await Promise.all([
-    supabase.from('worker_skills').select('skill_id, proficiency_level, years_experience').eq('worker_id', workerId),
+    supabase.from('worker_skills').select('skill_id, proficiency_level').eq('worker_id', workerId),
     supabase
       .from('portfolio_items')
       .select('title, description, project_scale, created_at')
@@ -243,7 +244,6 @@ export async function loadResume(account: AccountRecord): Promise<ResumeModel | 
         : {
             name,
             proficiency: oneOf<Proficiency>(r.proficiency_level, PROFICIENCIES),
-            years: Number.isInteger(r.years_experience) && (r.years_experience as number) >= 0 ? (r.years_experience as number) : null,
           };
     })
     .filter((s): s is ResumeSkill => s !== null)
@@ -339,15 +339,7 @@ export function buildResumeHtml(m: ResumeModel): string {
     m.skills.length === 0
       ? ''
       : `<section><h2>${RESUME_COPY.pdfSkills}</h2><ul class="skills">${m.skills
-          .map(
-            (s) =>
-              `<li><span class="skill">${e(s.name)}</span>${(() => {
-                const parts = [
-                  s.years === undefined || s.years === null ? null : s.years === 1 ? '1 year' : `${s.years} years`,
-                ].filter((part): part is string => part !== null);
-                return parts.length === 0 ? '' : `<span class="level">${parts.join(' · ')}</span>`;
-              })()}</li>`
-          )
+          .map((s) => `<li><span class="skill">${e(s.name)}</span></li>`)
           .join('')}</ul></section>`;
 
   const experience =
@@ -409,7 +401,6 @@ export function buildResumeHtml(m: ResumeModel): string {
   p { margin: 0 0 6pt; }
   ul { margin: 0; padding-left: 0; list-style: none; }
   ul.skills li { display: flex; justify-content: space-between; padding: 3pt 0; border-bottom: 1px dotted #e5e5e5; }
-  .level { color: #555; font-size: 10pt; }
   .project .scale { font-size: 10pt; color: #555; margin-bottom: 3pt; }
   ul.profile li { padding: 2pt 0; }
   footer { margin-top: 18pt; font-size: 8.5pt; color: #777; border-top: 1px solid #ddd; padding-top: 6pt; }

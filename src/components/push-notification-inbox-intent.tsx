@@ -1,10 +1,13 @@
 import * as Notifications from 'expo-notifications';
 import { usePathname, useRouter, type Href } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { deriveAccessState } from '@/app/_layout';
 import { loadClientBookings, loadWorkerBookings } from '@/lib/booking-records';
+import { callAlert } from '@/lib/call-alert';
 import {
+  captureCallLaunch,
   captureNotificationResponse,
   getPendingCall,
   clearPendingNotificationsInboxIntent,
@@ -57,9 +60,19 @@ export function PushNotificationInboxIntent() {
     });
 
     const subscription = Notifications.addNotificationResponseReceivedListener(remember);
+    // RTC-03: the native ringing call notification (or its Answer / Decline) opened SkillMatch.
+    const takeCallLaunch = () => {
+      const launch = callAlert.consumeLaunch();
+      if (!launch) return;
+      captureCallLaunch(launch);
+      if (!cancelled) setCaptureGeneration((value) => value + 1);
+    };
+    takeCallLaunch();
+    const appState = AppState.addEventListener('change', (state) => { if (state === 'active') takeCallLaunch(); });
     return () => {
       cancelled = true;
       subscription.remove();
+      appState.remove();
     };
   }, []);
 
@@ -81,7 +94,13 @@ export function PushNotificationInboxIntent() {
         if (cancelled || getPendingCall() !== callHint) return;
         clearPendingNotificationsInboxIntent();
         if (authorized) router.push({ pathname: access === 'worker' ? '/worker/video' : '/client/video', params: { bookingId: callHint.bookingId } } as Href);
-        else router.replace((access === 'worker' ? '/worker/notifications' : '/client/notifications') as Href);
+        else {
+          // RTC-03: the call stopped ringing before SkillMatch opened. Stop this phone's ringing and stop
+          // showing SkillMatch over the lock screen; the inbox is the safe fallback.
+          callAlert.cancelIncoming();
+          callAlert.showWhenLocked(false);
+          router.replace((access === 'worker' ? '/worker/notifications' : '/client/notifications') as Href);
+        }
         void Notifications.clearLastNotificationResponseAsync();
       })();
       return () => { cancelled = true; };

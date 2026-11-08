@@ -49,6 +49,8 @@ function harness(role: 'client' | 'worker') {
     '@/components/app-field': { AppField: 'AppField' },
     '@/components/app-notice': { AppNotice: 'AppNotice' },
     '@/components/cancellation-sheet': { CancellationSheet: 'CancellationSheet' },
+    // NOSHOW-01 adds the Client's no-show confirmation dialog to the lifecycle section.
+    '@/components/app-dialog': { AppDialog: 'AppDialog' },
     '@/lib/booking-lifecycle': { ...contract, cancelBooking: cancel, completeClientBooking: complete },
   });
   const render = () => { cursor = 0; return module.default({ role, bookingId: 'booking-a', showCompletion: role === 'client', showCancellation: true, onChanged }); };
@@ -59,6 +61,28 @@ function harness(role: 'client' | 'worker') {
   const review = () => { expect(sheet(), 'booking cancellation must use the branded sheet').toBeDefined(); sheet().props.onConfirm(); };
   return { render, sheet, open, choose, detail, review, cancel, complete, onChanged, native, copy: contract.COPY };
 }
+
+describe('client Finish Booking confirmation', () => {
+  it('asks in the app dialog, never the native alert, and finishes only on the explicit action', async () => {
+    const h = harness('client');
+    const dialog = () => all(h.render()).find(element => element.type === 'AppDialog' && element.props.title === h.copy.completeConfirmTitle);
+    const finish = () => all(h.render()).find(element => element.type === 'AppButton' && element.props.label === h.copy.complete).props.onPress();
+    const action = (label: string) => all(dialog().props.actions).find(element => element.type === 'AppButton' && element.props.label === label);
+    expect(dialog().props.visible).toBe(false);
+    finish();
+    expect(h.native.Alert.alert).not.toHaveBeenCalled();
+    expect(dialog().props).toMatchObject({ visible: true, message: h.copy.completeConfirmBody });
+    expect(action(h.copy.completeConfirmAction).props.variant).toBe('primary');
+    action(h.copy.dismiss).props.onPress();
+    expect(dialog().props.visible).toBe(false);
+    expect(h.complete).not.toHaveBeenCalled();
+    finish();
+    action(h.copy.completeConfirmAction).props.onPress();
+    await vi.waitFor(() => expect(h.onChanged).toHaveBeenCalledOnce());
+    expect(h.complete).toHaveBeenCalledExactlyOnceWith('booking-a');
+    expect(dialog().props.visible).toBe(false);
+  });
+});
 
 describe.each(['client', 'worker'] as const)('%s cancellation flow', role => {
   it('requires reason and explicit in-sheet review before submitting', async () => {

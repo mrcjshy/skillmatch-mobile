@@ -7,6 +7,8 @@ type AppDialogProps = {
   visible: boolean;
   /** Called for Android Back and for a scrim tap (when `dismissible`). */
   onRequestClose: () => void;
+  /** Optional illustration shown centred above the title (for example Itik). */
+  hero?: ReactNode;
   title: string;
   message?: string;
   children?: ReactNode;
@@ -20,7 +22,7 @@ type AppDialogProps = {
  * Centred confirmation dialog. Dialogs FADE (sheets slide). Scrim covers the window from the
  * first frame; the card is capped to 90% of the window and scrolls when text is large.
  */
-export function AppDialog({ visible, onRequestClose, title, message, children, actions, dismissible = true }: AppDialogProps) {
+export function AppDialog({ visible, onRequestClose, hero, title, message, children, actions, dismissible = true }: AppDialogProps) {
   const ui = useUiTheme();
   const { styles } = createStyles(ui);
   return (
@@ -47,6 +49,7 @@ export function AppDialog({ visible, onRequestClose, title, message, children, a
           keyboardShouldPersistTaps="handled"
           accessibilityViewIsModal
         >
+          {hero ? <View style={styles.hero}>{hero}</View> : null}
           <Text accessibilityRole="header" style={styles.title}>{title}</Text>
           {message ? <Text style={styles.message}>{message}</Text> : null}
           {children}
@@ -76,6 +79,7 @@ function createStyles(ui: UiTheme) {
       gap: spacing.md,
       ...elevation.floating,
     },
+    hero: { alignItems: 'center' },
     title: { ...type.sectionTitle, color: colors.textPrimary },
     message: { ...type.body, color: colors.textSecondary },
     actions: { gap: spacing.sm, marginTop: spacing.sm },

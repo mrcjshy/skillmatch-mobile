@@ -22,7 +22,7 @@ export function counterpartLabel(viewerRole: 'worker' | 'client'): string {
   return viewerRole === 'worker' ? 'Your Client' : 'Your Worker';
 }
 
-export function callPresentation({ view, ended }: { view: VideoSessionView; ended: boolean }): {
+export function callPresentation({ view, ended, answering = false }: { view: VideoSessionView; ended: boolean; answering?: boolean }): {
   stage: CallStage; status: string; actions: CallAction[];
 } {
   const call = view.call;
@@ -33,6 +33,8 @@ export function callPresentation({ view, ended }: { view: VideoSessionView; ende
     return { stage: 'finished', status: TERMINAL_COPY[call.state as keyof typeof TERMINAL_COPY], actions: ['start', ...retry] };
   }
   if (call.state === 'ringing') {
+    // RTC-05: Answer was already tapped on the call notification; connect instead of asking again.
+    if (call.role === 'callee' && answering) return { stage: 'connecting', status: 'Connecting…', actions: ['end', ...retry] };
     return call.role === 'callee'
       ? { stage: 'incoming', status: 'Incoming video call', actions: ['decline', 'accept', ...retry] }
       : { stage: 'outgoing', status: 'Calling…', actions: ['cancel', ...retry] };
@@ -41,6 +43,18 @@ export function callPresentation({ view, ended }: { view: VideoSessionView; ende
   if (view.connected) return { stage: 'connected', status: 'Connected', actions: ['end', ...retry] };
   if (view.busy) return { stage: 'connecting', status: 'Connecting…', actions: ['end', ...retry] };
   return { stage: 'rejoin', status: 'Call in progress. Tap Join to connect.', actions: ['end', 'join', ...retry] };
+}
+
+/**
+ * RTC-03 (owner, 2026-11-06): the caller hears ringback while the call rings; the callee's native
+ * ringing stops once the call no longer rings for them, or once they leave the call screen.
+ */
+export function ringEffects({ view, ended }: { view: VideoSessionView; ended: boolean }): { ringback: boolean; stopIncomingRing: boolean } {
+  const call = view.call;
+  return {
+    ringback: !ended && call !== null && call.role === 'caller' && call.state === 'ringing',
+    stopIncomingRing: ended || (call !== null && call.role === 'callee' && call.state !== 'ringing'),
+  };
 }
 
 /**

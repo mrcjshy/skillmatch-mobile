@@ -8,6 +8,7 @@ import { AppButton } from '@/components/app-button';
 import { InitialsAvatar } from '@/components/initials-avatar';
 import { InlineStatus } from '@/components/inline-status';
 import { SectionHeader } from '@/components/section-header';
+import { SkillChips } from '@/components/skill-chips';
 import { SkillMatchTheme } from '@/constants/theme';
 import { loadClientBookings } from '@/lib/booking-records';
 import { createLoadGenerationTracker } from '@/lib/booking-details-freshness';
@@ -120,7 +121,7 @@ export default function ClientPortfolio({ bookingId }: { bookingId: string | nul
       <View style={styles.summary}>
         <Text accessibilityRole="header" style={styles.itemTitle}>Skills</Text>
         {resume.skills.length === 0 ? <Text style={styles.meta}>No skills shared yet.</Text>
-          : resume.skills.map(skill => <Text key={skill} style={styles.body}>{skill}</Text>)}
+          : <SkillChips skills={resume.skills} />}
       </View>
       <Text accessibilityRole="header" style={styles.itemTitle}>Portfolio</Text>
     </View>

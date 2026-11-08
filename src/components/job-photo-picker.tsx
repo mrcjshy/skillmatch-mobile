@@ -6,10 +6,21 @@ import * as ImagePicker from 'expo-image-picker';
 import { AppButton } from '@/components/app-button';
 import { AppNotice } from '@/components/app-notice';
 import { SkillMatchTheme } from '@/constants/theme';
+import { loadValidatedJobPhoto } from '@/lib/job-photos';
 
 const { colors, type, spacing, radius } = SkillMatchTheme.ui;
 
 const MAX_JOB_PHOTOS = 3;
+/**
+ * PHO-02 (2026-11-06): below 1 the picker re-encodes JPEG and HEIC photos as JPEG instead of copying the
+ * camera original, so a normal phone photo fits the 5 MB upload limit (PNG stays PNG).
+ */
+const PICK_QUALITY = 0.8;
+const PHOTO_PROBLEM_COPY = {
+  tooLarge: "A photo wasn't added because it is larger than 5 MB. Choose a smaller photo.",
+  unsupported: "A photo wasn't added because its file type isn't supported. Choose a JPG, PNG or WebP photo.",
+  unreadable: "A photo couldn't be read. Choose it again.",
+} as const;
 
 export type JobPhotoDraft = {
   uri: string;
@@ -91,6 +102,7 @@ export function JobPhotoPicker({ disabled = false, photos, error, ownerKey, rese
         selectionLimit: remaining,
         allowsEditing: false,
         legacy: false,
+        quality: PICK_QUALITY,
       });
       if (!current() || result.canceled) return;
 
@@ -105,7 +117,17 @@ export function JobPhotoPicker({ disabled = false, photos, error, ownerKey, rese
         return;
       }
 
-      replacePhotos([...photos, ...selected]);
+      // PHO-02: the upload checks these same bytes. Checking now tells the Client right away, instead of
+      // the photo silently missing from the posted job.
+      const checks = await Promise.all(selected.map((photo) => loadValidatedJobPhoto(photo.uri)));
+      if (!current()) return;
+      const usable = selected.filter((_, index) => checks[index]?.ok === true);
+      if (usable.length > 0) replacePhotos([...photos, ...usable]);
+      const problem = checks.find((check) => !check.ok);
+      if (problem && !problem.ok) {
+        onErrorChange(problem.reason === 'too_large' ? PHOTO_PROBLEM_COPY.tooLarge
+          : problem.reason === 'unsupported_type' ? PHOTO_PROBLEM_COPY.unsupported : PHOTO_PROBLEM_COPY.unreadable);
+      }
     } catch {
       if (!current()) return;
       onErrorChange('The photo gallery is unavailable right now. Try again.');
@@ -136,6 +158,7 @@ export function JobPhotoPicker({ disabled = false, photos, error, ownerKey, rese
           {photos.length}/3
         </Text>
       </View>
+      <Text style={styles.note}>Workers who match this job can see these photos before they accept it.</Text>
 
       {photos.length > 0 ? (
         <View style={styles.gallery}>
@@ -210,6 +233,10 @@ const styles = StyleSheet.create({
   label: {
     ...type.label,
     color: colors.textPrimary,
+  },
+  note: {
+    ...type.helper,
+    color: colors.textSecondary,
   },
   count: {
     ...type.caption,

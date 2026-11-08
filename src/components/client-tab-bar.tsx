@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import type { BottomTabBarProps } from 'expo-router/tabs';
 import { CommonActions } from 'expo-router/react-navigation';
-import { Animated, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, View, type LayoutRectangle } from 'react-native';
 
 import { AppSymbol } from '@/components/app-symbol';
 import { TAB_ACTIVE_COLOR, TAB_INACTIVE_COLOR } from '@/components/app-tab-bar';
-import { MotionView, usePressScale } from '@/components/motion';
+import { MotionView, usePressScale, useTabIndicator } from '@/components/motion';
 import { COBALT_LIT, COBALT_LIT_PRESSED, COBALT_SHADOW } from '@/constants/cobalt-material';
 import { SkillMatchTheme } from '@/constants/theme';
 
@@ -17,6 +18,9 @@ import { SkillMatchTheme } from '@/constants/theme';
  *
  * Tabs show icons only (owner request 2026-11-04): each tab's name stays its accessible label, and
  * the screens still pass `tabBarLabel`, so showing names again is a one-line change here.
+ * One selection capsule serves the whole pill and glides from tab to tab (owner 2026-11-06: the
+ * transition of Instagram's floating nav, motion only, the look is ours); the icons change at once.
+ * It is placed from the tabs' own layouts, so it follows the + slot and any text size.
  * Tab routes stay ordinary tabs (same `tablist` / `tab` roles, selected state, accessible names,
  * tabPress/tabLongPress events and navigate action as the stock bar). Client's Post a job is not a
  * route: it is a fixed-width circular slot in the same flex row, so it sits at the pill's geometric
@@ -51,6 +55,9 @@ export function ClientTabBar({ state, descriptors, navigation, insets, onPostJob
   // The + gives way under the finger and returns on release; at rest it never moves.
   const press = usePressScale();
   const split = Math.ceil(state.routes.length / 2);
+  // Where each tab sits in the pill, so the one selection capsule can glide between them.
+  const [layouts, setLayouts] = useState<Record<string, LayoutRectangle>>({});
+  const selected = layouts[state.routes[state.index]?.key ?? ''];
 
   const tab = (route: (typeof state.routes)[number], index: number) => {
     const { options } = descriptors[route.key];
@@ -64,6 +71,8 @@ export function ClientTabBar({ state, descriptors, navigation, insets, onPostJob
       }
     };
     const onLongPress = () => navigation.emit({ type: 'tabLongPress', target: route.key });
+    const onLayout = (layout: LayoutRectangle) =>
+      setLayouts((all) => (sameLayout(all[route.key], layout) ? all : { ...all, [route.key]: layout }));
     return (
       <Pressable
         key={route.key}
@@ -73,11 +82,10 @@ export function ClientTabBar({ state, descriptors, navigation, insets, onPostJob
         testID={options.tabBarButtonTestID}
         onPress={onPress}
         onLongPress={onLongPress}
+        onLayout={(event) => onLayout(event.nativeEvent.layout)}
         android_ripple={{ borderless: true }}
         style={[styles.tab, options.tabBarItemStyle]}
       >
-        {/* A layer, not the Pressable's background: Android's ripple replaces a view background. */}
-        {focused ? <View pointerEvents="none" style={styles.tabSelected} /> : null}
         {options.tabBarIcon?.({ focused, color, size: size.tabIcon })}
       </Pressable>
     );
@@ -120,12 +128,25 @@ export function ClientTabBar({ state, descriptors, navigation, insets, onPostJob
     >
       <View pointerEvents="none" style={styles.fade} />
       <View role="tablist" style={styles.pill}>
+        {selected ? <TabIndicator tab={selected} /> : null}
         {state.routes.slice(0, split).map((route, index) => tab(route, index))}
         {centre}
         {state.routes.slice(split).map((route, index) => tab(route, index + split))}
       </View>
     </Animated.View>
   );
+}
+
+const sameLayout = (a: LayoutRectangle | undefined, b: LayoutRectangle) =>
+  !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+
+/**
+ * The selection capsule, centred on the selected tab and gliding when the selection changes. A layer
+ * in the pill, under the icons, not a tab background: Android's ripple replaces a view background.
+ */
+function TabIndicator({ tab }: { tab: LayoutRectangle }) {
+  const glide = useTabIndicator(tab.x + (tab.width - size.tabIndicatorWidth) / 2);
+  return <MotionView pointerEvents="none" style={[styles.tabSelected, { top: tab.y + (tab.height - size.tabIndicatorHeight) / 2 }, glide]} />;
 }
 
 /** Worker: the same floating pill, no central action. */
@@ -166,6 +187,7 @@ const styles = StyleSheet.create({
   /** The M3 active indicator: a 64 x 32 tonal pill (M3 secondaryContainer) behind the icon; the accent stays on the icon. */
   tabSelected: {
     position: 'absolute',
+    left: 0,
     width: size.tabIndicatorWidth,
     height: size.tabIndicatorHeight,
     borderRadius: size.tabIndicatorHeight / 2,

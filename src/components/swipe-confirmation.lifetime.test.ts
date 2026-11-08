@@ -2,8 +2,10 @@ import { act, createElement, Fragment } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { SwipeConfirmation, type SwipeConfirmationProps } from './swipe-confirmation';
 
-const native = vi.hoisted(() => ({ nodes: [] as any[], gestures: [] as any[], alerts: [] as any[], queued: [] as (() => void)[] }));
+const native = vi.hoisted(() => ({ nodes: [] as any[], gestures: [] as any[], alerts: [] as any[], dialogs: [] as any[], queued: [] as (() => void)[] }));
 vi.mock('@/components/app-symbol', () => ({ AppSymbol: () => null }));
+vi.mock('@/components/app-dialog', () => ({ AppDialog: (props: any) => { native.dialogs.push(props); return null; } }));
+vi.mock('@/components/app-button', () => ({ AppButton: () => null }));
 vi.mock('react-native', () => ({
   View: (props: any) => { native.nodes.push(props); return createElement(Fragment, null, props.children); },
   Text: () => null, StyleSheet: { create: (style: any) => style },
@@ -30,7 +32,7 @@ vi.mock('react-native-gesture-handler', async () => {
 });
 
 let root: { render(node: unknown): void; unmount(): void } | null = null;
-beforeEach(() => { native.nodes = []; native.gestures = []; native.alerts = []; native.queued = []; });
+beforeEach(() => { native.nodes = []; native.gestures = []; native.alerts = []; native.dialogs = []; native.queued = []; });
 afterEach(async () => { if (root) await act(async () => root?.unmount()); root = null; vi.unstubAllGlobals(); });
 async function mount() {
   const documentHost = { nodeType: 9, activeElement: null, documentElement: {}, defaultView: null as any, addEventListener() {}, removeEventListener() {} };
@@ -51,36 +53,57 @@ async function mount() {
   await render();
   return { onConfirm, render };
 }
-function openConfirmation() {
-  native.nodes.findLast(n => n.onAccessibilityAction).onAccessibilityAction({ nativeEvent: { actionName: 'activate' } });
-  return native.alerts.at(-1)[2][1].onPress;
+/** The review is the app's AppDialog (owner 2026-11-06): open it and hand back its Confirm action. */
+async function openConfirmation() {
+  const node = native.nodes.findLast(n => n.onAccessibilityAction);
+  await act(async () => node.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } }));
+  expect(native.dialogs.at(-1).visible).toBe(true);
+  return dialogAction('Confirm');
 }
+const dialogAction = (label: string) => [native.dialogs.at(-1).actions.props.children].flat().find((b: any) => b.props.label === label).props.onPress;
 function release(gesture = native.gestures.at(-1)) {
   gesture.onStart(); gesture.onUpdate({ translationX: 272 }); gesture.onEnd({ velocityX: 0 }, true); gesture.onFinalize();
 }
 async function drain() { const queued = native.queued.splice(0); await act(async () => { queued.forEach(fn => fn()); }); }
 
 it('an open screen-reader confirmation cannot submit after the action becomes disabled', async () => {
-  const h = await mount(); const oldConfirm = openConfirmation();
+  const h = await mount(); const oldConfirm = await openConfirmation();
   await h.render({ disabled: true });
   await act(async () => oldConfirm());
   expect(h.onConfirm).not.toHaveBeenCalled();
 });
 it('re-enabling does not revive an earlier screen-reader confirmation', async () => {
-  const h = await mount(); const oldConfirm = openConfirmation();
+  const h = await mount(); const oldConfirm = await openConfirmation();
   await h.render({ disabled: true }); await h.render({ disabled: false });
   await act(async () => oldConfirm());
   expect(h.onConfirm).not.toHaveBeenCalled();
-  await act(async () => openConfirmation()());
+  const next = await openConfirmation(); await act(async () => next());
   expect(h.onConfirm).toHaveBeenCalledTimes(1);
 });
 it('replacing the action callback retires an already open confirmation', async () => {
-  const h = await mount(); const oldConfirm = openConfirmation(); const replacement = vi.fn();
+  const h = await mount(); const oldConfirm = await openConfirmation(); const replacement = vi.fn();
   await h.render({ onConfirm: replacement });
   await act(async () => oldConfirm());
   expect(h.onConfirm).not.toHaveBeenCalled(); expect(replacement).not.toHaveBeenCalled();
-  await act(async () => openConfirmation()());
+  const next = await openConfirmation(); await act(async () => next());
   expect(replacement).toHaveBeenCalledTimes(1);
+});
+it('screen-reader review: the app dialog, never the native alert; Not yet keeps it unsent; Confirm submits once', async () => {
+  const h = await mount();
+  expect(native.dialogs.at(-1)).toMatchObject({ visible: false, title: 'Confirm arrival?', message: 'Only at the job site.' });
+  await openConfirmation();
+  expect(native.alerts).toHaveLength(0);
+  const notYet = dialogAction('Not yet');
+  await act(async () => notYet());
+  expect(native.dialogs.at(-1).visible).toBe(false); expect(h.onConfirm).not.toHaveBeenCalled();
+  const confirm = await openConfirmation();
+  await act(async () => { confirm(); confirm(); });
+  expect(h.onConfirm).toHaveBeenCalledTimes(1); expect(native.dialogs.at(-1).visible).toBe(false);
+});
+it('disabling the action closes an open review dialog', async () => {
+  const h = await mount(); await openConfirmation();
+  await h.render({ disabled: true });
+  expect(native.dialogs.at(-1).visible).toBe(false); expect(h.onConfirm).not.toHaveBeenCalled();
 });
 it('changing the action key retires a queued release and leaves the new action usable', async () => {
   const h = await mount(); release(); expect(native.queued).toHaveLength(1);
@@ -102,7 +125,7 @@ it('a native handler retained before disabling cannot submit or strand the re-en
   expect(h.onConfirm).toHaveBeenCalledTimes(1);
 });
 it('unmount retires both a queued release and an open explicit confirmation', async () => {
-  const h = await mount(); const oldConfirm = openConfirmation(); release();
+  const h = await mount(); const oldConfirm = await openConfirmation(); release();
   await act(async () => root?.unmount()); root = null;
   await drain(); await act(async () => oldConfirm());
   expect(h.onConfirm).not.toHaveBeenCalled();

@@ -33,6 +33,7 @@ function harness() {
     '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
 
     '@/components/app-symbol': { AppSymbol: 'SymbolView' },
+    '@/components/app-dialog': { AppDialog: (props: Props) => ({ type: 'AppDialog', props }) },
       react: { useState: (initial: unknown) => { const slot = cursor++; if (!(slot in state)) state[slot] = initial; return [state[slot], (value: unknown) => { state[slot] = typeof value === 'function' ? value(state[slot]) : value; }]; }, useRef: (initial: unknown) => { const slot = cursor++; return refs[slot] ??= { current: initial }; }, useCallback: (fn: unknown) => fn, useEffect: (fn: () => void) => effects.push(fn) },
       'react-native': native, 'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' }, 'expo-image': { Image: 'Image' }, 'expo-image-picker': picker,
       '@/constants/theme': { SkillMatchTheme }, '@/lib/portfolio': { ...portfolio, loadOwnPortfolio, createOwnPortfolioItem, deleteOwnPortfolioItem }, '@/lib/portfolio-images': portfolioImages,
@@ -82,11 +83,20 @@ describe('Worker Portfolio actual composition and existing callbacks', () => {
     expect(values).toContain(h.items[0].title); expect(values).toContain(h.items[0].description);
     expect(values).toContain(portfolio.PORTFOLIO_COPY.imageUnavailable);
     expect(values.indexOf(h.items[0].title)).toBeLessThan(values.indexOf(portfolio.PORTFOLIO_COPY.add));
-    (action(tree, portfolio.PORTFOLIO_COPY.delete + ' ' + h.items[0].title).props.onPress as () => void)();
-    expect(h.alert.mock.calls[0][0]).toBe(portfolio.PORTFOLIO_COPY.deleteTitle); expect(h.deleteOwnPortfolioItem).not.toHaveBeenCalled();
-    const buttons = h.alert.mock.calls[0][2] as { style: string; onPress?: () => void }[];
-    expect(buttons[0].style).toBe('cancel'); expect(buttons[1].style).toBe('destructive');
-    buttons[1].onPress!(); await Promise.resolve(); await Promise.resolve(); expect(h.deleteOwnPortfolioItem).toHaveBeenCalledWith('profile-a', 'project-1');
+    const dialog = () => nodes(h.render()).find(node => node.type === 'AppDialog')!;
+    const dialogAction = (label: string) => nodes(dialog().props.actions).find(node => node.type === 'Pressable' && node.props.accessibilityLabel === label)!;
+    const askDelete = () => (action(h.render(), portfolio.PORTFOLIO_COPY.delete + ' ' + h.items[0].title).props.onPress as () => void)();
+    expect(dialog().props.visible).toBe(false);
+    askDelete();
+    // The app's own dialog, never the native Android alert (owner 2026-11-06).
+    expect(h.alert).not.toHaveBeenCalled();
+    expect(dialog().props).toMatchObject({ visible: true, title: portfolio.PORTFOLIO_COPY.deleteTitle, message: portfolio.PORTFOLIO_COPY.deleteBody });
+    (dialogAction(portfolio.PORTFOLIO_COPY.dismiss).props.onPress as () => void)();
+    expect(dialog().props.visible).toBe(false); expect(h.deleteOwnPortfolioItem).not.toHaveBeenCalled();
+    askDelete();
+    (dialogAction(portfolio.PORTFOLIO_COPY.delete).props.onPress as () => void)();
+    await Promise.resolve(); await Promise.resolve(); expect(h.deleteOwnPortfolioItem).toHaveBeenCalledWith('profile-a', 'project-1');
+    expect(dialog().props.visible).toBe(false);
   });
   it('presents an empty gallery before the unchanged Add Project form', async () => {
     const h = harness(); h.items.splice(0); const tree = await ready(h);

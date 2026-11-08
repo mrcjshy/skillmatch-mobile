@@ -7,8 +7,10 @@ import type { Room } from 'livekit-client';
 import { AppSymbol } from '@/components/app-symbol';
 import { useAccount } from '@/providers/account-provider';
 import { createVideoCallApi, createVideoSession, validCallId, type VideoSessionView } from '@/lib/video-call';
-import { callPresentation, callToAutoJoin, counterpartLabel, type CallAction } from '@/lib/video-call-view';
-import { createNativeCallMedia, loadVideoRuntime } from '@/lib/native-video-call';
+import { callPresentation, callToAutoJoin, counterpartLabel, ringEffects, type CallAction } from '@/lib/video-call-view';
+import { callAlert } from '@/lib/call-alert';
+import { takePendingCallChoice } from '@/lib/push-notifications';
+import { createNativeCallMedia, loadVideoRuntime, localCameraFacing, switchLocalCamera, type CameraFacing } from '@/lib/native-video-call';
 import { subscribeInvalidation, userNotificationsTopic } from '@/lib/realtime';
 
 /** Call surfaces are always dark so video and white controls keep their contrast in either theme. */
@@ -29,14 +31,18 @@ function CallScreen({ bookingId, accountId, role }: { bookingId: string; account
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<VideoSessionView>({ call: null, busy: false, connected: false, message: null, cleanupPending: false });
   const [room, setRoom] = useState<Room | null>(null);
+  // RTC-02: every new connection starts on the front camera.
+  const [facing, setFacing] = useState<CameraFacing>('user');
   const [ended, setEnded] = useState(false);
   const [permissionNote, setPermissionNote] = useState<string | null>(null);
+  // RTC-05: Answer tapped on the call notification; show Connecting while it is accepted.
+  const [answering, setAnswering] = useState(false);
   const permissionBusy = useRef(false);
   const autoJoined = useRef<string | null>(null);
   useLayoutEffect(() => {
     let mounted = true;
     const session = createVideoSession({ bookingId, request: createVideoCallApi().request,
-      media: onDisconnected => createNativeCallMedia(next => { if (mounted) setRoom(next); }, undefined, onDisconnected),
+      media: onDisconnected => createNativeCallMedia(next => { if (mounted) { setRoom(next); setFacing('user'); } }, undefined, onDisconnected),
       onChange: next => { if (mounted) setView(next); } });
     owner.current = session;
     const update = (state: string) => { session.setActive(focused.current && state === 'active'); if (state === 'active') void session.refresh(); };
@@ -74,18 +80,45 @@ function CallScreen({ bookingId, accountId, role }: { bookingId: string; account
     void act('rejoin');
   });
   const finish = () => { setEnded(true); owner.current?.end(); };
-  const presentation = callPresentation({ view, ended });
+  // RTC-03: ringback for the caller; the callee's ringing stops once the call stops ringing for them,
+  // or once they end it here (finish sets ended).
+  const ring = ringEffects({ view, ended });
+  useEffect(() => {
+    if (ring.ringback) callAlert.startRingback(); else callAlert.stopRingback();
+  }, [ring.ringback]);
+  useEffect(() => {
+    if (ring.stopIncomingRing) callAlert.cancelIncoming();
+  }, [ring.stopIncomingRing]);
+  // Leaving the screen of a call that rings for you declines it (session end), so its ringing stops too.
+  const ringingHere = useRef(false);
+  useEffect(() => { ringingHere.current = view.call?.role === 'callee' && view.call.state === 'ringing'; });
+  useEffect(() => () => {
+    callAlert.stopRingback();
+    callAlert.showWhenLocked(false);
+    if (ringingHere.current) callAlert.cancelIncoming();
+  }, []);
+  // RTC-03: Answer or Decline already chosen on the ringing notification, applied once.
+  useEffect(() => {
+    const call = view.call;
+    if (ended || !call || call.role !== 'callee' || call.state !== 'ringing') return;
+    const choice = takePendingCallChoice(call.call_id);
+    if (!choice) return;
+    callAlert.cancelIncoming();
+    if (choice === 'answer') void Promise.resolve().then(() => { setAnswering(true); return act('accept'); }).finally(() => setAnswering(false));
+    else void Promise.resolve().then(finish);
+  });
+  const presentation = callPresentation({ view, ended, answering });
   const who = counterpartLabel(role);
   const live = room !== null && view.connected && !ended;
   const leavable = presentation.stage === 'idle' || presentation.stage === 'finished' || presentation.stage === 'closed';
   const run: Record<CallAction, () => void> = {
-    start: () => void act('start'), accept: () => void act('accept'), join: () => void act('rejoin'),
+    start: () => void act('start'), accept: () => { callAlert.cancelIncoming(); void act('accept'); }, join: () => void act('rejoin'),
     decline: finish, cancel: finish, end: finish, retry_end: () => owner.current?.retryEnd(),
   };
   const controls = presentation.actions.map(action => <RoundControl key={action} {...CONTROL[action]} disabled={view.busy && action !== 'end' && action !== 'cancel' && action !== 'decline' && action !== 'retry_end'} onPress={run[action]} />);
   return <View style={styles.root}>
     <StatusBar style="light" />
-    {live ? <CallTracks room={room} counterpart={who} previewTop={insets.top + 72} /> : null}
+    {live ? <CallTracks room={room} counterpart={who} previewTop={insets.top + 72} facing={facing} /> : null}
     <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
       {leavable ? <Pressable accessibilityRole="button" accessibilityLabel="Navigate up" style={styles.iconButton} onPress={() => router.back()}>
         <AppSymbol name={{ android: 'arrow_back', ios: 'chevron.left' }} size={24} tintColor={CALL.text} />
@@ -107,7 +140,7 @@ function CallScreen({ bookingId, accountId, role }: { bookingId: string; account
       {permissionNote || view.message ? <Text accessibilityLiveRegion="polite" style={styles.message}>{permissionNote ?? view.message}</Text> : null}
       {view.call?.counterpart_away ? <Text style={styles.message}>The other participant is away.</Text> : null}
       <View style={styles.controls}>
-        {live ? <MediaToggles room={room} /> : null}
+        {live ? <MediaToggles room={room} facing={facing} onFacing={setFacing} /> : null}
         {controls}
       </View>
     </View>
@@ -138,11 +171,15 @@ function RoundControl({ label, icon, tone, onPress, disabled = false, selected }
   </View>;
 }
 
-/** Microphone and camera toggles over the existing published tracks (LiveKit mute/unmute; no new native API). */
-function MediaToggles({ room }: { room: Room }) {
+/**
+ * Microphone and camera toggles over the existing published tracks (LiveKit mute/unmute; no new native API),
+ * and RTC-02's Switch camera, which re-opens the camera track with the other facing.
+ */
+function MediaToggles({ room, facing = 'user', onFacing }: { room: Room; facing?: CameraFacing; onFacing?: (next: CameraFacing) => void }) {
   // Reads the mutable LiveKit participant on every redraw (see CallTracks).
   'use no memo';
   const [, redraw] = useState(0);
+  const [switching, setSwitching] = useState(false);
   const sdk = loadVideoRuntime();
   useLayoutEffect(() => {
     if (!sdk) return;
@@ -155,15 +192,29 @@ function MediaToggles({ room }: { room: Room }) {
   const micOn = local.isMicrophoneEnabled;
   const cameraOn = local.isCameraEnabled;
   const toggle = (change: Promise<unknown>) => { void change.catch(() => {}).finally(() => redraw(value => value + 1)); };
+  const flip = () => {
+    if (switching) return;
+    const next: CameraFacing = facing === 'user' ? 'environment' : 'user';
+    setSwitching(true);
+    // RTC-06: mirror the preview for the camera really in use; after a failure, re-read it from the track.
+    void switchLocalCamera(room, next).then(actual => onFacing?.(actual), () => onFacing?.(localCameraFacing(room) ?? facing))
+      .finally(() => setSwitching(false));
+  };
   return <>
     <RoundControl label={micOn ? 'Mute microphone' : 'Unmute microphone'} icon={micOn ? { android: 'mic', ios: 'mic.fill' } : { android: 'mic_off', ios: 'mic.slash.fill' }}
       tone={micOn ? 'neutral' : 'active'} selected={!micOn} onPress={() => toggle(local.setMicrophoneEnabled(!micOn))} />
     <RoundControl label={cameraOn ? 'Turn camera off' : 'Turn camera on'} icon={cameraOn ? { android: 'videocam', ios: 'video.fill' } : { android: 'videocam_off', ios: 'video.slash.fill' }}
-      tone={cameraOn ? 'neutral' : 'active'} selected={!cameraOn} onPress={() => toggle(local.setCameraEnabled(!cameraOn))} />
+      tone={cameraOn ? 'neutral' : 'active'} selected={!cameraOn} onPress={() => toggle(local.setCameraEnabled(!cameraOn).then(() => {
+        // RTC-04: LiveKit re-opens the camera when it is turned back on; follow the camera it really opened.
+        const now = cameraOn ? null : localCameraFacing(room);
+        if (now) onFacing?.(now);
+      }))} />
+    <RoundControl label="Switch camera" icon={{ android: 'cameraswitch', ios: 'camera.rotate' }}
+      tone="neutral" disabled={!cameraOn || switching} onPress={flip} />
   </>;
 }
 
-function CallTracks({ room, counterpart, previewTop }: { room: Room; counterpart: string; previewTop: number }) {
+function CallTracks({ room, counterpart, previewTop, facing = 'user' }: { room: Room; counterpart: string; previewTop: number; facing?: CameraFacing }) {
   // LiveKit mutates room.remoteParticipants and publications in place; React
   // Compiler would cache the tiles on those unchanged references, so a counterpart
   // who joins after this device never appears. Re-read the room on every redraw.
@@ -194,7 +245,8 @@ function CallTracks({ room, counterpart, previewTop }: { room: Room; counterpart
     {/* Your own camera: a small floating preview inside the safe area. */}
     <View style={[styles.preview, { top: previewTop }]} accessibilityLabel="Your camera preview">
       {localCamera?.track && !localCamera.isMuted
-        ? <VideoTrack style={StyleSheet.absoluteFill} objectFit="cover" mirror zOrder={1} trackRef={{ participant: room.localParticipant, publication: localCamera, source }} />
+        // RTC-06: a camera switch brings a new native track; remount the preview on it (RTC-04 saw it freeze on the old camera's last frame).
+        ? <VideoTrack key={localCamera.track.mediaStreamTrack?.id} style={StyleSheet.absoluteFill} objectFit="cover" mirror={facing === 'user'} zOrder={1} trackRef={{ participant: room.localParticipant, publication: localCamera, source }} />
         : <View style={styles.previewOff}><Text style={styles.previewText}>Your camera is off</Text></View>}
     </View>
   </View>;

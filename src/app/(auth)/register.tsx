@@ -56,7 +56,7 @@ type RegisterError = { field: RegisterField; message: string };
 const WORKER_PATH: readonly Step[] = [
   { label: 'Create your account', detail: 'Name, phone, email and password.', state: 'current' },
   { label: 'Confirm your email', detail: 'Enter the six-digit code we send you.', state: 'upcoming' },
-  { label: 'Build your resume', detail: 'Home address, education, skills with years, and past jobs.', state: 'upcoming' },
+  { label: 'Build your resume', detail: 'Home address, education, skills, and past jobs.', state: 'upcoming' },
   { label: 'Submit a valid ID', detail: 'An administrator reviews it before you can use the Worker app.', state: 'upcoming' },
   { label: 'Set up your work profile', detail: 'Add your skills in the Worker app.', state: 'upcoming' },
 ];

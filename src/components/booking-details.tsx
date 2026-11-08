@@ -22,7 +22,7 @@ import { AppChip } from '@/components/app-chip';
 import BookingLifecycle from '@/components/booking-lifecycle';
 import BookingPayment from '@/components/booking-payment';
 import WorkerBookingProgress from '@/components/worker-booking-progress';
-import { loadWorkerProgress, workerProgressPresentation, type WorkerProgress } from '@/lib/worker-booking-progress';
+import { loadBookingServiceProgress, loadWorkerProgress, workerProgressPresentation, type WorkerProgress } from '@/lib/worker-booking-progress';
 import { InlineStatus } from '@/components/inline-status';
 import { JobPhotoGallery } from '@/components/job-photo-gallery';
 import { WorkerAssignedJobLocation, nativeJobMapsLoaded, openWorkerMapsUrl } from '@/components/job-location-map';
@@ -39,7 +39,6 @@ import {
   formatBookingStatus,
   formatBudget,
   formatLocation,
-  formatSkills,
   formatVerification,
   isBookingChatAvailable,
   isCounterpartyReleased,
@@ -53,7 +52,7 @@ import {
   loadClientBookings,
   loadWorkerBookings,
 } from '@/lib/booking-records';
-import { isLifecycleActionableStatus } from '@/lib/booking-lifecycle';
+import { canReportNoShow, isLifecycleActionableStatus, msUntilNoShow } from '@/lib/booking-lifecycle';
 import { formatDetailDateTime } from '@/lib/date-time';
 import {
   fetchJobPaymentMethod,
@@ -64,6 +63,7 @@ import { listJobPhotos, type SignedJobPhoto } from '@/lib/job-photos';
 import {
   BookingPayment as BookingPaymentState,
   bookingActionPresentation,
+  clientPaymentEntry,
   fetchBookingPayments,
   isAwaitingCash,
   isPaidCod,
@@ -220,77 +220,84 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
       return;
     }
 
-    let workerProgress: WorkerProgress | null = null;
-    if (role === 'worker' && booking.booking_status === 'confirmed') {
-      try { workerProgress = await loadWorkerProgress(booking.booking_id); } catch { /* Missing migration/read evidence keeps progress disabled. */ }
-    }
+    // PERF-01 (owner 2026-11-06, "the app is slow"): these reads depend only on `booking`, so they
+    // run together instead of one after another (up to seven round trips before anything showed).
+    // Each keeps its own fallback; the payment method still waits for the payment read it needs.
     const payable = isPayableStatus(booking.booking_status);
-    let payments = new Map<string, BookingPaymentState>();
-    let paymentReadSucceeded = !payable;
-    if (payable) {
-      try {
-        payments = await fetchBookingPayments([booking.booking_id]);
-        paymentReadSucceeded = payments.has(booking.booking_id);
-      } catch (error: unknown) {
-        if (error instanceof Error && error.message) {
-          console.warn('[FT-05] booking payment read failed:', error.message);
+    const progressRead = (async (): Promise<WorkerProgress | null> => {
+      if (booking.booking_status !== 'confirmed') return null;
+      // PAY-02: the Client reads the Worker's progress too, to know when payment may start.
+      try { return role === 'worker' ? await loadWorkerProgress(booking.booking_id) : await loadBookingServiceProgress(booking.booking_id); }
+      catch { return null; /* Missing migration/read evidence keeps progress disabled. */ }
+    })();
+    const paymentRead = (async () => {
+      let payments = new Map<string, BookingPaymentState>();
+      let paymentReadSucceeded = !payable;
+      if (payable) {
+        try {
+          payments = await fetchBookingPayments([booking.booking_id]);
+          paymentReadSucceeded = payments.has(booking.booking_id);
+        } catch (error: unknown) {
+          if (error instanceof Error && error.message) {
+            console.warn('[FT-05] booking payment read failed:', error.message);
+          }
+          paymentReadSucceeded = false;
         }
-        paymentReadSucceeded = false;
       }
-    }
-    let jobPaymentMethod: JobPaymentMethod | null = null;
-    let jobPaymentReady = !payable;
-    if (payable && paymentReadSucceeded) {
-      try {
-        jobPaymentMethod = await fetchJobPaymentMethod(booking.job_id);
-        jobPaymentReady = true;
-      } catch (error: unknown) {
-        if (error instanceof Error && error.message) {
-          console.warn('[R4] job payment_method read failed:', error.message);
+      let jobPaymentMethod: JobPaymentMethod | null = null;
+      let jobPaymentReady = !payable;
+      if (payable && paymentReadSucceeded) {
+        try {
+          jobPaymentMethod = await fetchJobPaymentMethod(booking.job_id);
+          jobPaymentReady = true;
+        } catch (error: unknown) {
+          if (error instanceof Error && error.message) {
+            console.warn('[R4] job payment_method read failed:', error.message);
+          }
+          jobPaymentReady = false;
         }
-        jobPaymentReady = false;
       }
-    }
-    const rated =
+      return { payments, paymentReadSucceeded, jobPaymentMethod, jobPaymentReady };
+    })();
+    const ratedRead =
       role === 'client' && isRateableStatus(booking.booking_status)
-        ? await fetchMyRatedBookingIds([booking.booking_id])
-        : new Set<string>();
-    let reportReadSucceeded = !isBookingReportableStatus(booking.booking_status);
-    let isReported = false;
-    if (isBookingReportableStatus(booking.booking_status)) {
+        ? fetchMyRatedBookingIds([booking.booking_id])
+        : Promise.resolve(new Set<string>());
+    const reportRead = (async () => {
+      if (!isBookingReportableStatus(booking.booking_status)) return { reportReadSucceeded: true, isReported: false };
       try {
-        isReported = (await loadMyReportedBookingIds([booking.booking_id])).has(booking.booking_id);
-        reportReadSucceeded = true;
+        return { reportReadSucceeded: true, isReported: (await loadMyReportedBookingIds([booking.booking_id])).has(booking.booking_id) };
       } catch {
-        reportReadSucceeded = false;
+        return { reportReadSucceeded: false, isReported: false };
       }
-    }
-
-    let exactLocation: DetailState['exactLocation'] = { status: 'skipped' };
-    let jobPhotos: DetailState['jobPhotos'] = { status: 'skipped' };
-    if (booking.booking_status === 'confirmed') {
+    })();
+    const locationRead = (async (): Promise<DetailState['exactLocation']> => {
+      if (booking.booking_status !== 'confirmed') return { status: 'skipped' };
       try {
-        exactLocation = { status: 'ready', location: await getAuthorizedJobLocation(booking.job_id) };
+        return { status: 'ready', location: await getAuthorizedJobLocation(booking.job_id) };
       } catch (error: unknown) {
         const code = error instanceof JobLocationError ? error.code : null;
         console.warn('[R5E-M2] get_authorized_job_location failed:', code);
-        exactLocation = code === 'SM409' || code === '42501' ? { status: 'denied' } : { status: 'error' };
+        return code === 'SM409' || code === '42501' ? { status: 'denied' } : { status: 'error' };
       }
-      if (isWorkerBooking(booking)) {
-        try {
-          jobPhotos = {
-            status: 'ready',
-            photos: await listJobPhotos({
-              clientId: booking.client_user_id,
-              jobId: booking.job_id,
-            }),
-          };
-        } catch {
-          console.warn('[V4-9] authorized Job photo load failed');
-          jobPhotos = { status: 'error' };
-        }
+    })();
+    const photosRead = (async (): Promise<DetailState['jobPhotos']> => {
+      if (booking.booking_status !== 'confirmed' || !isWorkerBooking(booking)) return { status: 'skipped' };
+      try {
+        return { status: 'ready', photos: await listJobPhotos({ clientId: booking.client_user_id, jobId: booking.job_id }) };
+      } catch {
+        console.warn('[V4-9] authorized Job photo load failed');
+        return { status: 'error' };
       }
-    }
+    })();
+    const [
+      workerProgress,
+      { payments, paymentReadSucceeded, jobPaymentMethod, jobPaymentReady },
+      rated,
+      { reportReadSucceeded, isReported },
+      exactLocation,
+      jobPhotos,
+    ] = await Promise.all([progressRead, paymentRead, ratedRead, reportRead, locationRead, photosRead]);
 
     if (!loadGate.current.isCurrent(token)) return;
     displayedStatusRef.current = booking.booking_status;
@@ -372,6 +379,15 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   );
 
   const listenStatus = visibleDetail?.booking.booking_status;
+
+  // NOSHOW-02: when the Job's time arrives while a Client watches this screen, redraw so "Worker didn't show up" appears.
+  const [, setNoShowDue] = useState(0);
+  const noShowWait = role === 'client' && listenStatus === 'confirmed' ? msUntilNoShow(visibleDetail?.booking.job_scheduled_at ?? null) : null;
+  useEffect(() => {
+    if (noShowWait === null) return;
+    const timer = setTimeout(() => setNoShowDue(due => due + 1), noShowWait + 250);
+    return () => clearTimeout(timer);
+  }, [noShowWait]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', createDetailsAppStateHandler({
@@ -575,6 +591,10 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   // Preserve payment authorization; defer only the Worker's collection UI until service is confirmed.
   const workerPaymentVisible = role !== 'worker' || booking.booking_status !== 'confirmed' || workerProgress?.serviceCompletedAt != null;
   const hasWorkerProgressAction = role === 'worker' && booking.booking_status === 'confirmed' && workerProgress !== null && workerProgress.serviceCompletedAt === null;
+  // PAY-02 (owner, 2026-11-06): the Client starts paying (cash, QR Ph or the legacy choice) only after the
+  // Worker swipes Mark as Completed. A payment already under way or paid keeps showing.
+  const clientPaymentWaits = role === 'client' && booking.booking_status === 'confirmed' && workerProgress?.serviceCompletedAt == null &&
+    ['cash', 'qrph', 'legacy-choice'].includes(clientPaymentEntry(payment, jobPaymentMethod));
   const paymentUnavailable = isPayableStatus(booking.booking_status) && !paymentReadSucceeded;
   const showRate = role === 'client' && isRateableStatus(booking.booking_status);
   const showReport = isBookingReportableStatus(booking.booking_status) && reportReadSucceeded;
@@ -597,7 +617,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   // The one current primary action. Chat is primary only when nothing else on the screen is
   // (a payment step to take, or the Client's completion), so there is never a competing filled button.
   const paymentActionable =
-    showPayment && jobPaymentReady && workerPaymentVisible &&
+    showPayment && jobPaymentReady && workerPaymentVisible && !clientPaymentWaits &&
     (role === 'worker'
       ? isAwaitingCash(payment)
       : !isPaidCod(payment) && !isPaidQrph(payment));
@@ -607,6 +627,8 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
   // A Worker can only cancel, so their lifecycle control closes the screen. A Client's completion is
   // the primary action and stays with the payment step.
   const lifecycleAtBottom = role === 'worker';
+  // NOSHOW-02: offered to the Client from the exact scheduled time while the booking is still cancellable.
+  const showNoShow = role === 'client' && canReportNoShow(booking.booking_status, booking.job_scheduled_at, actionPresentation.showCancellation);
   const reportMessage = isReported ? (
     <Text style={styles.note}>Report submitted</Text>
   ) : (
@@ -680,7 +702,8 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
       <CardDivider />
       <PaymentRow qr={paysByQr} method={methodLabel} amount={budget ?? 'Not set'} />
       {paymentShown ? <View style={styles.paymentBody}>
-        {showPayment && workerPaymentVisible ? jobPaymentReady ? <BookingPayment role={role} bookingId={booking.booking_id} payment={payment}
+        {showPayment && clientPaymentWaits ? <Text style={styles.note}>Payment opens after the Worker marks the job as completed.</Text> : null}
+        {showPayment && workerPaymentVisible && !clientPaymentWaits ? jobPaymentReady ? <BookingPayment role={role} bookingId={booking.booking_id} payment={payment}
           jobPaymentMethod={jobPaymentMethod} onChanged={load} embedded />
           : <Text style={styles.note}>Could not load the agreed payment method.</Text> : null}
         {paymentUnavailable ? <Text style={styles.note}>Could not load the authoritative payment state. Payment and lifecycle actions are unavailable.</Text> : null}
@@ -719,7 +742,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
           {role === 'client' && isClientBooking(booking) ? (
             <View style={styles.detailsList}>
               <DetailLine label="Barangay" value={booking.worker_barangay ?? 'Not provided'} />
-              <DetailLine label="Skills" value={formatSkills(booking.worker_skills)} />
+              {/* SKL-03 (owner 2026-11-08): a long skills list made this screen too long; the skills live in Resume & portfolio. */}
             </View>
           ) : null}
           {dialUrl || chatAvailable || inlineMapShown ? <View style={styles.contactActions}>
@@ -779,6 +802,7 @@ export default function BookingDetails({ role, bookingId, initialSheetPosition, 
         bookingId={booking.booking_id}
         showCompletion={actionPresentation.showCompletion}
         showCancellation={actionPresentation.showCancellation}
+        showNoShow={showNoShow}
         onChanged={load}
       >
         {communicationAndFeedback}

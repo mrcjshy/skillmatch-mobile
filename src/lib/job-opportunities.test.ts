@@ -274,6 +274,13 @@ describe('classifyAcceptJobErrorCode', () => {
     });
     expect(acceptJobNotice({ status: 'accepted' }).headline).toBe(ACCEPT_JOB_COPY.accepted);
   });
+
+  it('classifies SM422 as a schedule conflict with its own copy (SCH-01)', () => {
+    expect(ACCEPT_JOB_ERROR.SCHEDULE_CONFLICT).toBe('SM422');
+    expect(classifyAcceptJobErrorCode('SM422')).toBe('conflict');
+    expect(acceptJobNotice({ status: 'conflict' })).toEqual({ tone: 'warning', headline: ACCEPT_JOB_COPY.conflict, detail: null });
+    expect(ACCEPT_JOB_COPY.conflict).toBe('You already have a booking within 3 hours of this job.');
+  });
 });
 
 describe('loadMyJobOpportunities', () => {
@@ -350,5 +357,14 @@ describe('acceptJobOpportunity', () => {
       status: 'ineligible',
       reason: INELIGIBILITY_REASON.unexplained,
     });
+  });
+
+  it('returns a schedule conflict for SM422 without reading anything else (SCH-01)', async () => {
+    rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'SM422', message: 'you already have a booking within 3 hours of this job' },
+    } as never);
+    await expect(acceptJobOpportunity(JOB_A, 'user-1')).resolves.toEqual({ status: 'conflict' });
+    expect(from).not.toHaveBeenCalled();
   });
 });

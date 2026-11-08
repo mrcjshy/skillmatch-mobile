@@ -23,7 +23,7 @@ import { sessionRouteContinuation } from '@/lib/session-route-continuation';
 import { createCoalescedInvalidation, NOTIFICATION_INSERTED, subscribeInvalidation, userNotificationsTopic } from '@/lib/realtime';
 import { formatCardDateTime } from '@/lib/date-time';
 import { formatJobPaymentLabel } from '@/lib/job-payment';
-import { jobStatusLabel, jobStatusVariant } from '@/lib/status-presentation';
+import { PAST_DATE_COPY, isOpenJobPastDate, jobStatusLabel, jobStatusVariant } from '@/lib/status-presentation';
 import { loadClientBookings, type ClientBooking } from '@/lib/booking-records';
 import { listJobPhotos, type SignedJobPhoto } from '@/lib/job-photos';
 import { useAccount } from '@/providers/account-provider';
@@ -196,6 +196,8 @@ export default function ClientJobDetails({ jobId, postingWarning }: { jobId: str
     read.revision === sessionRevision && read.lifetime === sessionLifetime && read.ownerCurrent === isOwnerCurrent;
   // Waiting for the first eligible acceptance (D-003): the reference "being connected" presentation. Same facts.
   const finding = Boolean(visible && !refreshing && !refreshError && job && job.status === 'open' && read?.bookingState === 'ready' && !read.booking);
+  // NOSHOW-01: an open Job whose time has passed no longer reaches Workers; say so instead of "Hang tight".
+  const pastDate = finding && !!job && isOpenJobPastDate(job.status, job.scheduled_at);
   const budgetText = job?.budget == null ? 'Not set' : `₱${job.budget.toLocaleString()}`;
   // Refresh continuation (Option B): parents are rebuilt only after this Job's own authorized reads settled;
   // a Job that the fresh owner list no longer contains takes the own-role Home fallback.
@@ -224,7 +226,10 @@ export default function ClientJobDetails({ jobId, postingWarning }: { jobId: str
           initialPosition={sheetPosition} onPositionChange={rememberSheetPosition}
           header={<>
             {/* D-003 wording: the job is open to eligible workers; nobody is picked or assigned until one accepts. */}
-            {finding ? <>
+            {pastDate ? <>
+              <AppChip label={PAST_DATE_COPY.chip} variant="warning" style={styles.findingChip} />
+              <Text accessibilityRole="header" style={styles.findingTitle}>{PAST_DATE_COPY.note}</Text>
+            </> : finding ? <>
               <Text accessibilityRole="header" style={styles.findingTitle}>Hang tight! Your job is open to eligible workers.</Text>
               <FindingWorkerCarousel blendInto={colors.surfaceRaised} />
             </> : <>
@@ -236,7 +241,7 @@ export default function ClientJobDetails({ jobId, postingWarning }: { jobId: str
           </>}>
           {postingWarning ? <InlineStatus variant="error" message={postingWarning} /> : null}
           {finding ? <View style={styles.findingHead}>
-            <AppChip label="Waiting for a worker" variant="info" />
+            {pastDate ? <AppChip label={PAST_DATE_COPY.chip} variant="warning" /> : <AppChip label="Waiting for a worker" variant="info" />}
                       </View> : null}
           <FindingCard title={job.title} id={job.id} time={formatCardDateTime(job.scheduled_at) ?? 'No schedule'}
             payment={{ label: job.payment_method_readable && job.payment_method ? formatJobPaymentLabel(job.payment_method) : 'Cash / QR', qr: job.payment_method === 'qrph' }}

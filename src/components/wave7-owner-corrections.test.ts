@@ -39,12 +39,23 @@ const material = compile('src/constants/cobalt-material.ts', {});
 const pressScale = { style: { transform: [{ scale: 1 }] }, onPressIn: vi.fn(), onPressOut: vi.fn() };
 function tabBar(focusedIndex = 0, extra: Props = {}) {
   const navigate = vi.fn((route: Props) => ({ type: 'NAVIGATE', payload: { name: route.name } }));
+  // A minimal stateful React seam: state survives rerender(), so layout-driven UI can be asserted.
+  const states: unknown[] = [];
+  let cursor = 0;
+  const react = {
+    useState: (initial: unknown) => {
+      const i = cursor++;
+      if (!(i in states)) states[i] = typeof initial === 'function' ? (initial as () => unknown)() : initial;
+      return [states[i], (next: unknown) => { states[i] = typeof next === 'function' ? (next as (p: unknown) => unknown)(states[i]) : next; }];
+    },
+  };
   const { ClientTabBar, CLIENT_POST_ACTION_LABEL } = compile('src/components/client-tab-bar.tsx', {
+    react,
     'react-native': { Animated: { View: 'Animated.View' }, Pressable: 'Pressable', Text: 'Text', View: 'View', StyleSheet: { create: (x: Props) => x }, Platform: { OS: 'android', select: (x: Props) => x.android ?? x.default } },
     'expo-router/react-navigation': { CommonActions: { navigate } },
     '@/components/app-symbol': { AppSymbol: 'AppSymbol' },
     '@/components/app-tab-bar': { TAB_ACTIVE_COLOR: theme.colors.accent, TAB_INACTIVE_COLOR: theme.colors.textMuted },
-    '@/components/motion': { MotionView: 'MotionView', usePressScale: () => pressScale },
+    '@/components/motion': { MotionView: 'MotionView', usePressScale: () => pressScale, useTabIndicator: (x: number) => ({ transform: [{ translateX: x }] }) },
   });
   const names = ['client/index', 'client/jobs', 'client/bookings', 'client/profile'];
   const titles = ['Home', 'My jobs', 'Bookings', 'Profile'];
@@ -59,15 +70,19 @@ function tabBar(focusedIndex = 0, extra: Props = {}) {
   const dispatched: Props[] = [];
   const navigation = { emit: (event: Props) => { emitted.push(event); return { defaultPrevented: false }; }, dispatch: (action: Props) => dispatched.push(action) };
   const onPostJob = vi.fn();
-  const tree = ClientTabBar({ state: { key: 'tabs-key', index: focusedIndex, routes }, descriptors, navigation, insets: { bottom: 21, left: 0, right: 0, top: 0 }, onPostJob, postDisabled: false, posting: false, ...extra }) as Element;
-  return { tree, emitted, dispatched, onPostJob, label: CLIENT_POST_ACTION_LABEL };
+  const render = () => {
+    cursor = 0;
+    return ClientTabBar({ state: { key: 'tabs-key', index: focusedIndex, routes }, descriptors, navigation, insets: { bottom: 21, left: 0, right: 0, top: 0 }, onPostJob, postDisabled: false, posting: false, ...extra }) as Element;
+  };
+  const tree = render();
+  return { tree, rerender: render, emitted, dispatched, onPostJob, label: CLIENT_POST_ACTION_LABEL };
 }
 
 describe('W7-C1 Client central Post a job action', () => {
   it('sits at the geometric centre: Home, My jobs | + | Bookings, Profile, in one flex row', () => {
     const { tree } = tabBar();
     const row = all(tree).find((n) => n.props.role === 'tablist')!;
-    const children = row.props.children.flat();
+    const children = row.props.children.flat().filter(Boolean); // the capsule is absent until the tabs are measured
     expect(children.map((c: Element) => c.props['aria-label'] ?? 'action')).toEqual(['Home', 'My jobs', 'action', 'Bookings', 'Profile']);
     // Equal flexible tabs either side of one fixed slot: the slot's centre is the bar's centre.
     const tabs = children.filter((c: Element) => c.props.role === 'tab');
@@ -117,10 +132,29 @@ describe('W7-C1 Client central Post a job action', () => {
     // M3 surfaceContainer (#EFEDF4), still slightly see-through so content ghosts under the pill.
     expect(flat(pill.props.style).backgroundColor).toMatch(/^rgba\(239, 237, 244, 0\.\d+\)$/);
     expect(flat(pill.props.style).boxShadow).toBeTruthy();
-    // Only the selected tab draws the M3 tonal indicator, as a layer (Android ripple replaces backgrounds).
-    const capsules = all(pill).filter((n) => n.type === 'View' && n.props.pointerEvents === 'none' && flat(n.props.style).backgroundColor);
-    expect(capsules).toHaveLength(1);
+    // No tab draws its own selection: the one gliding capsule is asserted below.
+    expect(all(pill).filter((n) => n.type === 'View' && n.props.pointerEvents === 'none' && flat(n.props.style).backgroundColor)).toHaveLength(0);
     expect(flat(pill.props.style).minHeight).toBeGreaterThanOrEqual(style.height);
+  });
+
+  it('glides one M3 tonal capsule to the selected tab, placed from the tabs\' own layouts (owner 2026-11-06)', () => {
+    const bar = tabBar(2);
+    const indicators = (tree: Element) => all(tree).find((n) => n.props.role === 'tablist')!.props.children.flat()
+      .filter((c: Element | null) => c && typeof c.type === 'function' && (c.type as { name?: string }).name === 'TabIndicator');
+    expect(indicators(bar.tree)).toHaveLength(0); // nothing to centre on before layout
+    all(bar.tree).filter((n) => n.props.role === 'tab')
+      .forEach((t, i) => t.props.onLayout({ nativeEvent: { layout: { x: 4 + i * 80, y: 4, width: 72, height: 56 } } }));
+    const after = indicators(bar.rerender());
+    expect(after).toHaveLength(1);
+    expect(after[0].props.tab).toEqual({ x: 164, y: 4, width: 72, height: 56 }); // Bookings, the selected tab
+    const capsule = (after[0].type as (p: Props) => Element)(after[0].props);
+    expect(capsule.type).toBe('MotionView');
+    expect(capsule.props.pointerEvents).toBe('none');
+    expect(flat(capsule.props.style)).toMatchObject({
+      position: 'absolute', left: 0, width: theme.size.tabIndicatorWidth, height: theme.size.tabIndicatorHeight,
+      backgroundColor: theme.colors.accentTonal, top: 4 + (56 - theme.size.tabIndicatorHeight) / 2,
+      transform: [{ translateX: 164 + (72 - theme.size.tabIndicatorWidth) / 2 }],
+    });
   });
 
   it('wears exactly the material of the primary button on the Post a job page (CobaltButton), at rest and pressed', () => {

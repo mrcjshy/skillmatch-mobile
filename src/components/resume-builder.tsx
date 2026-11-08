@@ -201,10 +201,7 @@ export default function ResumeBuilder() {
           ) : (
             <View style={styles.stack}>
               {model.skills.map((s) => (
-                <Text key={s.name} style={styles.line}>
-                  {s.name}
-                  {s.years === undefined || s.years === null ? '' : ` — ${s.years === 1 ? '1 year' : `${s.years} years`}`}
-                </Text>
+                <Text key={s.name} style={styles.line}>{s.name}</Text>
               ))}
             </View>
           )}

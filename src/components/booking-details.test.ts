@@ -137,6 +137,49 @@ it('unpaid and unknown payment, restricted status and Worker role never offer Cl
   for (const tree of trees) expect(visibleText(tree)).not.toContain('Finish Booking');
 });
 
+it('PAY-02: the Client starts paying only after the Worker swipes Mark as Completed (owner, 2026-11-06)', () => {
+  unrendered = new Set(['BookingPayment']);
+  try {
+    const notStarted = { id: 'p', payment_method: null, payment_status: 'pending' };
+    for (const jobPaymentMethod of ['cod', 'qrph', null]) {
+      for (const workerProgress of [{ bookingId: ID, arrivedAt: '2026-10-30T01:00:00Z', serviceCompletedAt: null }, { bookingId: ID, arrivedAt: null, serviceCompletedAt: null }, null]) {
+        const waiting = detailTree('client', 'confirmed', { payment: notStarted, jobPaymentMethod, workerProgress });
+        expect(namedComponents(waiting, 'BookingPayment')).toHaveLength(0);
+        expect(visibleText(waiting)).toContain('Payment opens after the Worker marks the job as completed.');
+      }
+      const finished = detailTree('client', 'confirmed', { payment: notStarted, jobPaymentMethod });
+      expect(namedComponents(finished, 'BookingPayment')).toHaveLength(1);
+      expect(visibleText(finished)).not.toContain('Payment opens after the Worker marks the job as completed.');
+    }
+  } finally { unrendered = new Set(); }
+});
+
+it('PAY-02: a payment already under way or paid stays visible to the Client before the Worker finishes', () => {
+  unrendered = new Set(['BookingPayment']);
+  try {
+    const early = { bookingId: ID, arrivedAt: '2026-10-30T01:00:00Z', serviceCompletedAt: null };
+    for (const payment of [{ id: 'p', payment_method: 'cod', payment_status: 'pending' }, { id: 'p', payment_method: 'cod', payment_status: 'paid' }, { id: 'p', payment_method: 'qrph', payment_status: 'pending' }]) {
+      const tree = detailTree('client', 'confirmed', { payment, jobPaymentMethod: 'cod', workerProgress: early });
+      expect(namedComponents(tree, 'BookingPayment')).toHaveLength(1);
+      expect(visibleText(tree)).not.toContain('Payment opens after the Worker marks the job as completed.');
+    }
+  } finally { unrendered = new Set(); }
+});
+
+it('SKL-03 (owner 2026-11-08): Booking details leave the Worker skills to Resume & portfolio, so a long list never fills the screen', () => {
+  unrendered = new Set(['SkillChips']);
+  try {
+    const many = ['Plumbing', 'Carpentry', 'Electrical', 'Masonry', 'Painting', 'Welding', 'Tiling', 'Roofing', 'Aircon cleaning', 'Laundry'];
+    for (const skills of [many, [], null]) {
+      const tree = detailTree('client', 'confirmed', { booking: { ...booking('client'), worker_skills: skills } });
+      expect(namedComponents(tree, 'SkillChips')).toHaveLength(0);
+      for (const word of ['Skills', 'Plumbing', 'No skills added', 'Not available']) expect(visibleText(tree)).not.toContain(word);
+      // The skills stay one tap away.
+      expect(visibleText(tree)).toContain('View resume & portfolio');
+    }
+  } finally { unrendered = new Set(); }
+});
+
 it('keeps the placeholder when no read has answered yet, instead of claiming the booking is unavailable', () => {
   // The first read is skipped while the app is still coming to the foreground: loading has ended with no answer.
   const tree = render(Details, { role: 'client', bookingId: ID }, [null, false, false, null, null, false]);
@@ -246,7 +289,9 @@ it('keeps the Client layout complete: booking card with the payment they make, t
   expect(order.every(index => index >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((x, y) => x - y));
   expect(copy).not.toContain('Payment you make');
-  for (const value of [name, 'Worker barangay', 'Plumbing • Carpentry', 'Open chat', '987,654,321.75']) expect(copy).toContain(value);
+  for (const value of [name, 'Worker barangay', 'Open chat', '987,654,321.75']) expect(copy).toContain(value);
+  // SKL-03 (owner, 2026-11-08): the Worker's skills live in Resume & portfolio, not on this screen.
+  for (const value of ['Plumbing', 'Carpentry']) expect(copy).not.toContain(value);
   expect(copy).not.toContain('09171234567');
   expect(all(tree, 'Pressable').some(node => node.props.accessibilityLabel === 'Call booking counterpart')).toBe(true);
   for (const label of all(tree, 'Text')) { expect(label.props.numberOfLines).toBeUndefined(); expect(flat(label.props.style).height).toBeUndefined(); }

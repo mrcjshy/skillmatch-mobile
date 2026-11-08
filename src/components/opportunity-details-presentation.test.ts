@@ -22,9 +22,9 @@ const opportunity = {
   scheduled_at: '2026-10-01T07:00:00.000Z', payment_method: 'cod',
   skill_points: 35.5, location_points: 30, rating_points: 12, total_points: 77.5,
 };
-function render(job: Props, skills: Props[] = [{ id: 4, name: 'Electrical installation' }], options: { accepted?: boolean; fontScale?: number; reduced?: boolean; notice?: Props } = {}) {
+function render(job: Props, skills: Props[] = [{ id: 4, name: 'Electrical installation' }], options: { accepted?: boolean; fontScale?: number; reduced?: boolean; notice?: Props; photos?: Props; conflict?: Props | null } = {}) {
   const location = { latitude: 14.542, longitude: 121.07 };
-  const states = [location, job, { status: 'ready', skills, workerSkills: [] }, false, false, null, false, options.accepted ?? false, options.notice ?? null, {}];
+  const states = [location, job, { status: 'ready', skills, workerSkills: [] }, false, false, null, false, options.accepted ?? false, options.notice ?? null, {}, options.photos ?? { status: 'loading' }, options.conflict ?? null];
   const successEnter = options.reduced ? undefined : { preset: 'successEnter' };
   const routes: unknown[] = [];
   let cursor = 0;
@@ -52,7 +52,7 @@ function render(job: Props, skills: Props[] = [{ id: 4, name: 'Electrical instal
       if (name.endsWith('/supabase')) return { supabase: new Proxy({}, { get() { throw Error('No database access in presentation checks'); } }) };
       if (name.endsWith('/account-provider')) return { useAccount: () => ({ account: { id: 'worker', role: 'worker', is_active: true } }) };
       if (name.endsWith('/session-provider')) return { useSession: () => ({ session: { user: { id: 'worker' } } }) };
-      if (name.endsWith('/worker-accept-handoff-focus') || name.endsWith('/booking-records') || name.endsWith('/opportunity-location') || name.endsWith('/realtime')) return {};
+      if (name.endsWith('/worker-accept-handoff-focus') || name.endsWith('/booking-records') || name.endsWith('/opportunity-location') || name.endsWith('/realtime') || name.endsWith('/opportunity-photos')) return {};
       if (name.endsWith('/skill-gap') && !name.includes('/components/')) return { computeSkillGap: () => ({ matchedSkills: [], missingSkills: skills }) };
       // Compose the real symbol in accepted-state checks: its scalable wrapper caused KI-UI-130-01.
       if (options.accepted && ['@/components/app-symbol', '@/components/inline-status', '@/components/app-button'].includes(name)) return load('src/components/' + name.slice('@/components/'.length) + '.tsx');
@@ -173,6 +173,35 @@ it('omits absent optional facts while retaining legacy payment disclosure and no
   expect(facts.Payment).toBe(payment.formatOpportunityPaymentLine(null));
   expect(nodes.filter(node => node.type === 'GuidanceSection')).toHaveLength(0);
   expect(nodes.at(-1).props.label).toBe('Accept');
+});
+
+it('PHO-01: shows the photos a matching Worker may see before accepting, between the description and the location', () => {
+  const photos = [{ slot: 1, path: 'client/job/1', signedUrl: 'https://signed/1' }, { slot: 3, path: 'client/job/3', signedUrl: 'https://signed/3' }];
+  const nodes = all(render(opportunity, undefined, { photos: { status: 'ready', photos } }).tree);
+  const gallery = nodes.find(node => node.type === 'JobPhotoGallery');
+  expect(gallery.props).toMatchObject({ photos, error: false });
+  const description = nodes.findIndex(node => node.type === 'Text' && node.props.children === opportunity.description);
+  expect(description).toBeLessThan(nodes.indexOf(gallery));
+  expect(nodes.indexOf(gallery)).toBeLessThan(nodes.findIndex(node => node.type === 'WorkerOpportunityJobLocation'));
+  expect(all(render(opportunity, undefined, { photos: { status: 'error' } }).tree).find(node => node.type === 'JobPhotoGallery').props.error).toBe(true);
+});
+
+it('PHO-01: leaves no photo space while photos load or when the Job has none', () => {
+  for (const photos of [{ status: 'loading' }, { status: 'ready', photos: [] }]) {
+    expect(all(render(opportunity, undefined, { photos }).tree).some(node => node.type === 'JobPhotoGallery')).toBe(false);
+  }
+});
+
+it('SCH-01: explains a schedule clash with Itik in a dialog and offers the bookings', () => {
+  const booking = { job_id: 'other', booking_status: 'confirmed', job_title: 'Aircon cleaning', job_scheduled_at: '2026-10-01T05:30:00.000Z' };
+  const { tree, routes } = render(opportunity, undefined, { conflict: { booking } });
+  const dialog = all(tree).find(node => node.type === 'ScheduleConflictDialog');
+  expect(dialog.props).toMatchObject({ visible: true, booking });
+  dialog.props.onViewBookings();
+  expect(routes).toEqual(['/worker/bookings']);
+  const closed = all(render(opportunity).tree).find(node => node.type === 'ScheduleConflictDialog');
+  expect(closed.props.booking).toBeNull();
+  expect(closed.props.visible).toBe(false);
 });
 
 it('preserves normal-text contrast through composed detail surfaces', () => {

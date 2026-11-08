@@ -6,6 +6,7 @@ import { deriveAccessState } from '@/app/_layout';
 import { AppButton } from '@/components/app-button';
 import { useAccount } from '@/providers/account-provider';
 import { useSession } from '@/providers/session-provider';
+import { callAlert } from '@/lib/call-alert';
 import { createVideoCallApi, type VideoCall } from '@/lib/video-call';
 import { subscribeInvalidation, userNotificationsTopic } from '@/lib/realtime';
 
@@ -31,6 +32,8 @@ export function IncomingCallHost() {
         const reply = await createVideoCallApi().request('status');
         if (disposed || mine !== generation || AppState.currentState !== 'active') return;
         const call = reply.incoming?.find(c => c.role === 'callee' && c.state === 'ringing' && Date.parse(c.ring_expires_at) > Date.parse(c.server_now));
+        // RTC-03: a call that stopped ringing elsewhere stops this phone's ringing too.
+        if (!call) callAlert.cancelIncoming();
         if (call) {
           setIncoming({ accountId, call });
           expiry = setTimeout(() => setIncoming(null), Math.min(45_000, Date.parse(call.ring_expires_at) - Date.parse(call.server_now)));
@@ -49,6 +52,6 @@ export function IncomingCallHost() {
       const bookingId = incoming.call.booking_id; setIncoming(null);
       router.push({ pathname: access === 'worker' ? '/worker/video' : '/client/video', params: { bookingId } } as Href);
     }} />
-    <AppButton label="Dismiss invitation" variant="secondary" onPress={() => setIncoming(null)} />
+    <AppButton label="Dismiss invitation" variant="secondary" onPress={() => { callAlert.cancelIncoming(); setIncoming(null); }} />
   </View>;
 }

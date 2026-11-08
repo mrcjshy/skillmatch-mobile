@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 
 import { AppButton } from '@/components/app-button';
+import { AppDialog } from '@/components/app-dialog';
 import { KeyboardSpacer } from '@/components/skeleton';
 import { AppCard } from '@/components/app-card';
 import { AppChip } from '@/components/app-chip';
@@ -59,6 +60,8 @@ export default function WorkerPortfolio() {
   const [draftImages, setDraftImages] = useState<PortfolioDraftImage[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // The delete confirmation, in the app's own dialog rather than the native Android alert (owner 2026-11-06).
+  const [pendingDelete, setPendingDelete] = useState<{ workerProfileId: string; itemId: string } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [retryToken, setRetryToken] = useState(0);
@@ -235,16 +238,13 @@ export default function WorkerPortfolio() {
 
   function promptDelete(workerProfileId: string, item: PortfolioItem) {
     if (busy) return;
-    Alert.alert(PORTFOLIO_COPY.deleteTitle, PORTFOLIO_COPY.deleteBody, [
-      { text: PORTFOLIO_COPY.dismiss, style: 'cancel' },
-      {
-        text: PORTFOLIO_COPY.delete,
-        style: 'destructive',
-        onPress: () => {
-          void handleDelete(workerProfileId, item.id);
-        },
-      },
-    ]);
+    setPendingDelete({ workerProfileId, itemId: item.id });
+  }
+
+  function confirmDelete() {
+    const target = pendingDelete;
+    setPendingDelete(null);
+    if (target) void handleDelete(target.workerProfileId, target.itemId);
   }
 
   if (!account || !account.is_active || account.role !== 'worker') {
@@ -417,6 +417,12 @@ export default function WorkerPortfolio() {
       </View>
     </ScrollView>
     <KeyboardSpacer />
+    <AppDialog visible={pendingDelete !== null} onRequestClose={() => setPendingDelete(null)}
+      title={PORTFOLIO_COPY.deleteTitle} message={PORTFOLIO_COPY.deleteBody}
+      actions={<>
+        <AppButton variant="destructive" label={PORTFOLIO_COPY.delete} onPress={confirmDelete} />
+        <AppButton variant="ghost" label={PORTFOLIO_COPY.dismiss} onPress={() => setPendingDelete(null)} />
+      </>} />
     </View>
   );
 }

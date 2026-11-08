@@ -32,6 +32,8 @@ export const MotionTokens = {
     decelerate: [0.05, 0.7, 0.1, 1] as MotionCurve,
     /** Leaving content: gentle start, quick finish. */
     accelerate: [0.3, 0, 0.8, 0.15] as MotionCurve,
+    /** The bottom navigation's capsule gliding between tabs: eases in and out (owner 2026-11-06). */
+    slide: [0.4, 0, 0.2, 1] as MotionCurve,
   },
   scale: {
     /** The Client centre + while pressed. */

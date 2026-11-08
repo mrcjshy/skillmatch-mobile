@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
 import {
-  Alert,
   AppState,
   KeyboardAvoidingView,
   Modal,
@@ -14,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/app-button';
 import { AppChip } from '@/components/app-chip';
+import { AppDialog } from '@/components/app-dialog';
 import { AppField } from '@/components/app-field';
 import { AppNotice } from '@/components/app-notice';
 import { FactRow } from '@/components/fact-row';
@@ -91,6 +91,8 @@ function WorkerProfileContent() {
   const [isEditing, setIsEditing] = useState(false);
   const [modalQuery, setModalQuery] = useState('');
   const [modalWorkingSelection, setModalWorkingSelection] = useState<SkillSelectionMap>({});
+  // Which save waits for the skills confirmation: the Manage skills sheet's, or the profile's own.
+  const [skillConfirm, setSkillConfirm] = useState<'managed' | 'profile' | null>(null);
   const [profilePhotoUri, setProfilePhotoUri] = useState<string | null>(null);
   const [profilePhotoStatus, setProfilePhotoStatus] = useState<
     'loading' | 'available' | 'missing' | 'unavailable'
@@ -103,6 +105,10 @@ function WorkerProfileContent() {
   const workerUserId = account?.is_active && account.role === 'worker' ? account.id : undefined;
   const [photoOwner, setPhotoOwner] = useState<string | undefined>(undefined);
   const photoReadEpoch = useRef(0);
+  // PERF-01 (owner 2026-11-06): the account whose photo state is known. Only the first read for
+  // an account shows the loading avatar; coming back keeps the photo (or the initials) on screen
+  // while a fresh signature is read in the background.
+  const photoShownFor = useRef<string | undefined>(undefined);
   const visibleProfilePhoto = photoOwner === workerUserId ? profilePhotoUri : null;
   // The hero's rating and strikes belong to the account that read them, like the photo.
   const [stats, setStats] = useState<{ owner: string; value: WorkerProfileStats } | null>(null);
@@ -129,6 +135,7 @@ function WorkerProfileContent() {
     const result = await getWorkerProfilePhoto(workerUserId);
     if (epoch !== photoReadEpoch.current || AppState.currentState !== 'active') return;
     setPhotoOwner(workerUserId);
+    photoShownFor.current = workerUserId;
     if (result.status === 'available') {
       setProfilePhotoUri(result.signedUrl);
       setProfilePhotoStatus('available');
@@ -141,8 +148,10 @@ function WorkerProfileContent() {
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
-      setProfilePhotoUri(null);
-      setProfilePhotoStatus('loading');
+      if (photoShownFor.current !== workerUserId) {
+        setProfilePhotoUri(null);
+        setProfilePhotoStatus('loading');
+      }
       void refreshProfilePhoto().catch(() => {
         if (!cancelled) {
           setProfilePhotoUri(null);
@@ -151,6 +160,7 @@ function WorkerProfileContent() {
       });
       const subscription = AppState.addEventListener('change', (next) => {
         photoReadEpoch.current++;
+        photoShownFor.current = undefined;
         setProfilePhotoUri(null);
         if (next === 'active') {
           setProfilePhotoStatus('loading');
@@ -164,7 +174,7 @@ function WorkerProfileContent() {
         photoReadEpoch.current++;
         subscription.remove();
       };
-    }, [refreshProfilePhoto])
+    }, [refreshProfilePhoto, workerUserId])
   );
 
   // Ratings and strikes change outside this screen, so they are read again each time Profile is shown.
@@ -254,15 +264,7 @@ function WorkerProfileContent() {
 
   function saveManagedSkills() {
     if (busy) return;
-    Alert.alert(SKILL_CONFIRMATION.title, SKILL_CONFIRMATION.body, [
-      { text: SKILL_CONFIRMATION.cancel, style: 'cancel' },
-      {
-        text: SKILL_CONFIRMATION.confirm,
-        onPress: () => void handleSave(modalWorkingSelection).then((saved) => {
-          if (saved) closeAddSkillsWithoutApply();
-        }),
-      },
-    ]);
+    setSkillConfirm('managed');
   }
 
   function promptSave() {
@@ -271,10 +273,38 @@ function WorkerProfileContent() {
       void handleSave();
       return;
     }
-    Alert.alert(SKILL_CONFIRMATION.title, SKILL_CONFIRMATION.body, [
-      { text: SKILL_CONFIRMATION.cancel, style: 'cancel' },
-      { text: SKILL_CONFIRMATION.confirm, onPress: () => void handleSave() },
-    ]);
+    setSkillConfirm('profile');
+  }
+
+  function confirmSelectedSkills() {
+    const which = skillConfirm;
+    setSkillConfirm(null);
+    if (which === 'managed') {
+      void handleSave(modalWorkingSelection).then((saved) => {
+        if (saved) closeAddSkillsWithoutApply();
+      });
+    } else if (which === 'profile') {
+      void handleSave();
+    }
+  }
+
+  // The app's own Material 3 dialog in place of the stock Android alert (owner 2026-11-06). It is
+  // drawn inside whichever screen asked, so it sits above the Manage skills sheet when that is open.
+  function skillConfirmDialog(which: 'managed' | 'profile') {
+    return (
+      <AppDialog
+        visible={skillConfirm === which}
+        onRequestClose={() => setSkillConfirm(null)}
+        title={SKILL_CONFIRMATION.title}
+        message={SKILL_CONFIRMATION.body}
+        actions={
+          <>
+            <AppButton variant="primary" label={SKILL_CONFIRMATION.confirm} onPress={confirmSelectedSkills} />
+            <AppButton variant="ghost" label={SKILL_CONFIRMATION.cancel} onPress={() => setSkillConfirm(null)} />
+          </>
+        }
+      />
+    );
   }
 
   return (
@@ -461,6 +491,7 @@ function WorkerProfileContent() {
                   disabled={busy}
                   accessibilityLabel="Cancel"
                 />
+                {skillConfirmDialog('managed')}
               </View>
             </KeyboardAvoidingView>
           </Modal>
@@ -501,6 +532,7 @@ function WorkerProfileContent() {
       </View>
 
       <ProfileFooter />
+      {skillConfirmDialog('profile')}
     </ScrollView>
   );
 }

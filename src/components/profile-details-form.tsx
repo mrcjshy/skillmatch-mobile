@@ -47,7 +47,7 @@ function formatBirthDateInput(value: string): string {
 
 /**
  * REG-01 profile form: name parts and home address for everyone, and
- * the lean resume for Workers (birth date, education, skills with years, up to three past jobs).
+ * the lean resume for Workers (birth date, education, skills, up to three past jobs).
  * Loads the caller's saved values (or a split of the legacy full name) and saves through the two
  * caller-scoped RPCs. Errors are shown under each field and summarised above the button.
  */
@@ -107,7 +107,7 @@ export function ProfileDetailsForm({ userId, role, submitLabel, nameHint, lockNa
   const toggleSkill = (skillId: string) => {
     if (!resume) return;
     const has = resume.skills.some((s) => s.skillId === skillId);
-    setResumeField('skills', has ? resume.skills.filter((s) => s.skillId !== skillId) : [...resume.skills, { skillId, years: '' }]);
+    setResumeField('skills', has ? resume.skills.filter((s) => s.skillId !== skillId) : [...resume.skills, { skillId }]);
   };
   const err = (key: string) => errors[key];
 
@@ -228,8 +228,8 @@ export function ProfileDetailsForm({ userId, role, submitLabel, nameHint, lockNa
           </View>
 
           <View style={styles.section}>
-            <SectionHeader title="Skills and experience" />
-            <Text style={styles.note}>Choose up to {MAX_RESUME_SKILLS} skills and how many years you have done each.</Text>
+            <SectionHeader title="Skills" />
+            <Text style={styles.note}>Choose up to {MAX_RESUME_SKILLS} skills.</Text>
             {err('skills') ? <FormMessage tone="error" message={err('skills')!} /> : null}
             <SkillCatalogPicker
               skills={catalog}
@@ -239,21 +239,6 @@ export function ProfileDetailsForm({ userId, role, submitLabel, nameHint, lockNa
               onToggleSkill={toggleSkill}
               isSkillUnavailable={() => resume.skills.length >= MAX_RESUME_SKILLS}
               disabled={saving}
-              renderAfterSkill={(skill) => {
-                const index = resume.skills.findIndex((s) => s.skillId === skill.id);
-                if (index < 0) return null;
-                return (
-                  <AppField
-                    label={`Years of ${skill.skill_name}`}
-                    value={resume.skills[index].years}
-                    onChangeText={(value) => setResumeField('skills', resume.skills.map((s, i) => (i === index ? { ...s, years: value.replace(/\D/g, '').slice(0, 2) } : s)))}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                    editable={!saving}
-                    errorText={err(`skill.${skill.id}`)}
-                  />
-                );
-              }}
             />
           </View>
 

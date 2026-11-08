@@ -24,7 +24,6 @@ export const EMPLOYER_MAX = 120;
 export const JOB_ROLE_MAX = 80;
 export const MAX_JOBS = 3;
 export const MAX_RESUME_SKILLS = 10;
-export const MAX_YEARS = 60;
 export const MIN_WORKER_AGE = 18;
 export const MAX_WORKER_AGE = 80;
 export const FIRST_JOB_YEAR = 1960;
@@ -67,7 +66,8 @@ export type ProfileDetailsInput = {
 };
 
 export type WorkHistoryEntry = { employer: string; role: string; startYear: string; endYear: string; current: boolean };
-export type ResumeSkillInput = { skillId: string; years: string };
+/** REG-03 (owner, 2026-11-06): a resume skill is its catalog id only; years of experience are not asked. */
+export type ResumeSkillInput = { skillId: string };
 
 export type WorkerResumeInput = {
   /** YYYY-MM-DD. */
@@ -143,10 +143,6 @@ export function validateWorkerResume(input: WorkerResumeInput, today: Date = new
   });
   if (input.skills.length === 0) errors.skills = 'Choose at least one skill.';
   else if (input.skills.length > MAX_RESUME_SKILLS) errors.skills = `Choose up to ${MAX_RESUME_SKILLS} skills.`;
-  input.skills.forEach((skill) => {
-    const years = wholeNumber(skill.years);
-    if (years === null || years > MAX_YEARS) errors[`skill.${skill.skillId}`] = `Enter 0 to ${MAX_YEARS} years.`;
-  });
   return errors;
 }
 
@@ -181,7 +177,7 @@ export function workerResumeRpcArgs(input: WorkerResumeInput) {
       start_year: Number(job.startYear.trim()),
       end_year: job.current ? null : Number(job.endYear.trim()),
     })),
-    p_skills: input.skills.map((skill) => ({ skill_id: skill.skillId, years: Number(skill.years.trim()) })),
+    p_skills: input.skills.map((skill) => ({ skill_id: skill.skillId })),
   };
 }
 
@@ -267,11 +263,11 @@ async function loadWorkerResumePart(
   const p = (wp.data ?? {}) as Record<string, unknown>;
   let skills: ResumeSkillInput[] = [];
   if (typeof p.id === 'string') {
-    const ws = await supabase.from('worker_skills').select('skill_id, years_experience').eq('worker_id', p.id);
+    const ws = await supabase.from('worker_skills').select('skill_id').eq('worker_id', p.id);
     if (ws.error) throw new ProfileDetailsError('Your skills could not be loaded. Please try again.');
     skills = ((ws.data ?? []) as Record<string, unknown>[])
       .filter((row) => typeof row.skill_id === 'string')
-      .map((row) => ({ skillId: row.skill_id as string, years: Number.isInteger(row.years_experience) ? String(row.years_experience) : '' }));
+      .map((row) => ({ skillId: row.skill_id as string }));
   }
   const jobs = Array.isArray(p.work_history) ? (p.work_history as Record<string, unknown>[]) : [];
   return {
@@ -366,6 +362,7 @@ export async function loadSkillCatalog(): Promise<CatalogSkill[]> {
  * ------------------------------------------------------------------ */
 
 export type AdminJob = { employer: string; role: string; start_year: number; end_year: number | null };
+/** The RPC still sends proficiency and years (installed builds parse them); no screen shows either. */
 export type AdminSkill = { name: string; proficiency: string | null; years: number | null };
 export type AdminAccountProfile = {
   user_id: string;
@@ -454,10 +451,6 @@ export function formatHomeAddress(p: { address_street: string | null; address_ba
 
 export function formatJobYears(job: { start_year: number; end_year: number | null }): string {
   return `${job.start_year} – ${job.end_year ?? 'Present'}`;
-}
-
-export function formatYears(years: number | null): string | null {
-  return years === null ? null : years === 1 ? '1 year' : `${years} years`;
 }
 
 export function formatBirthDate(birthDate: string | null | undefined, today: Date = new Date()): string | null {

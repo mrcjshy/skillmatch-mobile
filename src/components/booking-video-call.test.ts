@@ -12,7 +12,7 @@ import { expect, it, vi } from 'vitest';
 // experiments.reactCompiler), then rendered with a minimal hook runtime.
 // E2E 2026-10-15, booking 29d054bb, call 58a24f64: the Worker joined first and never
 // showed the Client's tile while the Client showed the Worker's.
-type Node = { type: unknown; props: Record<string, any> };
+type Node = { type: unknown; props: Record<string, any>; key?: string };
 
 function compileCallTracks(component = '__CallTracks', props: Record<string, unknown> = { counterpart: 'Your Client', previewTop: 96 }) {
   const file = path.resolve('src/components/booking-video-call.tsx');
@@ -47,7 +47,7 @@ function compileCallTracks(component = '__CallTracks', props: Record<string, unk
   const modules: Record<string, unknown> = {
     react,
     'react/compiler-runtime': { c: (size: number) => (cache ??= Array.from({ length: size }, () => Symbol.for('react.memo_cache_sentinel'))) },
-    'react/jsx-runtime': { jsx: (type: unknown, props: object) => ({ type, props }), jsxs: (type: unknown, props: object) => ({ type, props }) },
+    'react/jsx-runtime': { jsx: (type: unknown, props: object, key?: string) => ({ type, props, key }), jsxs: (type: unknown, props: object, key?: string) => ({ type, props, key }) },
     'react-native': { Text: 'Text', View: 'View', Pressable: 'Pressable', AppState: {}, PermissionsAndroid: {}, Platform: {},
       StyleSheet: { absoluteFill: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, create: (styles: object) => styles } },
     'expo-status-bar': { StatusBar: 'StatusBar' }, 'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 24, bottom: 16 }) },
@@ -56,7 +56,9 @@ function compileCallTracks(component = '__CallTracks', props: Record<string, unk
     '@/components/app-button': { AppButton: 'AppButton' },
     '@/providers/account-provider': { useAccount: () => ({}) },
     '@/lib/video-call': {}, '@/lib/realtime': {},
-    '@/lib/native-video-call': { loadVideoRuntime: () => sdk, createNativeCallMedia: () => { throw new Error('No media'); } },
+    '@/lib/call-alert': { callAlert: {} }, '@/lib/push-notifications': {},
+    '@/lib/native-video-call': { loadVideoRuntime: () => sdk, createNativeCallMedia: () => { throw new Error('No media'); },
+      switchLocalCamera: (...args: unknown[]) => switchCamera(...args), localCameraFacing: () => cameraFacingNow },
   };
   const exports: Record<string, any> = {};
   runInNewContext(`${code}\n;exports.__CallTracks = CallTracks; exports.__MediaToggles = MediaToggles;`, { exports, require: (name: string) => {
@@ -77,6 +79,9 @@ function compileCallTracks(component = '__CallTracks', props: Record<string, unk
     };
   };
 }
+
+const switchCamera = vi.fn(async (..._args: unknown[]) => {});
+const cameraFacingNow: 'user' | 'environment' | null = 'user';
 
 const sdk = {
   client: { RoomEvent: { TrackSubscribed: 'trackSubscribed', TrackUnsubscribed: 'trackUnsubscribed', LocalTrackPublished: 'localTrackPublished',
@@ -183,6 +188,62 @@ it('a muted own camera shows a camera-off preview, never a remote placeholder in
   const tree = compileCallTracks()(room).tree;
   expect(texts(tree)).toEqual(['Your camera is off']);
   expect(tracksIn(tree).map(track => track.props.trackRef.participant.identity)).toEqual(['client']);
+});
+
+it('RTC-02: Switch camera flips between the front and back camera, and waits while the camera is off', async () => {
+  const room = fakeRoom();
+  const local = Object.assign(room.localParticipant, { isMicrophoneEnabled: true, isCameraEnabled: true, setMicrophoneEnabled: vi.fn(), setCameraEnabled: vi.fn() });
+  const onFacing = vi.fn();
+  switchCamera.mockClear();
+  const view = compileCallTracks('__MediaToggles', { facing: 'user', onFacing })(room);
+  const control = (tree: unknown) => find(tree, n => typeof n.type === 'function' && n.props.label === 'Switch camera')!;
+  expect(control(view.tree).props).toMatchObject({ disabled: false, icon: { android: 'cameraswitch', ios: 'camera.rotate' } });
+  switchCamera.mockResolvedValueOnce('environment' as never);
+  control(view.tree).props.onPress();
+  expect(switchCamera).toHaveBeenCalledWith(room, 'environment');
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  expect(onFacing).toHaveBeenCalledWith('environment');
+  local.isCameraEnabled = false;
+  room.emit('trackMuted');
+  expect(control(view.rerenderIfScheduled()).props.disabled).toBe(true);
+});
+
+it('RTC-06: the preview follows the camera really in use, not the one requested', async () => {
+  const room = fakeRoom();
+  Object.assign(room.localParticipant, { isMicrophoneEnabled: true, isCameraEnabled: true, setMicrophoneEnabled: vi.fn(), setCameraEnabled: vi.fn() });
+  const onFacing = vi.fn();
+  const view = compileCallTracks('__MediaToggles', { facing: 'user', onFacing })(room);
+  const control = find(view.tree, n => typeof n.type === 'function' && n.props.label === 'Switch camera')!;
+  // The camera did not change: the front camera stays mirrored.
+  switchCamera.mockResolvedValueOnce('user' as never);
+  control.props.onPress();
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  expect(onFacing).toHaveBeenLastCalledWith('user');
+  // A failed switch re-reads the camera the track uses.
+  onFacing.mockClear();
+  switchCamera.mockRejectedValueOnce(new Error('synthetic camera failure'));
+  find(view.rerenderIfScheduled(), n => typeof n.type === 'function' && n.props.label === 'Switch camera')!.props.onPress();
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  expect(onFacing).toHaveBeenCalledWith('user');
+});
+
+it('RTC-06: a new camera track remounts your preview, so it never stays on the old camera\'s last frame', () => {
+  const room = fakeRoom();
+  room.remoteParticipants.set('client', room.participant('client', true));
+  const publication = { track: { mediaStreamTrack: { id: 'front-track' } }, isMuted: false };
+  room.localParticipant.getTrackPublication = () => publication as never;
+  const before = tracksIn(compileCallTracks('__CallTracks', { counterpart: 'Your Client', previewTop: 96, facing: 'user' })(room).tree)[1];
+  publication.track.mediaStreamTrack = { id: 'back-track' };
+  const after = tracksIn(compileCallTracks('__CallTracks', { counterpart: 'Your Client', previewTop: 96, facing: 'environment' })(room).tree)[1];
+  expect(before.key).toBe('front-track');
+  expect(after.key).toBe('back-track');
+});
+
+it('RTC-02: your own preview is mirrored only for the front camera', () => {
+  const room = fakeRoom();
+  room.remoteParticipants.set('client', room.participant('client', true));
+  const back = compileCallTracks('__CallTracks', { counterpart: 'Your Client', previewTop: 96, facing: 'environment' })(room).tree;
+  expect(tracksIn(back)[1].props.mirror).toBe(false);
 });
 
 it('microphone and camera toggles mute the existing published tracks and follow LiveKit mute events', async () => {

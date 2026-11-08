@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation, Easing, Extrapolation, interpolate, ReduceMotion, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSequence, withSpring, withTiming,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
+import { AppButton } from '@/components/app-button';
+import { AppDialog } from '@/components/app-dialog';
 import { AppSymbol } from '@/components/app-symbol';
 import { useUiTheme } from '@/components/refinement-theme';
 import { COBALT_LIT, COBALT_SHADOW } from '@/constants/cobalt-material';
@@ -34,6 +36,9 @@ export function SwipeConfirmation({ label, confirmationTitle, confirmationMessag
   const jsLock = useRef(false), mounted = useRef(true);
   const scope = useMemo(() => ({ disabled, resetKey, onConfirm }), [disabled, resetKey, onConfirm]);
   const committedScope = useRef<typeof scope | null>(scope);
+  // The screen-reader review, in the app's own dialog rather than the native Android alert (owner
+  // 2026-11-06). It belongs to the scope it opened for: a disable, a new key or a new callback closes it.
+  const [reviewScope, setReviewScope] = useState<typeof scope | null>(null);
   // Retire retained dialogs and queued releases at commit, including disable/re-enable cycles.
   useLayoutEffect(() => { committedScope.current = scope; return () => { committedScope.current = null; }; }, [scope]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -106,7 +111,7 @@ export function SwipeConfirmation({ label, confirmationTitle, confirmationMessag
       accessibilityState={{ disabled }} accessibilityActions={[{ name: 'activate', label: 'Review confirmation' }]}
       onAccessibilityAction={event => {
         if (disabled || event.nativeEvent.actionName !== 'activate') return;
-        Alert.alert(confirmationTitle, confirmationMessage, [{ text: 'Not yet', style: 'cancel' }, { text: 'Confirm', onPress: confirm }]);
+        setReviewScope(scope);
       }}
       onLayout={event => { span.set(Math.max(0, event.nativeEvent.layout.width - THUMB_TRAVEL_MARGIN)); }}
       style={[styles.track, { borderColor: ui.colors.controlBorder, backgroundColor: ui.colors.surfaceSunken }]}>
@@ -122,6 +127,12 @@ export function SwipeConfirmation({ label, confirmationTitle, confirmationMessag
         </Animated.View>
       </GestureDetector>
     </View>
+    <AppDialog visible={reviewScope === scope} onRequestClose={() => setReviewScope(null)}
+      title={confirmationTitle} message={confirmationMessage}
+      actions={<>
+        <AppButton variant="primary" label="Confirm" onPress={() => { setReviewScope(null); confirm(); }} />
+        <AppButton variant="ghost" label="Not yet" onPress={() => setReviewScope(null)} />
+      </>} />
   </GestureHandlerRootView>;
 }
 const styles = StyleSheet.create({

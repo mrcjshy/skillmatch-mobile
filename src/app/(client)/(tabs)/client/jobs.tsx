@@ -10,7 +10,7 @@ import { SkillMatchTheme } from '@/constants/theme';
 import { formatCardDateTime } from '@/lib/date-time';
 import { formatClientPostedPaymentLine } from '@/lib/job-payment';
 import { NOTIFICATION_INSERTED, subscribeInvalidation, userNotificationsTopic } from '@/lib/realtime';
-import { jobStatusLabel, jobStatusVariant } from '@/lib/status-presentation';
+import { PAST_DATE_COPY, isOpenJobPastDate, jobStatusLabel, jobStatusVariant } from '@/lib/status-presentation';
 import { useAccount } from '@/providers/account-provider';
 import { useClientJobs } from '@/providers/client-jobs-provider';
 import { useClientPostJobDraft } from '@/providers/client-post-job-draft-provider';
@@ -121,7 +121,9 @@ export default function ClientJobs() {
         <View style={[styles.row, groupedRowStyle(ui, groupPosition(index ?? 0, jobs.length))]}>
           <View style={styles.rowHeader}>
             <Text selectable style={styles.title}>{job.title}</Text>
-            <AppChip label={jobStatusLabel(job.status)} variant={jobStatusVariant(job.status)} />
+            {isOpenJobPastDate(job.status, job.scheduled_at)
+              ? <AppChip label={PAST_DATE_COPY.chip} variant="warning" />
+              : <AppChip label={jobStatusLabel(job.status)} variant={jobStatusVariant(job.status)} />}
           </View>
           {job.description !== null && job.description.trim() ? <Text selectable style={styles.description}>{job.description}</Text> : null}
           <Text selectable style={styles.budget} accessibilityLabel={`Budget: ${job.budget === null ? 'Not set' : '\u20b1' + job.budget.toLocaleString()}`}>{job.budget === null ? 'Budget not set' : '\u20b1' + job.budget.toLocaleString()}</Text>

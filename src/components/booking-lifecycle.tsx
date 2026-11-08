@@ -1,8 +1,9 @@
 import { type ReactNode, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppNotice } from '@/components/app-notice';
 import { AppButton } from '@/components/app-button';
+import { AppDialog } from '@/components/app-dialog';
 import { CancellationSheet } from '@/components/cancellation-sheet';
 import { AppField } from '@/components/app-field';
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
@@ -14,7 +15,9 @@ import {
   completeClientBooking,
   completeErrorCopy,
   COPY,
+  noShowErrorCopy,
   remainingCancellationDetailCharacters,
+  reportWorkerNoShow,
   validateCancellationInput,
 } from '@/lib/booking-lifecycle';
 import type { CancellationReasonCode } from '@/lib/bookings';
@@ -53,13 +56,14 @@ import type { CancellationReasonCode } from '@/lib/bookings';
 
 export type LifecycleRole = 'client' | 'worker';
 
-type LifecycleAction = 'complete' | 'cancel';
+type LifecycleAction = 'complete' | 'cancel' | 'noShow';
 
 export default function BookingLifecycle({
   role,
   bookingId,
   showCompletion,
   showCancellation,
+  showNoShow = false,
   onChanged,
   children,
 }: {
@@ -67,6 +71,8 @@ export default function BookingLifecycle({
   bookingId: string;
   showCompletion: boolean;
   showCancellation: boolean;
+  /** NOSHOW-01: the Client's "Worker didn't show up" (Client only; the server re-checks everything). */
+  showNoShow?: boolean;
   onChanged: () => Promise<void>;
   children?: ReactNode;
 }) {
@@ -85,6 +91,8 @@ export default function BookingLifecycle({
   const [cancelStep, setCancelStep] = useState<'reason' | 'review'>('reason');
   const [reasonCode, setReasonCode] = useState<CancellationReasonCode | null>(null);
   const [reasonDetail, setReasonDetail] = useState('');
+  const [noShowConfirm, setNoShowConfirm] = useState(false);
+  const [completeConfirm, setCompleteConfirm] = useState(false);
   const actionInFlight = useRef(false);
 
   const isBusy = busyAction !== null;
@@ -131,19 +139,19 @@ export default function BookingLifecycle({
 
   /**
    * Final completion is one-way and appears only after the authoritative
-   * payment read says paid, so it receives an explicit confirmation.
+   * payment read says paid, so it receives an explicit confirmation, in the
+   * app's own dialog rather than the native Android alert (owner 2026-11-06).
    */
   function promptComplete() {
     if (isBusy) return;
-    Alert.alert(COPY.completeConfirmTitle, COPY.completeConfirmBody, [
-      { text: COPY.dismiss, style: 'cancel' },
-      {
-        text: COPY.completeConfirmAction,
-        onPress: () => {
-          void run('complete', () => completeClientBooking(bookingId), completeErrorCopy);
-        },
-      },
-    ]);
+    setError(null);
+    setCompleteConfirm(true);
+  }
+
+  async function confirmComplete() {
+    if (isBusy || actionInFlight.current) return;
+    setCompleteConfirm(false);
+    await run('complete', () => completeClientBooking(bookingId), completeErrorCopy);
   }
 
   /**
@@ -181,7 +189,14 @@ export default function BookingLifecycle({
     }
   }
 
-  if (!showCompletion && !showCancellation) return null;
+  async function confirmNoShow() {
+    if (isBusy || actionInFlight.current) return;
+    setNoShowConfirm(false);
+    await run('noShow', () => reportWorkerNoShow(bookingId), noShowErrorCopy);
+  }
+
+  const offerNoShow = role === 'client' && showNoShow;
+  if (!showCompletion && !showCancellation && !offerNoShow) return null;
 
   return (
     <View style={styles.section}>
@@ -210,6 +225,12 @@ export default function BookingLifecycle({
       */}
       {children}
 
+      {offerNoShow ? (
+        <AppButton variant="secondary" label={busyAction === 'noShow' ? COPY.noShowing : COPY.noShow}
+          onPress={() => { if (!isBusy) { setError(null); setNoShowConfirm(true); } }}
+          loading={busyAction === 'noShow'} disabled={isBusy} />
+      ) : null}
+
       {showCancellation ? (
         <View style={styles.cancellation}>
           <AppButton variant="destructive" label={busyAction === 'cancel' ? COPY.cancelling : COPY.cancel}
@@ -218,6 +239,32 @@ export default function BookingLifecycle({
       ) : null}
 
       {error && !cancelModalOpen ? <AppNotice variant="danger" message={error} /> : null}
+
+      <AppDialog
+        visible={completeConfirm}
+        onRequestClose={() => setCompleteConfirm(false)}
+        title={COPY.completeConfirmTitle}
+        message={COPY.completeConfirmBody}
+        actions={
+          <>
+            <AppButton variant="primary" label={COPY.completeConfirmAction} onPress={() => { void confirmComplete(); }} />
+            <AppButton variant="ghost" label={COPY.dismiss} onPress={() => setCompleteConfirm(false)} />
+          </>
+        }
+      />
+
+      <AppDialog
+        visible={noShowConfirm}
+        onRequestClose={() => setNoShowConfirm(false)}
+        title={COPY.noShowConfirmTitle}
+        message={COPY.noShowConfirmBody}
+        actions={
+          <>
+            <AppButton variant="destructive" label={COPY.noShowConfirmAction} onPress={() => { void confirmNoShow(); }} />
+            <AppButton variant="ghost" label={COPY.dismiss} onPress={() => setNoShowConfirm(false)} />
+          </>
+        }
+      />
 
       <CancellationSheet visible={cancelModalOpen}
         title={cancelStep === 'reason' ? COPY.cancelReasonTitle : 'Cancel this booking?'}

@@ -1,7 +1,8 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Alert, Linking, PixelRatio, StyleSheet, Text, View } from 'react-native';
+import { Linking, PixelRatio, StyleSheet, Text, View } from 'react-native';
 import type { CameraRef, MapRef } from '@maplibre/maplibre-react-native';
 import { AppButton } from '@/components/app-button';
+import { AppDialog } from '@/components/app-dialog';
 import { MapPinLabel } from '@/components/map-pin-label';
 import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import { ShareLocationFab, type ShareFabMode } from '@/components/share-location-fab';
@@ -51,6 +52,8 @@ function WorkerBookingMap({ bookingId, accountId, destination, insets, renderPan
   const sharing = useLocationSharing(bookingId, accountId, surface.ready);
   const pins = useBookingPins(bookingId, accountId, 'worker', sharing.shareId, surface.ready);
   useEffect(() => { if (pins.view.status === 'denied') sharing.stop(); }, [pins.view.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Stop-all asks in the app's own dialog, not the native Android alert (owner 2026-11-06).
+  const [confirmStopAll, setConfirmStopAll] = useState(false);
   const own = sharing.state.position && pins.now - sharing.state.position.timestampMs <= 45_000 ? sharing.state.position : null;
   const markers = useMemo(() => bookingMapMarkers({ viewerRole: 'worker', destination, ownPosition: own, workerPin: null, freshness: 'expired' }),
     [destination, own]);
@@ -68,7 +71,7 @@ function WorkerBookingMap({ bookingId, accountId, destination, insets, renderPan
     {pins.view.myShare === 'active_on_other_device' ? <Text style={styles.text}>You are sharing on another device.</Text> : null}
     {sharing.state.cleanupExpired && sharing.state.cleanupBlocksStart ? <Text style={styles.text}>A previous Stop-all remains unconfirmed. Use Stop sharing on all devices again to confirm it before starting a new session here.</Text> : null}
     {/* RF04 Stop-all: shown only when another device shares or a previous Stop-all is unconfirmed (owner, UI-V3). */}
-    {pins.view.myShare === 'active_on_other_device' || sharing.state.cleanupBlocksStart ? <AppButton label="Stop sharing on all devices" variant="secondary" onPress={() => Alert.alert('Stop on all devices?', 'This stops your location sharing for this booking on every device.', [{ text: 'Keep sharing', style: 'cancel' }, { text: 'Stop all', style: 'destructive', onPress: sharing.stopAll }])} /> : null}
+    {pins.view.myShare === 'active_on_other_device' || sharing.state.cleanupBlocksStart ? <AppButton label="Stop sharing on all devices" variant="secondary" onPress={() => setConfirmStopAll(true)} /> : null}
     {sharing.state.status === 'denied_settings' ? <AppButton label="Open permission settings" onPress={() => void Linking.openSettings()} /> : null}
   </>;
   return <>
@@ -77,6 +80,12 @@ function WorkerBookingMap({ bookingId, accountId, destination, insets, renderPan
     {fabMode ? <ShareLocationFab mode={fabMode} bottom={insets.bottom + ui.spacing.lg}
       onPress={stopping ? sharing.stop : sharing.start} /> : null}
     {renderPanel({ primary, secondary })}
+    <AppDialog visible={confirmStopAll} onRequestClose={() => setConfirmStopAll(false)}
+      title="Stop on all devices?" message="This stops your location sharing for this booking on every device."
+      actions={<>
+        <AppButton variant="destructive" label="Stop all" onPress={() => { setConfirmStopAll(false); void sharing.stopAll(); }} />
+        <AppButton variant="ghost" label="Keep sharing" onPress={() => setConfirmStopAll(false)} />
+      </>} />
   </>;
 }
 

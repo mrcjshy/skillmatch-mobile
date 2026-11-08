@@ -87,14 +87,17 @@ export const ACCEPT_JOB_ERROR = {
   INELIGIBLE: 'SM403',
   /** Not authorized / EXECUTE ACL. Same generic Worker copy as any unexpected code. */
   FORBIDDEN: '42501',
+  /** SCH-01: the Worker has a confirmed booking within 3 hours of this Job. */
+  SCHEDULE_CONFLICT: 'SM422',
 } as const;
 
-export type AcceptJobErrorKind = 'unavailable' | 'ineligible' | 'generic';
+export type AcceptJobErrorKind = 'unavailable' | 'ineligible' | 'conflict' | 'generic';
 
 export type AcceptJobResult =
   | { status: 'accepted' }
   | { status: 'unavailable' }
   | { status: 'ineligible'; reason: string }
+  | { status: 'conflict' }
   | { status: 'generic' };
 
 export type AcceptJobNotice = {
@@ -106,6 +109,7 @@ export type AcceptJobNotice = {
 export const ACCEPT_JOB_COPY = {
   taken: 'This job was already accepted by another worker.',
   ineligible: "You're no longer eligible for this job.",
+  conflict: 'You already have a booking within 3 hours of this job.',
   generic: "We couldn't accept this job. Please refresh and try again.",
   accepted: 'Job accepted. It is now booked to you.',
   bookingHandoffFailed:
@@ -297,6 +301,7 @@ export function compactOpportunityFields(
 export function classifyAcceptJobErrorCode(code: string | null | undefined): AcceptJobErrorKind {
   if (code === ACCEPT_JOB_ERROR.UNAVAILABLE) return 'unavailable';
   if (code === ACCEPT_JOB_ERROR.INELIGIBLE) return 'ineligible';
+  if (code === ACCEPT_JOB_ERROR.SCHEDULE_CONFLICT) return 'conflict';
   return 'generic';
 }
 
@@ -309,6 +314,9 @@ export function acceptJobNotice(result: AcceptJobResult): AcceptJobNotice {
   }
   if (result.status === 'ineligible') {
     return { tone: 'warning', headline: ACCEPT_JOB_COPY.ineligible, detail: result.reason };
+  }
+  if (result.status === 'conflict') {
+    return { tone: 'warning', headline: ACCEPT_JOB_COPY.conflict, detail: null };
   }
   return { tone: 'warning', headline: ACCEPT_JOB_COPY.generic, detail: null };
 }
@@ -369,6 +377,7 @@ export async function acceptJobOpportunity(
     console.warn('[V3-1 P3] accept_job_opportunity failed:', code, res.error.message);
     const kind = classifyAcceptJobErrorCode(code);
     if (kind === 'unavailable') return { status: 'unavailable' };
+    if (kind === 'conflict') return { status: 'conflict' };
     if (kind === 'ineligible') {
       const reason = userId
         ? await resolveAcceptIneligibilityReason(userId, jobId)

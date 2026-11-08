@@ -8,15 +8,16 @@ import { buildResumeHtml, type ResumeModel } from './resume';
 const base: ResumeModel = {
   fullName: 'Juan Dela Cruz', email: 'juan@example.test', phone: '+639171234567', barangay: 'San Roque', city: 'Pateros',
   summary: null, isVerified: true, availability: 'available', ratingAvg: null,
-  skills: [{ name: 'Carpentry', proficiency: 'expert', years: 6 }, { name: 'Plumbing', proficiency: null, years: 1 }],
+  skills: [{ name: 'Carpentry', proficiency: 'expert' }, { name: 'Plumbing', proficiency: null }],
   projects: [],
 };
 
 describe('REG-01 resume template', () => {
-  it('lists years beside each skill, never a skill level (owner, 2026-11-05)', () => {
+  it('lists each skill by name only: no years (owner, 2026-11-06) and no skill level (2026-11-05)', () => {
     const html = buildResumeHtml(base);
-    expect(html).toContain('<span class="level">6 years</span>');
-    expect(html).toContain('<span class="level">1 year</span>');
+    expect(html).toContain('<li><span class="skill">Carpentry</span></li>');
+    expect(html).toContain('<li><span class="skill">Plumbing</span></li>');
+    expect(html).not.toMatch(/\d+ years?\b|class="level"|\.level\b/);
     expect(html).not.toMatch(/Beginner|Intermediate|Expert/);
   });
 
@@ -34,7 +35,7 @@ describe('REG-01 resume template', () => {
     expect(html.indexOf('Work Experience')).toBeLessThan(html.indexOf('Education'));
   });
 
-  it('keeps the older model shape working (no years, jobs or education): the skill alone, no level', () => {
+  it('keeps the older model shape working (no jobs or education): the skill alone, no level', () => {
     const html = buildResumeHtml({ ...base, skills: [{ name: 'Carpentry', proficiency: 'beginner' }] });
     expect(html).toContain('<span class="skill">Carpentry</span></li>');
     expect(html).not.toMatch(/Beginner|Intermediate|Expert/);

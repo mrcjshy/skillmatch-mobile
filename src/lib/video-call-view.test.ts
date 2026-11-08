@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { callPresentation, counterpartLabel, callToAutoJoin } from './video-call-view';
+import { callPresentation, counterpartLabel, callToAutoJoin, ringEffects } from './video-call-view';
 import type { VideoCall, VideoSessionView } from './video-call';
 
 vi.mock('./supabase', () => ({ supabase: {} }));
@@ -66,5 +66,31 @@ describe('caller connects by itself once the call is answered', () => {
     expect(callToAutoJoin(view({ call: { ...caller, role: 'callee' } }), false, null)).toBeNull();
     expect(callToAutoJoin(view({ call: { ...caller, state: 'ringing' } }), false, null)).toBeNull();
     expect(callToAutoJoin(view({ call: null }), false, null)).toBeNull();
+  });
+});
+
+describe('RTC-03 ringing effects (owner, 2026-11-06)', () => {
+  const base = { busy: false, connected: false, message: null, cleanupPending: false };
+  const call = (role: 'caller' | 'callee', state: string) => ({ call_id: 'c', booking_id: 'b', role, state, ring_expires_at: '', server_now: '', counterpart_away: false }) as never;
+  it('the caller hears ringback only while the call rings', () => {
+    expect(ringEffects({ view: { ...base, call: call('caller', 'ringing') }, ended: false })).toEqual({ ringback: true, stopIncomingRing: false });
+    for (const state of ['accepted', 'declined', 'cancelled', 'missed', 'ended']) expect(ringEffects({ view: { ...base, call: call('caller', state) }, ended: false }).ringback).toBe(false);
+    expect(ringEffects({ view: { ...base, call: call('caller', 'ringing') }, ended: true }).ringback).toBe(false);
+  });
+  it("the callee's phone stops ringing once the call no longer rings for them, or they leave the call", () => {
+    expect(ringEffects({ view: { ...base, call: call('callee', 'ringing') }, ended: false })).toEqual({ ringback: false, stopIncomingRing: false });
+    for (const state of ['accepted', 'declined', 'cancelled', 'missed', 'ended']) expect(ringEffects({ view: { ...base, call: call('callee', state) }, ended: false }).stopIncomingRing).toBe(true);
+    expect(ringEffects({ view: { ...base, call: call('callee', 'ringing') }, ended: true }).stopIncomingRing).toBe(true);
+    expect(ringEffects({ view: { ...base, call: null }, ended: false })).toEqual({ ringback: false, stopIncomingRing: false });
+  });
+});
+
+describe('RTC-05 Answer from the call notification (owner, 2026-11-06)', () => {
+  const base = { busy: false, connected: false, message: null, cleanupPending: false };
+  const ringing = { call_id: 'c', booking_id: 'b', role: 'callee', state: 'ringing', ring_expires_at: '', server_now: '', counterpart_away: false } as never;
+  it('goes straight to Connecting instead of asking again to accept', () => {
+    expect(callPresentation({ view: { ...base, call: ringing }, ended: false, answering: true }))
+      .toEqual({ stage: 'connecting', status: 'Connecting…', actions: ['end'] });
+    expect(callPresentation({ view: { ...base, call: ringing }, ended: false }).stage).toBe('incoming');
   });
 });

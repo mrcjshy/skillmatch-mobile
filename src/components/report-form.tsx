@@ -1,8 +1,9 @@
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/app-button';
+import { AppDialog } from '@/components/app-dialog';
 import { KeyboardSpacer } from '@/components/skeleton';
 import { AppField } from '@/components/app-field';
 import { FormMessage } from '@/components/form-message';
@@ -37,6 +38,9 @@ export default function ReportForm(props: Props) {
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The submitted notice, in the app's own dialog rather than the native Android alert (owner 2026-11-06).
+  const [submittedNotice, setSubmittedNotice] = useState<{ title: string; message: string } | null>(null);
+  const leaving = useRef(false);
 
   const descriptionCheck = validateReportDescription(description);
   const remaining = remainingReportCharacters(description);
@@ -70,16 +74,12 @@ export default function ReportForm(props: Props) {
         }
         await submitBookingReport(props.bookingId, category, validated.description);
         submitted = true;
-        Alert.alert(COPY.bookingSubmittedTitle, COPY.bookingSubmitted, [
-          { text: 'OK', onPress: () => router.back() },
-        ]);
+        setSubmittedNotice({ title: COPY.bookingSubmittedTitle, message: COPY.bookingSubmitted });
         return;
       }
       await submitAppIssue(validated.description);
       submitted = true;
-      Alert.alert(COPY.appIssueSubmittedTitle, COPY.appIssueSubmitted, [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      setSubmittedNotice({ title: COPY.appIssueSubmittedTitle, message: COPY.appIssueSubmitted });
     } catch (e: unknown) {
       if (e instanceof Error && e.message) {
         console.warn('[R3-UI] report submit failed:', e.message);
@@ -91,6 +91,14 @@ export default function ReportForm(props: Props) {
         setIsSubmitting(false);
       }
     }
+  }
+
+  /** OK (or Android Back) on the submitted notice leaves the form, once. */
+  function leaveSubmitted() {
+    if (leaving.current) return;
+    leaving.current = true;
+    setSubmittedNotice(null);
+    router.back();
   }
 
   if (props.variant === 'booking' && !isReportId(props.bookingId)) {
@@ -157,6 +165,9 @@ export default function ReportForm(props: Props) {
       />
     </ScrollView>
     <KeyboardSpacer />
+    <AppDialog visible={submittedNotice !== null} onRequestClose={leaveSubmitted}
+      title={submittedNotice?.title ?? ''} message={submittedNotice?.message}
+      actions={<AppButton label="OK" onPress={leaveSubmitted} />} />
     </View>
   );
 }

@@ -159,4 +159,11 @@ describe('statements checked against the live system', () => {
     );
     expect(privacyText).toContain('Creating a SkillMatch account does not by itself provide consent for unrelated research participation.');
   });
+
+  it('PHO-01 and REG-03 (owner, 2026-11-06): qualifying Workers see open job photos; no years of experience', () => {
+    expect(privacyText).toContain('Job photos can be seen by the Client who posted the job, by Workers who qualify for the job while it is still open (so they can decide whether to accept it), and by the Worker on its confirmed booking.');
+    expect(privacyText).toContain('Before acceptance, a qualifying Worker sees the job details, its photos and its location');
+    expect(filipinoText).toContain('ng mga kwalipikadong Worker habang bukas pa ang trabaho');
+    expect(everyText).not.toMatch(/Job photos can be seen only|years of experience|taon ng karanasan/);
+  });
 });

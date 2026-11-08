@@ -12,14 +12,17 @@ import { InlineStatus } from '@/components/inline-status';
 import { AppSymbol } from '@/components/app-symbol';
 import { MotionView, useMotion } from '@/components/motion';
 import { WorkerOpportunityJobLocation } from '@/components/job-location-map';
+import { JobPhotoGallery } from '@/components/job-photo-gallery';
 import { SectionHeader } from '@/components/section-header';
+import { ScheduleConflictDialog } from '@/components/schedule-conflict-dialog';
 import { Collapsible } from '@/components/ui/collapsible';
 import { ServiceMark } from '@/components/service-mark';
 import { GuidanceSection } from '@/components/skill-gap';
 import { SurfaceGroup } from '@/components/surface-group';
 import { SkillMatchTheme } from '@/constants/theme';
 import { formatOpportunityPaymentLine } from '@/lib/job-payment';
-import { loadWorkerBookings } from '@/lib/booking-records';
+import { loadWorkerBookings, type WorkerBooking } from '@/lib/booking-records';
+import type { SignedJobPhoto } from '@/lib/job-photos';
 import {
   createWorkerAcceptHandoff,
   type WorkerAcceptFocus,
@@ -44,6 +47,8 @@ import {
 } from '@/lib/job-opportunities';
 import { computeSkillGap, loadMyWorkerSkills, type WorkerSkillRef } from '@/lib/skill-gap';
 import { createOpportunityLocationAccess, getMyOpportunityLocation, type OpportunityLocation } from '@/lib/opportunity-location';
+import { loadOpportunityJobPhotos } from '@/lib/opportunity-photos';
+import { findScheduleConflict } from '@/lib/schedule-conflict';
 import { JOB_OPPORTUNITIES_CHANGED, subscribeInvalidation, workerOpportunitiesTopic } from '@/lib/realtime';
 import { useAccount } from '@/providers/account-provider';
 import { useSession } from '@/providers/session-provider';
@@ -56,6 +61,14 @@ type RequirementsState =
   | { status: 'loading' }
   | { status: 'ready'; skills: SkillRef[]; workerSkills: WorkerSkillRef[] }
   | { status: 'error' };
+
+type PhotosState =
+  | { status: 'loading' }
+  | { status: 'ready'; photos: SignedJobPhoto[] }
+  | { status: 'error' };
+
+/** SCH-01: the open schedule-clash dialog; `booking` is the booking in the way once it has been read. */
+type ConflictState = { booking: WorkerBooking | null } | null;
 
 export default function JobOpportunityDetails({ jobId }: { jobId: string | null }) {
   const { account } = useAccount();
@@ -85,6 +98,8 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
   const [accepted, setAccepted] = useState(false);
   const [notice, setNotice] = useState<AcceptJobNotice | null>(null);
   const [handoff] = useState(createWorkerAcceptHandoff);
+  const [photos, setPhotos] = useState<PhotosState>({ status: 'loading' });
+  const [conflict, setConflict] = useState<ConflictState>(null);
   const acceptanceFocus = useRef<WorkerAcceptFocus | null>(null);
   const currentIdentity = useRef<{
     workerId: string | undefined;
@@ -120,6 +135,12 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
         }
         setIsAccepting(pending);
         setAccepted(result?.status === 'accepted');
+        if (result?.status === 'conflict') {
+          // SCH-01: Itik explains the clash in a dialog instead of a banner.
+          setNotice(null);
+          setConflict({ booking: null });
+          return;
+        }
         setNotice(handoffFailed ? {
           tone: 'success',
           headline: ACCEPT_JOB_COPY.accepted,
@@ -193,6 +214,32 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
       if (isCurrent()) setRequirements({ status: 'error' });
     }
   }, [account]);
+
+  // PHO-01: the photos follow each fresh read of the opportunity, so their short-lived links are
+  // renewed with it. A photo the Worker may no longer see is simply left out.
+  useEffect(() => {
+    if (opportunity === null) return;
+    const id = opportunity.job_id;
+    const run = { cancelled: false };
+    const isCurrent = () => !run.cancelled && AppState.currentState === 'active' && requirementsAuthority.current === id;
+    loadOpportunityJobPhotos(id, isCurrent).then(
+      (list) => { if (isCurrent()) setPhotos({ status: 'ready', photos: list }); },
+      () => { if (isCurrent()) setPhotos({ status: 'error' }); },
+    );
+    return () => { run.cancelled = true; };
+  }, [opportunity]);
+
+  // SCH-01: name the booking in the way, read fresh; the general message stays if it cannot be read.
+  useEffect(() => {
+    if (conflict === null || conflict.booking !== null || opportunity === null) return;
+    const job = opportunity;
+    let cancelled = false;
+    loadWorkerBookings().then((rows) => {
+      const clash = findScheduleConflict(job, rows);
+      if (!cancelled && clash) setConflict({ booking: clash });
+    }, () => undefined);
+    return () => { cancelled = true; };
+  }, [conflict, opportunity]);
 
   const loadedJobId = opportunity?.job_id ?? null;
 
@@ -294,6 +341,13 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
         />
       }
     >
+      {/* SCH-01: a Modal, so it lays out over the screen wherever it sits in the tree. */}
+      <ScheduleConflictDialog
+        visible={conflict !== null}
+        booking={conflict?.booking ?? null}
+        onClose={() => setConflict(null)}
+        onViewBookings={() => { setConflict(null); router.replace('/worker/bookings' as Href); }}
+      />
       {notice ? (
         <View style={styles.pad}>
           <FormMessage
@@ -359,6 +413,12 @@ function OpportunityDetails({ jobId }: { jobId: string | null }) {
         <View style={[styles.pad, styles.section]}>
           <SectionHeader title="Description" />
           <Text style={styles.body}>{opportunity.description}</Text>
+        </View>
+      ) : null}
+
+      {photos.status === 'error' || (photos.status === 'ready' && photos.photos.length > 0) ? (
+        <View style={styles.pad}>
+          <JobPhotoGallery photos={photos.status === 'ready' ? photos.photos : []} error={photos.status === 'error'} />
         </View>
       ) : null}
 

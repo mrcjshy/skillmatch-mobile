@@ -167,6 +167,19 @@ describe('Worker Profile overview and deliberate editing', () => {
     h.cleanup(); h.render(); h.effects(); await flush();
     expect(statLabels(h.render())).toEqual(['Rating: New', 'Skills: 1', 'Strikes: Not available']);
   });
+  it('PERF-01: coming back to Profile keeps the photo on screen while a fresh signature is read', async () => {
+    const h = harness(); h.render(); h.effects(); await flush();
+    const avatar = () => nodes(h.render()).find(n => n.type === 'InitialsAvatar')!;
+    expect(avatar().props.photoUri).toBe('signed-worker-a');
+    let finish!: (value: { status: string; signedUrl: string }) => void;
+    h.photoRead.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    h.cleanup(); h.render(); h.effects(); // leave Profile and come back; the new signature is on its way
+    expect(h.photoRead).toHaveBeenCalledTimes(2);
+    expect(avatar().props.photoUri).toBe('signed-worker-a');
+    finish({ status: 'available', signedUrl: 'signed-worker-a-2' }); await flush();
+    expect(avatar().props.photoUri).toBe('signed-worker-a-2');
+    h.cleanup();
+  });
   it('keeps the hero numbers with the account that read them and reads none without a Worker account', async () => {
     const h = harness(); h.render(); h.effects(); await flush();
     expect(statLabels(h.render())[0]).toBe('Rating: 4.5');
@@ -272,8 +285,12 @@ describe('Worker Profile overview and deliberate editing', () => {
     (action(h.render(), 'Manage skills').props.onPress as () => void)();
     modal = h.render(); (action(modal, 'Plumbing').props.onPress as () => void)();
     (action(h.render(), 'Save skills').props.onPress as () => void)();
-    expect(h.handleSave).not.toHaveBeenCalled(); const buttons = h.alert.mock.calls[0][2] as { onPress?: () => Promise<void> }[];
-    await buttons[1].onPress!(); expect(h.handleSave).toHaveBeenCalledWith({ one: 'expert', two: 'beginner' });
+    // The app's own dialog asks, not the stock Android alert (owner, 2026-11-06).
+    expect(h.handleSave).not.toHaveBeenCalled(); expect(h.alert).not.toHaveBeenCalled();
+    const dialog = nodes(h.render());
+    expect(dialog.some(n => n.props.accessibilityRole === 'header' && n.props.children === 'Confirm selected skills?')).toBe(true);
+    (action(h.render(), 'Confirm skills').props.onPress as () => void)(); await Promise.resolve();
+    expect(h.handleSave).toHaveBeenCalledWith({ one: 'expert', two: 'beginner' });
     (action(h.render(), 'Save profile').props.onPress as () => void)(); expect(h.handleSave).toHaveBeenLastCalledWith();
   });
   it('keeps all busy text readable with composed normal and pressed styles', () => {

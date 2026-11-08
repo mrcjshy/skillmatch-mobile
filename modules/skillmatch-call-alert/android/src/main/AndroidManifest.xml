@@ -1,0 +1,20 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- RTC-03: an incoming booking video call rings full screen, even over the lock screen. -->
+  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.VIBRATE" />
+
+  <application>
+    <!-- Expo's own push service has android:priority="-1", so this one receives pushes first. -->
+    <service
+      android:name="expo.modules.skillmatchcallalert.CallMessagingService"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT" />
+      </intent-filter>
+    </service>
+    <!-- RTC-05: Decline on the call notification, handled in the background. -->
+    <receiver android:name="expo.modules.skillmatchcallalert.CallActionReceiver" android:exported="false" />
+    <service android:name="expo.modules.skillmatchcallalert.CallActionTaskService" android:exported="false" />
+  </application>
+</manifest>

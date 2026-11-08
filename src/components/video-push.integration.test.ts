@@ -8,12 +8,16 @@ import * as push from '@/lib/push-notifications';
 
 const bookingId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const callId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
-function harness(path: string, request: ReturnType<typeof vi.fn>) {
+function harness(path: string, request: ReturnType<typeof vi.fn>, launch: unknown = null) {
   push.resetPushClientState();
-  push.captureNotificationResponse({ notification: { request: { content: { data: { kind: 'call', booking_id: bookingId, call_id: callId } } } } });
+  // RTC-03: a launch from the native ringing call notification takes the place of an Expo push tap.
+  if (!launch) push.captureNotificationResponse({ notification: { request: { content: { data: { kind: 'call', booking_id: bookingId, call_id: callId } } } } });
   const effects: (() => void | (() => void))[] = [];
   const router = { push: vi.fn(), replace: vi.fn() };
+  const alert = { consumeLaunch: vi.fn(() => launch), cancelIncoming: vi.fn(), showWhenLocked: vi.fn() };
   const modules: Record<string, unknown> = {
+    'react-native': { AppState: { addEventListener: () => ({ remove() {} }) } },
+    '@/lib/call-alert': { callAlert: alert },
     'expo-notifications': { getLastNotificationResponseAsync: async () => null, addNotificationResponseReceivedListener: () => ({ remove() {} }), clearLastNotificationResponseAsync: vi.fn() },
     'expo-router': { usePathname: () => path, useRouter: () => router },
     react: { useEffect: (cb: () => void) => effects.push(cb), useState: () => [0, () => {}] },
@@ -28,8 +32,9 @@ function harness(path: string, request: ReturnType<typeof vi.fn>) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText, { exports, require: (name: string) => { if (!(name in modules)) throw Error(name); return modules[name]; } });
   exports.PushNotificationInboxIntent();
+  if (launch) effects[0]();
   const cleanup = effects[1]();
-  return { router, cleanup };
+  return { router, cleanup, alert };
 }
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 it('cold-start call intent waits for role Home before reauthorization and never accepts from a push', async () => {
@@ -55,4 +60,21 @@ it('account or route cleanup prevents a late authorization from navigating', asy
 it('call payload retains only valid identifiers', () => {
   expect(push.parseCallPushData({ kind: 'call', booking_id: bookingId, call_id: callId, token: 'untrusted', latitude: 14 })).toEqual({ bookingId, callId });
   expect(push.parseCallPushData({ kind: 'call', booking_id: bookingId, call_id: 'bad' })).toBeNull();
+});
+it('RTC-03: a native call notification launch is re-authorized, routed like a call push tap, and keeps its Answer for the call screen', async () => {
+  const request = vi.fn(async () => ({ call: { call_id: callId, booking_id: bookingId, state: 'ringing' } }));
+  const h = harness('/worker', request, { bookingId, callId, action: 'answer' }); await flush();
+  expect(h.alert.consumeLaunch).toHaveBeenCalledOnce();
+  expect(request).toHaveBeenCalledExactlyOnceWith('status', bookingId);
+  expect(h.router.push).toHaveBeenCalledExactlyOnceWith({ pathname: '/worker/video', params: { bookingId } });
+  expect(h.alert.showWhenLocked).not.toHaveBeenCalled();
+  expect(push.takePendingCallChoice(callId)).toBe('answer');
+});
+it('RTC-03: a launch for a call that already stopped ringing stops the ringing and the lock-screen display', async () => {
+  const h = harness('/worker', vi.fn(async () => ({ call: { call_id: callId, booking_id: bookingId, state: 'cancelled' } })), { bookingId, callId, action: 'open' });
+  await flush();
+  expect(h.router.push).not.toHaveBeenCalled();
+  expect(h.router.replace).toHaveBeenCalledWith('/worker/notifications');
+  expect(h.alert.cancelIncoming).toHaveBeenCalledOnce();
+  expect(h.alert.showWhenLocked).toHaveBeenCalledWith(false);
 });

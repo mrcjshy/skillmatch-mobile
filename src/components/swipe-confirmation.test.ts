@@ -3,8 +3,10 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { SwipeConfirmation } from './swipe-confirmation';
-const native = vi.hoisted(() => ({ nodes: [] as any[], gestures: [] as any[], springs: [] as any[], alerts: [] as any[], rnCalls: 0, reduced: false }));
+const native = vi.hoisted(() => ({ nodes: [] as any[], gestures: [] as any[], springs: [] as any[], alerts: [] as any[], dialogs: [] as any[], rnCalls: 0, reduced: false }));
 vi.mock('@/components/app-symbol', () => ({ AppSymbol: () => null }));
+vi.mock('@/components/app-dialog', () => ({ AppDialog: (props: any) => { native.dialogs.push(props); return null; } }));
+vi.mock('@/components/app-button', () => ({ AppButton: () => null }));
 vi.mock('react-native', async () => {
   const { createElement } = await import('react');
   const host = (props: any) => { native.nodes.push(props); return createElement('div', null, props.children); };
@@ -27,7 +29,7 @@ vi.mock('react-native-gesture-handler', async () => {
     return builder;
   } } };
 });
-beforeEach(() => { native.nodes = []; native.gestures = []; native.springs = []; native.alerts = []; native.rnCalls = 0; native.reduced = false; });
+beforeEach(() => { native.nodes = []; native.gestures = []; native.springs = []; native.alerts = []; native.dialogs = []; native.rnCalls = 0; native.reduced = false; });
 function mount(disabled = false) {
   let commits = 0;
   const html = renderToStaticMarkup(createElement(SwipeConfirmation, { label: 'Swipe to Confirm Arrival', confirmationTitle: 'Confirm arrival?', confirmationMessage: 'Only at the job site.', disabled, resetKey: 'one', onConfirm: () => { commits++; } }));
@@ -70,10 +72,10 @@ it('reduced motion keeps deliberate confirmation without a settle animation', ()
   native.reduced = true; const h = mount(); drag(h.gesture, 260);
   expect(h.commits()).toBe(1); expect(native.springs).toHaveLength(0);
 });
-it('screen-reader activation opens a separate explicit confirmation; cancel does not submit', () => {
+// The stateful review (open, Not yet, Confirm once, retired on change) is in swipe-confirmation.lifetime.test.ts.
+it('screen-reader activation reviews in the app dialog, never the native alert, and does not submit by itself', () => {
   const h = mount(); const accessible = native.nodes.find(n => n.onAccessibilityAction);
   expect(accessible).toBeDefined(); accessible.onAccessibilityAction({ nativeEvent: { actionName: 'activate' } });
-  expect(h.commits()).toBe(0); expect(native.alerts).toHaveLength(1);
-  const buttons = native.alerts[0][2]; expect(buttons[0].style).toBe('cancel');
-  buttons[1].onPress(); buttons[1].onPress(); expect(h.commits()).toBe(1);
+  expect(h.commits()).toBe(0); expect(native.alerts).toHaveLength(0);
+  expect(native.dialogs.at(-1)).toMatchObject({ title: 'Confirm arrival?', message: 'Only at the job site.' });
 });

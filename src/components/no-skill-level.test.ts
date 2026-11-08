@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 /**
  * Owner direction 2026-11-05: skill levels (Beginner / Intermediate / Expert) are removed from every
  * surface: Worker (editing and resume), Client and Worker views, and native Admin. Years of experience
- * stay. The worker_skills.proficiency_level column keeps its default and is read only for parsing;
+ * followed on 2026-11-06 (no-skill-years.test.ts). The worker_skills.proficiency_level column keeps its
+ * default and is read only for parsing;
  * no screen or document may print it.
  */
 const code = (file: string) => readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
@@ -26,7 +27,7 @@ describe('No skill level on any surface', () => {
     expect(source).not.toMatch(/['"`](Beginner|Intermediate|Expert)['"`]/);
   });
 
-  it('the resume PDF lists years only', () => {
+  it('the resume PDF prints no skill level', () => {
     const source = code('src/lib/resume.ts');
     expect(source).not.toMatch(/PROFICIENCY_LABEL/);
     expect(source).not.toMatch(/s\.proficiency === null \? null/);

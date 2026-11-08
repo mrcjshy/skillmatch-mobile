@@ -12,6 +12,8 @@ vi.mock('react-native', () => {
 });
 vi.mock('@/components/refinement-theme', () => ({ useUiTheme: () => ({ colors: { accent: '#accent', accentSubtle: '#subtle', onAccent: '#on', surfaceSunken: '#sunken', textPrimary: '#ink', controlBorder: '#border' }, type: { button: {} } }) }));
 vi.mock('@/components/app-symbol', () => ({ AppSymbol: (props: any) => { native.icons.push(props); return null; } }));
+vi.mock('@/components/app-dialog', () => ({ AppDialog: () => null }));
+vi.mock('@/components/app-button', () => ({ AppButton: () => null }));
 vi.mock('@/hooks/use-reduced-motion', () => ({ useReducedMotion: () => native.reduced }));
 vi.mock('react-native-worklets', () => ({ scheduleOnRN: (fn: () => void) => fn() }));
 vi.mock('react-native-reanimated', async () => {

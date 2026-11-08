@@ -94,6 +94,10 @@ function WorkerHomeContent() {
   );
   const refreshOpportunities = useRef<(() => void) | null>(null);
   const opportunityRequest = useRef<Promise<JobOpportunity[]> | null>(null);
+  // PERF-01 (owner 2026-11-06, "loading every time back and forth"): the account whose jobs are on
+  // screen. Only the first load for an account blanks to the skeleton; coming back to Home (a tab
+  // switch or a closed details screen) keeps the last rows while they refresh in the background.
+  const opportunitiesShownFor = useRef<string | null>(null);
   const refreshStatus = useRef<(() => Promise<unknown>) | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   // Display order only (Wave 7). Best match is the server's ranking as received.
@@ -144,9 +148,11 @@ function WorkerHomeContent() {
     const rereader = createCoalescedInvalidation(async () => {
       if (firstRead) {
         firstRead = false;
-        setOppLoading(true);
-        setOpportunities([]);
-        setOppError(null);
+        if (opportunitiesShownFor.current !== accountId) {
+          setOppLoading(true);
+          setOpportunities([]);
+          setOppError(null);
+        }
       }
       // A prior account/eligibility scope may still have a request in flight.
       // Drain it before starting another; its own cleanup suppresses its result.
@@ -162,6 +168,7 @@ function WorkerHomeContent() {
         if (cancelled || readRevision !== revision) return;
         setOpportunities(rows);
         setOppError(null);
+        opportunitiesShownFor.current = accountId ?? null;
       } catch (error: unknown) {
         if (cancelled || readRevision !== revision) return;
         if (error instanceof Error && error.message) {
@@ -184,6 +191,7 @@ function WorkerHomeContent() {
 
     const listener = AppState.addEventListener('change', state => {
       revision++;
+      opportunitiesShownFor.current = null;
       setOpportunities([]);
       setOppLoading(true);
       if (state === 'active') rereader.invalidate();
@@ -196,7 +204,7 @@ function WorkerHomeContent() {
       rereader.cancel();
       unsubscribe();
     };
-  }, [canLoadOpportunities]));
+  }, [canLoadOpportunities, accountId]));
 
   // Defined after queue setup: focus never starts a separate competing read.
   useFocusEffect(

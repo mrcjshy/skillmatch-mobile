@@ -388,16 +388,11 @@ export async function listJobPhotos(input: {
     assertOperationCurrent();
     throw error;
   };
-  assertOperationCurrent();
-  const listed = await listCanonicalSlots(input.clientId, input.jobId).catch(rethrowCurrent);
-  assertOperationCurrent();
-  if (listed.error) {
-    logJobPhotoFailure('list', listed.error);
-    throw new JobPhotoError('job photos could not be loaded', 'list_failed');
-  }
-  if (listed.slots.length === 0) return [];
-
-  const paths = listed.slots.map((slot) => buildJobPhotoPath(input.clientId, input.jobId, slot));
+  // PERF-01 (owner 2026-11-06): sign the three canonical slots in one request instead of listing
+  // the folder first. Hosted Storage took about 3 s (p50, up to 18 s) to list a Job's folder and
+  // about 0.1 s to sign, and a batch sign already answers per path: a slot without a photo comes
+  // back with an error and no URL and is left out below, exactly as an unlisted slot was.
+  const paths = JOB_PHOTO_SLOTS.map((slot) => buildJobPhotoPath(input.clientId, input.jobId, slot));
   assertOperationCurrent();
   const signed = await supabase.storage
     .from(JOB_PHOTOS_BUCKET)
@@ -408,7 +403,7 @@ export async function listJobPhotos(input: {
     throw new JobPhotoError('job photos could not be loaded', 'signed_url_failed');
   }
 
-  const expected = new Map(paths.map((path, index) => [path, listed.slots[index]] as const));
+  const expected = new Map(paths.map((path, index) => [path, JOB_PHOTO_SLOTS[index]] as const));
   const photos = signed.data.flatMap((row) => {
     const path = typeof row.path === 'string' ? row.path : null;
     const slot = path === null ? undefined : expected.get(path);

@@ -32,6 +32,9 @@ import {
   resolveEasProjectId,
   resolveTapInboxHref,
   captureNotificationResponse,
+  captureCallLaunch,
+  getPendingCall,
+  takePendingCallChoice,
   clearPendingNotificationsInboxIntent,
   consumeReadyInboxNavigation,
   decidePendingInboxNavigation,
@@ -744,5 +747,25 @@ describe('W7 booking chat push tap', () => {
     captureNotificationResponse(tapResponse({ kind: 'message', booking_id: BOOKING_ID }));
     clearPendingNotificationsInboxIntent();
     expect(getPendingChatBookingId()).toBeNull();
+  });
+});
+
+describe('RTC-03 native call notification launch (owner, 2026-11-06)', () => {
+  const CALL_ID = '33333333-3333-4333-8333-333333333333';
+  it('is routed like a call push tap, and keeps the Answer or Decline for that call only, once', () => {
+    clearPendingNotificationsInboxIntent();
+    captureCallLaunch({ bookingId: BOOKING_ID, callId: CALL_ID, action: 'answer' });
+    expect(hasPendingNotificationsInboxIntent()).toBe(true);
+    expect(getPendingCall()).toEqual({ bookingId: BOOKING_ID, callId: CALL_ID });
+    clearPendingNotificationsInboxIntent();
+    expect(takePendingCallChoice('44444444-4444-4444-8444-444444444444')).toBeNull();
+    expect(takePendingCallChoice(CALL_ID)).toBe('answer');
+    expect(takePendingCallChoice(CALL_ID)).toBeNull();
+  });
+
+  it('a plain open carries no choice', () => {
+    captureCallLaunch({ bookingId: BOOKING_ID, callId: CALL_ID, action: 'open' });
+    expect(takePendingCallChoice(CALL_ID)).toBeNull();
+    clearPendingNotificationsInboxIntent();
   });
 });

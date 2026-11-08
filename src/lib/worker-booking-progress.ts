@@ -36,6 +36,20 @@ async function request(name: string, args: Record<string, string>, rpc: Progress
 export async function loadWorkerProgress(bookingId: string, rpc: ProgressRpc = invoke): Promise<WorkerProgress> {
   return request('get_my_worker_booking_progress', { p_booking_id: bookingId }, rpc);
 }
+/**
+ * PAY-02 (owner, 2026-11-06): the Client's read of the Worker's progress on the Client's own booking,
+ * through the own-row bookings read (the progress RPC is Worker-only). Fails closed like the Worker read.
+ */
+export async function loadBookingServiceProgress(bookingId: string): Promise<WorkerProgress> {
+  if (!uuid.test(bookingId)) throw unavailable();
+  let result;
+  try {
+    result = await supabase.from('bookings').select('id, worker_arrived_at, worker_service_completed_at').eq('id', bookingId).maybeSingle();
+  } catch { throw unavailable(); }
+  const row = result.data as Record<string, unknown> | null;
+  if (result.error || !row) throw unavailable();
+  return parseWorkerProgress([{ booking_id: row.id, arrived_at: row.worker_arrived_at, service_completed_at: row.worker_service_completed_at }], bookingId);
+}
 export async function confirmWorkerProgress(bookingId: string, step: WorkerProgressStep, rpc: ProgressRpc = invoke): Promise<WorkerProgress> {
   if (step !== 'arrive' && step !== 'complete') throw unavailable();
   const progress = await request('confirm_my_worker_booking_progress', { p_booking_id: bookingId, p_step: step }, rpc);

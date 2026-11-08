@@ -32,6 +32,8 @@ function harness(file: string, overrides: P = {}) {
     '@/lib/home-greeting': { homeGreeting: () => 'Good evening' },
     '@/lib/initials': { firstNameFromFullName: () => 'Maria' },
     '@/lib/booking-records': { loadWorkerBookings: async () => [] },
+    '@/lib/opportunity-photos': { loadOpportunityJobPhotos: async () => [] },
+    '@/lib/schedule-conflict': { findScheduleConflict: () => null },
     '@/lib/worker-identity': { workerHomeIdentityNotice: () => 'none', getMyIdentitySubmission: async () => null },
     '@/lib/realtime': { createCoalescedInvalidation: (fn: any) => ({ invalidate: fn, cancel: noop }), subscribeInvalidation: () => noop, workerOpportunitiesTopic: () => 'worker' },
     '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },
@@ -403,6 +405,37 @@ it('UI-L1: pulling the job list refreshes its rows and finishes while keeping th
   expect(list().props.refreshControl.props.refreshing).toBe(false);
   expect(list().props.data.map((row: P) => row.job_id)).toEqual(['earliest', 'soon', 'later']);
   expect(sortButton(h).props.accessibilityLabel).toBe('Sort by: Job date');
+  cleanups.forEach(cleanup => cleanup?.());
+});
+
+it('PERF-01: coming back to Home keeps the job list on screen while it refreshes in the background', async () => {
+  const first = [{ job_id: 'a', title: 'A', scheduled_at: '2099-01-01T00:00:00Z', total_points: 90 }];
+  let calls = 0;
+  let release!: (rows: P[]) => void;
+  const h = harness(home, {
+    '@/lib/job-opportunities': {
+      JOB_OPPORTUNITY_COPY: { loadFailed: 'Read failed' },
+      loadMyJobOpportunities: () => {
+        calls++;
+        return calls === 1 ? Promise.resolve(first) : new Promise<P[]>(resolve => { release = resolve; });
+      },
+    },
+  });
+  const list = () => all(h.render()).find(x => x.type === 'FlatList');
+  const status = () => all(list().props.ListEmptyComponent).find(x => x.type === 'InlineStatus')?.props.variant;
+  h.render();
+  let cleanups = h.focuses.slice(0, 2).map(fn => fn()); // first visit
+  await flush();
+  expect(list().props.data.map((row: P) => row.job_id)).toEqual(['a']);
+  cleanups.forEach(cleanup => cleanup?.()); // leave Home (a tab switch or a pushed details screen)
+  h.render();
+  cleanups = h.focuses.slice(0, 2).map(fn => fn()); // come back
+  expect(calls).toBe(2); // it still refreshes...
+  expect(list().props.data.map((row: P) => row.job_id)).toEqual(['a']); // ...but the rows stay on screen
+  expect(status()).not.toBe('loading');
+  release([...first, { job_id: 'b', title: 'B', scheduled_at: '2099-02-01T00:00:00Z', total_points: 80 }]);
+  await flush();
+  expect(list().props.data.map((row: P) => row.job_id)).toEqual(['a', 'b']);
   cleanups.forEach(cleanup => cleanup?.());
 });
 

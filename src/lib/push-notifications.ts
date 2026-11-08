@@ -135,6 +135,8 @@ let pendingNotificationId: string | null = null;
 /** Chat routing hint; opens a chat only after the Booking is re-authorized. */
 let pendingChatBookingId: string | null = null;
 let pendingCall: { bookingId: string; callId: string } | null = null;
+/** RTC-03: Answer or Decline already chosen on the native ringing notification, for that call only. */
+let pendingCallChoice: { callId: string; choice: 'answer' | 'decline' } | null = null;
 
 export function parseCallPushData(data: unknown): { bookingId: string; callId: string } | null {
   if (!data || typeof data !== 'object') return null;
@@ -159,6 +161,7 @@ export function clearRememberedExpoPushToken(): void {
 /** Test-only reset for module-level idempotence flags. */
 export function resetPushClientState(): void {
   pendingCall = null;
+  pendingCallChoice = null;
   rememberedExpoPushToken = null;
   androidChannelReady = false;
   foregroundHandlerConfigured = false;
@@ -216,6 +219,23 @@ export function isSkillMatchNotificationResponse(response: unknown): boolean {
 }
 
 /** Records OPEN_NOTIFICATIONS_INBOX. Returns true when a new pending intent was set. */
+/** RTC-03: SkillMatch was opened from the native ringing call notification; routed like a call push tap. */
+export function captureCallLaunch(launch: { bookingId: string; callId: string; action: 'open' | 'answer' | 'decline' }): void {
+  pendingCall = { bookingId: launch.bookingId, callId: launch.callId };
+  pendingNotificationId = null;
+  pendingChatBookingId = null;
+  pendingOpenNotificationsInbox = true;
+  pendingCallChoice = launch.action === 'open' ? null : { callId: launch.callId, choice: launch.action };
+}
+
+/** The Answer or Decline chosen on the notification for this call, given once to its call screen. */
+export function takePendingCallChoice(callId: string): 'answer' | 'decline' | null {
+  if (pendingCallChoice === null || pendingCallChoice.callId !== callId) return null;
+  const { choice } = pendingCallChoice;
+  pendingCallChoice = null;
+  return choice;
+}
+
 export function captureNotificationResponse(response: unknown): boolean {
   if (!isSkillMatchNotificationResponse(response)) return false;
   const data = extractTapData(response);

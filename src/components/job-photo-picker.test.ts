@@ -15,15 +15,16 @@ function harness(initial:Props={}) {
  const state:any[]=[]; let cursor=0; const cleanups:(()=>void)[]=[]; const effects:(()=>any)[]=[]; const layoutCleanups:(()=>void)[]=[]; const layoutEffects:(()=>any)[]=[]; let layouts:(()=>any)[]=[];
  const react={useState:(v:any)=>{const i=cursor++;if(!(i in state))state[i]=v;return[state[i],(n:any)=>state[i]=typeof n==='function'?n(state[i]):n];},useRef:(v:any)=>{const i=cursor++;return state[i]??(state[i]={current:v});},useLayoutEffect:(f:()=>any,deps?:unknown[])=>{const i=cursor++;if(deps===undefined){layouts.push(f);}else if(!(i in state)){state[i]=true;layoutEffects.push(f);layouts.push(()=>{const c=f();if(c)layoutCleanups.push(c);});}},useEffect:(f:()=>any)=>{const i=cursor++;if(!(i in state)){state[i]=true;effects.push(f);const c=f();if(c)cleanups.push(c);}}};
  const picker={requestMediaLibraryPermissionsAsync:vi.fn(async()=>({granted:true})),launchImageLibraryAsync:vi.fn(async()=>({canceled:false,assets:[{uri:'new'}]}))};
+ const jobPhotos={loadValidatedJobPhoto:vi.fn(async(_uri:string):Promise<any>=>({ok:true,image:{}}))};
  const jsx=(type:any,props:Props)=>({type,props});
  const load=(file:string,modules:Props)=>{const exports:Props={};runInNewContext(ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports,require:(name:string)=>{if(!(name in modules))throw Error(name);return modules[name];}});return exports;};
  const native={StyleSheet:{create:(s:any)=>s},Platform:{select:(v:Props)=>v.android??v.default},Pressable:'Pressable',Text:'Text',View:'View'};
  const theme=load('src/constants/theme.ts',{'react-native':native,'@/global.css':{}});
- const {JobPhotoPicker}=load('src/components/job-photo-picker.tsx',{react,'react-native':native,'react/jsx-runtime':{jsx,jsxs:jsx},'expo-image':{Image:'Image'},'expo-image-picker':picker,'@/components/app-button':{AppButton:'AppButton'},'@/components/app-notice':{AppNotice:'AppNotice'},'@/constants/theme':theme});
+ const {JobPhotoPicker}=load('src/components/job-photo-picker.tsx',{react,'react-native':native,'react/jsx-runtime':{jsx,jsxs:jsx},'expo-image':{Image:'Image'},'expo-image-picker':picker,'@/components/app-button':{AppButton:'AppButton'},'@/components/app-notice':{AppNotice:'AppNotice'},'@/constants/theme':theme,'@/lib/job-photos':jobPhotos});
  const props:Props={photos:[],error:null,ownerKey:'owner',resetEpoch:0,isOwnerCurrent:()=>true,onPhotosChange:vi.fn((photos:any)=>{props.photos=photos;}),onErrorChange:vi.fn((error:any)=>{props.error=error;}),...initial};
  const render=(commit=true)=>{cursor=0;layouts=[];const tree=JobPhotoPicker(props);if(commit)layouts.forEach(f=>f());return tree;};
  const choose=()=>all(render(),x=>x.type==='AppButton')[0].props.onPress();
- return{props,render,choose,picker,unmount:()=>{layoutCleanups.forEach(f=>f());cleanups.forEach(f=>f());},removeCommit:()=>layoutCleanups.forEach(f=>f()),replayEffects:()=>{layoutCleanups.splice(0).forEach(f=>f());cleanups.splice(0).forEach(f=>f());layoutEffects.forEach(f=>{const cleanup=f();if(cleanup)layoutCleanups.push(cleanup);});effects.forEach(f=>{const cleanup=f();if(cleanup)cleanups.push(cleanup);});}};
+ return{props,render,choose,picker,jobPhotos,unmount:()=>{layoutCleanups.forEach(f=>f());cleanups.forEach(f=>f());},removeCommit:()=>layoutCleanups.forEach(f=>f()),replayEffects:()=>{layoutCleanups.splice(0).forEach(f=>f());cleanups.splice(0).forEach(f=>f());layoutEffects.forEach(f=>{const cleanup=f();if(cleanup)layoutCleanups.push(cleanup);});effects.forEach(f=>{const cleanup=f();if(cleanup)cleanups.push(cleanup);});}};
 }
 const photo=(uri:string)=>({uri,assetId:null,fileName:null,fileSize:null,pickerMimeType:null});
 it('displays the controlled retained photos and reorders/removes their original metadata',()=>{
@@ -35,9 +36,13 @@ it('displays the controlled retained photos and reorders/removes their original 
  expect(h.props.photos.map((p:any)=>p.uri)).toEqual(['first']);
  expect(h.props.error).toBeNull();
 });
-it('appends gallery selection in order with original options and metadata',async()=>{
+it('PHO-01: tells the Client that matching Workers can see the photos before they accept',()=>{
+ const texts=all(harness().render(),x=>x.type==='Text').map(x=>x.props.children);
+ expect(texts).toContain('Workers who match this job can see these photos before they accept it.');
+});
+it('appends gallery selection in order; PHO-02: the picker re-encodes camera photos (quality 0.8) so they fit the 5 MB limit',async()=>{
  const h=harness({photos:[photo('existing')]});h.choose(); await flush();await flush();await flush();
- expect(h.picker.launchImageLibraryAsync).toHaveBeenCalledWith({mediaTypes:['images'],allowsMultipleSelection:true,selectionLimit:2,allowsEditing:false,legacy:false});
+ expect(h.picker.launchImageLibraryAsync).toHaveBeenCalledWith({mediaTypes:['images'],allowsMultipleSelection:true,selectionLimit:2,allowsEditing:false,legacy:false,quality:0.8});
  expect(h.props.photos.map((p:any)=>p.uri)).toEqual(['existing','new']);
 });
 it.each(['unmount','owner','reset','disabled','photos','authorization'])('rejects delayed permission after %s',async(kind)=>{
@@ -143,4 +148,31 @@ it.each(['permission', 'gallery'] as const)('fails closed when the committed own
  expect(h.picker.launchImageLibraryAsync).toHaveBeenCalledTimes(boundary==='permission'?0:1);
  expect(h.props.onPhotosChange).not.toHaveBeenCalled();
  expect(h.props.onErrorChange).toHaveBeenCalledTimes(1);
+});
+
+it('PHO-02: a picked photo that still cannot be uploaded is not added, and the Client is told why', async () => {
+ for (const [reason, message] of [
+  ['too_large', "A photo wasn't added because it is larger than 5 MB. Choose a smaller photo."],
+  ['unsupported_type', "A photo wasn't added because its file type isn't supported. Choose a JPG, PNG or WebP photo."],
+  ['read_failed', "A photo couldn't be read. Choose it again."],
+ ] as const) {
+  const h = harness({ photos: [photo('existing')] });
+  h.picker.launchImageLibraryAsync.mockResolvedValue({ canceled: false, assets: [{ uri: 'good' }, { uri: 'bad' }] } as any);
+  h.jobPhotos.loadValidatedJobPhoto.mockImplementation(async (uri: string) => uri === 'bad' ? { ok: false, reason } : { ok: true, image: {} });
+  h.choose(); await flush(); await flush(); await flush();
+  expect(h.jobPhotos.loadValidatedJobPhoto).toHaveBeenCalledWith('good');
+  expect(h.jobPhotos.loadValidatedJobPhoto).toHaveBeenCalledWith('bad');
+  expect(h.props.photos.map((p: any) => p.uri)).toEqual(['existing', 'good']);
+  expect(h.props.error).toBe(message);
+ }
+});
+
+it('PHO-02: a photo check that finishes after the request was replaced publishes nothing', async () => {
+ const h = harness();
+ let finish: any;
+ h.jobPhotos.loadValidatedJobPhoto.mockImplementation(() => new Promise(r => { finish = r; }));
+ h.choose(); await flush(); await flush();
+ h.props.resetEpoch++; h.render();
+ finish({ ok: true, image: {} }); await flush(); await flush();
+ expect(h.props.onPhotosChange).not.toHaveBeenCalled();
 });

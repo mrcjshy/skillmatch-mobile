@@ -344,27 +344,25 @@ describe('explicit missing-slot retries', () => {
 });
 
 describe('authorized private reads', () => {
-  it('lists the canonical prefix, excludes unexpected names, and signs exact slots for 60 seconds', async () => {
-    const list = vi.fn(async () => ({
-      data: [{ name: '3' }, { name: '1.jpg' }, { name: '1' }, { name: '4' }, { name: 'nested' }],
+  // PERF-01: one batch sign of the three canonical slots; the slow folder listing is gone.
+  const missing = { signedUrl: null, error: 'Either the object does not exist or you do not have access to it' };
+  it('signs the three canonical slots for 60 seconds in one request, never lists, and keeps the slots that exist', async () => {
+    const api = storageApi({ createSignedUrls: vi.fn(async (paths: string[]) => ({
+      data: paths.map((path) => path.endsWith('/2') ? { path, ...missing } : { path, signedUrl: `https://signed.example/${path}`, error: null }),
       error: null,
-    }));
-    const api = storageApi({ list });
+    })) });
     const photos = await listJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID });
-    expect(api.list).toHaveBeenCalledWith(PREFIX, {
-      limit: 100,
-      offset: 0,
-      sortBy: { column: 'name', order: 'asc' },
-    });
-    expect(api.createSignedUrls).toHaveBeenCalledWith([`${PREFIX}/1`, `${PREFIX}/3`], 60);
+    expect(api.list).not.toHaveBeenCalled();
+    expect(api.createSignedUrls).toHaveBeenCalledOnce();
+    expect(api.createSignedUrls).toHaveBeenCalledWith([`${PREFIX}/1`, `${PREFIX}/2`, `${PREFIX}/3`], 60);
     expect(photos.map((photo) => photo.slot)).toEqual([1, 3]);
     expect(api.getPublicUrl).not.toHaveBeenCalled();
   });
 
-  it('returns an empty list without creating URLs when no canonical slot exists', async () => {
-    const api = storageApi({ list: vi.fn(async () => ({ data: [{ name: '1.jpg' }], error: null })) });
+  it('returns an empty list when no slot has a photo', async () => {
+    const api = storageApi({ createSignedUrls: vi.fn(async (paths: string[]) => ({ data: paths.map((path) => ({ path, ...missing })), error: null })) });
     await expect(listJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID })).resolves.toEqual([]);
-    expect(api.createSignedUrls).not.toHaveBeenCalled();
+    expect(api.list).not.toHaveBeenCalled();
   });
 });
 
@@ -425,28 +423,17 @@ describe('operation-lifetime guarded missing-slot retry', () => {
 });
 
 describe('operation-lifetime guarded private reads', () => {
-  it.each(['false', 'throw'] as const)('fails closed for a %s guard before listing', async kind => {
+  it.each(['false', 'throw'] as const)('fails closed for a %s guard before signing', async kind => {
     const api = storageApi();
     await expect(listJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID,
       isOperationCurrent: () => { if (kind === 'throw') throw Error('private detail'); return false; } }))
       .rejects.toMatchObject({ code: 'operation_invalidated', message: 'Photo operation is no longer current.' });
     expect(api.list).not.toHaveBeenCalled(); expect(api.createSignedUrls).not.toHaveBeenCalled();
   });
-  it.each(['slots', 'empty', 'error', 'rejection'] as const)('stops after invalidated listing: %s', async kind => {
-    const pending = deferred<any>(); let current = true;
-    const api = storageApi({ list: vi.fn(() => pending.promise) });
-    const outcome = listJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID, isOperationCurrent: () => current })
-      .then(value => ({ value }), error => ({ error }));
-    current = false;
-    if (kind === 'rejection') pending.reject(Error('private transport'));
-    else pending.resolve({ data: kind === 'slots' ? [{ name: '1' }] : [], error: kind === 'error' ? { status: 403 } : null });
-    expect(await outcome).toMatchObject({ error: { code: 'operation_invalidated' } });
-    expect(api.createSignedUrls).not.toHaveBeenCalled();
-  });
+  // PERF-01 removed the listing phase; its invalidation cases are the signing cases below.
   it.each(['success', 'error', 'rejection', 'throwing-guard'] as const)('rejects stale signing: %s', async kind => {
     const pending = deferred<any>(), started = deferred<void>(); let current = true;
-    const api = storageApi({ list: vi.fn(async () => ({ data: [{ name: '1' }], error: null })),
-      createSignedUrls: vi.fn(() => { started.resolve(); return pending.promise; }) });
+    const api = storageApi({ createSignedUrls: vi.fn(() => { started.resolve(); return pending.promise; }) });
     const outcome = listJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID,
       isOperationCurrent: () => { if (!current && kind === 'throwing-guard') throw Error('private detail'); return current; } })
       .then(value => ({ value }), error => ({ error }));
@@ -454,15 +441,15 @@ describe('operation-lifetime guarded private reads', () => {
     if (kind === 'rejection') pending.reject(Error('private transport'));
     else pending.resolve({ data: [{ path: PREFIX + '/1', signedUrl: 'private-url' }], error: kind === 'error' ? { status: 403 } : null });
     expect(await outcome).toMatchObject({ error: { code: 'operation_invalidated' } });
-    expect(api.list).toHaveBeenCalledTimes(1); expect(api.createSignedUrls).toHaveBeenCalledTimes(1);
+    expect(api.list).not.toHaveBeenCalled(); expect(api.createSignedUrls).toHaveBeenCalledTimes(1);
   });
   it('preserves guarded canonical success and partial signed responses', async () => {
-    const api = storageApi({ list: vi.fn(async () => ({ data: [{ name: '3' }, { name: '1' }], error: null })),
+    const api = storageApi({
       createSignedUrls: vi.fn(async () => ({ data: [{ path: PREFIX + '/1', signedUrl: 'private-one', error: null },
         { path: PREFIX + '/3', signedUrl: '', error: 'unavailable' }, { path: 'foreign', signedUrl: 'foreign' }], error: null })) });
     await expect(listJobPhotos({ clientId: CLIENT_ID, jobId: JOB_ID, isOperationCurrent: () => true }))
       .resolves.toEqual([{ slot: 1, path: PREFIX + '/1', signedUrl: 'private-one' }]);
-    expect(api.createSignedUrls).toHaveBeenCalledWith([PREFIX + '/1', PREFIX + '/3'], 60);
+    expect(api.createSignedUrls).toHaveBeenCalledWith([PREFIX + '/1', PREFIX + '/2', PREFIX + '/3'], 60);
     expect(api.getPublicUrl).not.toHaveBeenCalled();
   });
 });

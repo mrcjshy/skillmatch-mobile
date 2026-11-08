@@ -75,14 +75,16 @@ describe('V8-04 deterministic FAQ', () => {
 describe('V8-04 deterministic resume', () => {
   const source = () => ({
     worker_profiles: ok({ id: 'profile-a', bio: '  Repairs fixtures.  ', is_verified: true, availability_status: 'available', rating_avg: 4.5 }),
-    worker_skills: ok([{ skill_id: 'skill-a', proficiency_level: 'expert' }, { skill_id: 'unresolved', proficiency_level: 'expert' }]),
+    worker_skills: ok([{ skill_id: 'skill-a', proficiency_level: 'expert', years_experience: 6 }, { skill_id: 'unresolved', proficiency_level: 'expert' }]),
     skills: ok([{ id: 'skill-a', skill_name: 'Plumbing' }]),
     portfolio_items: ok([{ title: 'Synthetic sink repair', description: 'Replaced a washer.', project_scale: 'small' }]),
   });
   it('maps only saved profile, resolved skill and portfolio data under the current owner', async () => {
     const calls = rows(source());
     const model = await loadResume(account);
-    expect(model).toEqual({ fullName: account.full_name, email: account.email, phone: '', barangay: 'Test Area', city: 'Test City', summary: 'Repairs fixtures.', isVerified: true, availability: 'available', ratingAvg: 4.5, skills: [{ name: 'Plumbing', proficiency: 'expert', years: null }], projects: [{ title: 'Synthetic sink repair', description: 'Replaced a washer.', scale: 'small' }], jobs: [], education: null });
+    expect(model).toEqual({ fullName: account.full_name, email: account.email, phone: '', barangay: 'Test Area', city: 'Test City', summary: 'Repairs fixtures.', isVerified: true, availability: 'available', ratingAvg: 4.5, skills: [{ name: 'Plumbing', proficiency: 'expert' }], projects: [{ title: 'Synthetic sink repair', description: 'Replaced a washer.', scale: 'small' }], jobs: [], education: null });
+    // REG-03 (owner, 2026-11-06): stored years of experience never reach the resume.
+    expect(buildResumeHtml(model!)).not.toMatch(/\d+ years?\b/);
     expect(calls.find(c => c.table === 'worker_profiles')?.filters).toContainEqual(['user_id', account.id]);
     for (const table of ['worker_skills', 'portfolio_items']) expect(calls.find(c => c.table === table)?.filters).toContainEqual(['worker_id', 'profile-a']);
     expect(database.invoke).not.toHaveBeenCalled();

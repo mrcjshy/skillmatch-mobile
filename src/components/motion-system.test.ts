@@ -46,8 +46,10 @@ describe('M1 motion tokens', () => {
     expect(Math.max(...Object.values(d) as number[])).toBeLessThanOrEqual(360);
   });
 
-  it('use three shared curves and small scale/distance changes', () => {
-    expect(Object.keys(MotionTokens.easing)).toEqual(['standard', 'decelerate', 'accelerate']);
+  it('use four shared curves and small scale/distance changes', () => {
+    // slide: the bottom navigation's gliding capsule (owner 2026-11-06).
+    expect(Object.keys(MotionTokens.easing)).toEqual(['standard', 'decelerate', 'accelerate', 'slide']);
+    expect(MotionTokens.easing.slide).toEqual([0.4, 0, 0.2, 1]);
     for (const curve of Object.values(MotionTokens.easing) as number[][]) expect(curve).toHaveLength(4);
     expect(MotionTokens.scale.pressAction).toBeGreaterThanOrEqual(0.9);
     expect(MotionTokens.scale.reveal).toBeGreaterThanOrEqual(0.85);
@@ -184,6 +186,20 @@ describe('M2 motion primitives', () => {
     expect(off.shared.set.mock.calls).toEqual([[1], [1]]);
   });
 
+  it('tab capsule glides to a new tab in 240 ms on the slide curve, starts in place, and jumps under reduced motion', () => {
+    const on = motionModule(false);
+    on.shared.value = 20;
+    const style = on.render(() => on.module.useTabIndicator(20));
+    expect(style).toEqual({ transform: [{ translateX: 20 }] });
+    on.render(() => on.module.useTabIndicator(200));
+    for (const effect of on.effects) effect();
+    expect(on.shared.set).toHaveBeenLastCalledWith({ timing: 200, config: { duration: 240, easing: { bezier: [0.4, 0, 0.2, 1] }, reduceMotion: 'Never' } });
+    const off = motionModule(true);
+    off.render(() => off.module.useTabIndicator(200));
+    for (const effect of off.effects) effect();
+    expect(off.shared.set.mock.calls).toEqual([[200]]);
+  });
+
   it('marks only newly listed rows as arriving; a reorder or a scroll remount is not an arrival', () => {
     const { nextReveal } = motionModule(false).module;
     const empty = { key: '', seen: new Set<string>(), fresh: new Map() };
@@ -228,6 +244,7 @@ describe('M2 call sites', () => {
     const theme = compile('src/constants/theme.ts', { 'react-native': { Platform: { OS: 'android', select: (x: Props) => x.android ?? x.default } } }).SkillMatchTheme.ui;
     const press = { style: { transform: [{ scale: 1 }] }, onPressIn: vi.fn(), onPressOut: vi.fn() };
     const { ClientTabBar } = compile('src/components/client-tab-bar.tsx', {
+      react: { useState: (initial: unknown) => [initial, vi.fn()] },
       'react-native': { Animated: { View: 'Animated.View' }, Pressable: 'Pressable', Text: 'Text', View: 'View', StyleSheet: { create: (x: Props) => x } },
       'expo-router/react-navigation': { CommonActions: { navigate: vi.fn() } },
       '@/components/skeleton': { Skeleton: 'Skeleton', PulseDots: 'PulseDots', KeyboardSpacer: 'KeyboardSpacer' },

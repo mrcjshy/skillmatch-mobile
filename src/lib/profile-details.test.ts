@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { supabase } from './supabase';
 import {
   ageOn, composeFullName, homeAddressLabel, loadMyHomeLocation, saveMyHomeLocation, formatBirthDate, formatHomeAddress, formatJobYears, loadAdminAccountProfile,
-  loadProfileCompletion, parseAdminAccountProfile, profileDetailsRpcArgs, splitLegacyName, validateProfileDetails,
+  loadMyProfileDetails, loadProfileCompletion, parseAdminAccountProfile, profileDetailsRpcArgs, splitLegacyName, validateProfileDetails,
   validateWorkerResume, workerResumeRpcArgs, type ProfileDetailsInput, type WorkerResumeInput,
 } from './profile-details';
 
@@ -20,7 +20,7 @@ const resume: WorkerResumeInput = {
   birthDate: '1990-05-21', educationLevel: 'vocational', schoolName: '',
   jobs: [{ employer: 'ABC Builders', role: 'Carpenter', startYear: '2018', endYear: '2021', current: false },
     { employer: 'Self-employed', role: 'Plumber', startYear: '2021', endYear: '', current: true }],
-  skills: [{ skillId: 'ac36af46-4c0c-4c6e-a5a7-4ae375521913', years: '6' }],
+  skills: [{ skillId: 'ac36af46-4c0c-4c6e-a5a7-4ae375521913' }],
 };
 
 describe('REG-01 profile details', () => {
@@ -71,21 +71,42 @@ describe('REG-01 Worker resume', () => {
     expect(validateWorkerResume({ ...resume, birthDate: '2010-01-01' }, TODAY).birthDate).toMatch(/18 to 80/);
     expect(validateWorkerResume({ ...resume, educationLevel: null }, TODAY).educationLevel).toBeTruthy();
     expect(validateWorkerResume({ ...resume, skills: [] }, TODAY).skills).toMatch(/at least one/);
-    expect(validateWorkerResume({ ...resume, skills: [{ skillId: 's', years: '61' }] }, TODAY)['skill.s']).toMatch(/0 to 60/);
+    // REG-03 (owner, 2026-11-06): a skill is chosen without years of experience.
+    expect(validateWorkerResume({ ...resume, skills: [{ skillId: 's' }] }, TODAY)).toEqual({});
     const badJob = validateWorkerResume({ ...resume, jobs: [{ employer: '', role: 'x', startYear: '2027', endYear: '2020', current: false }] }, TODAY);
     expect(Object.keys(badJob).sort()).toEqual(['job0.employer', 'job0.endYear', 'job0.startYear']);
     expect(validateWorkerResume({ ...resume, jobs: Array(4).fill(resume.jobs[1]) }, TODAY).jobs).toMatch(/up to 3/);
   });
 
-  it('sends whole-number years and null for a current job', () => {
+  it('sends skill ids without years (REG-03) and null for a current job', () => {
     expect(workerResumeRpcArgs(resume)).toEqual({
       p_birth_date: '1990-05-21', p_education_level: 'vocational', p_school_name: null,
       p_work_history: [
         { employer: 'ABC Builders', role: 'Carpenter', start_year: 2018, end_year: 2021 },
         { employer: 'Self-employed', role: 'Plumber', start_year: 2021, end_year: null },
       ],
-      p_skills: [{ skill_id: 'ac36af46-4c0c-4c6e-a5a7-4ae375521913', years: 6 }],
+      p_skills: [{ skill_id: 'ac36af46-4c0c-4c6e-a5a7-4ae375521913' }],
     });
+  });
+
+  it('REG-03: prefills chosen skills by id only and never reads years of experience', async () => {
+    const reads: [string, string][] = [];
+    const rowsFor: Record<string, unknown> = {
+      users: { first_name: 'Juan', last_name: 'Cruz', full_name: 'Juan Cruz', birth_date: '1990-05-21', profile_completed_at: '2026-11-03T00:00:00Z' },
+      worker_profiles: { id: 'wp-1', education_level: 'vocational', school_name: null, work_history: [], resume_completed_at: '2026-11-03T00:00:00Z' },
+      worker_skills: [{ skill_id: 'skill-a', years_experience: 4 }],
+    };
+    vi.mocked(supabase.from).mockImplementation(((table: string) => ({
+      select: (columns: string) => {
+        reads.push([table, columns]);
+        const reply = { data: rowsFor[table], error: null };
+        return { eq: () => (table === 'worker_skills' ? Promise.resolve(reply) : { maybeSingle: () => Promise.resolve(reply) }) };
+      },
+    })) as never);
+    const mine = await loadMyProfileDetails('u1', 'worker');
+    expect(mine.resume?.skills).toEqual([{ skillId: 'skill-a' }]);
+    expect(reads.find(([table]) => table === 'worker_skills')).toEqual(['worker_skills', 'skill_id']);
+    vi.mocked(supabase.from).mockReset();
   });
 });
 

@@ -8,7 +8,7 @@ import { useUiTheme, type UiTheme } from '@/components/refinement-theme';
 import { SectionHeader } from '@/components/section-header';
 import { SurfaceGroup } from '@/components/surface-group';
 import {
-  AdminProfileAccessError, EDUCATION_LABELS, formatBirthDate, formatHomeAddress, formatJobYears, formatYears,
+  AdminProfileAccessError, EDUCATION_LABELS, formatBirthDate, formatHomeAddress, formatJobYears,
   loadAdminAccountProfile, type AdminAccountProfile,
 } from '@/lib/profile-details';
 
@@ -70,13 +70,10 @@ export function AdminAccountProfileSection({ userId }: { userId: string }) {
                   {p.school_name ? <FactRow label="School" value={p.school_name} /> : null}
                 </SurfaceGroup>
 
-                <Text style={styles.subhead}>Skills and experience</Text>
+                <Text style={styles.subhead}>Skills</Text>
                 {p.skills && p.skills.length > 0 ? (
                   <SurfaceGroup>
-                    {p.skills.map((skill) => (
-                      <FactRow key={skill.name} label={skill.name} inline
-                        value={formatYears(skill.years) || 'Not provided'} />
-                    ))}
+                    {p.skills.map((skill) => <Text key={skill.name} style={styles.skill}>{skill.name}</Text>)}
                   </SurfaceGroup>
                 ) : <Text style={styles.note}>No skills added.</Text>}
 
@@ -102,5 +99,6 @@ function createStyles(ui: UiTheme) {
     section: { gap: spacing.md },
     subhead: { ...type.label, color: colors.textPrimary, paddingTop: spacing.sm },
     note: { ...type.helper, color: colors.textSecondary },
+    skill: { ...type.body, color: colors.textPrimary, paddingVertical: spacing.md, paddingHorizontal: spacing.lg },
   });
 }
